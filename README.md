@@ -1,0 +1,72 @@
+# Fragdeck
+
+Local splitscreen first-person deathmatch for 1–6 players on one PC. Every time
+you die you are dealt three random powerup cards and keep one for the rest of
+the match, so whoever is losing keeps getting stronger.
+
+Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript,
+no external art or audio assets: the map, textures and sounds are all generated
+in code.
+
+## Play
+
+Double-click **`Play.bat`**. It runs `build\Fragdeck.exe` if it exists,
+otherwise it runs the project from source with the bundled engine.
+
+In the lobby each player presses **A** on their own gamepad to take a seat
+(Space joins a keyboard + mouse player). Add bots with D-pad up/down, pick the
+kill target with D-pad left/right, press **Start** (or Enter) to begin.
+
+| Action | Gamepad | Keyboard + mouse |
+|---|---|---|
+| Move | Left stick | WASD |
+| Aim | Right stick (with aim assist) | Mouse |
+| Fire | RT (or RB) | Left click |
+| Jump | A or LT | Space |
+| Dash | B, LB or L-stick click | Shift or right click |
+| Reload | X | R |
+| Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |
+| Leave match | Hold Start + Back | Esc |
+| Toggle fullscreen (lobby) | – | F11 |
+
+Up to six gamepads are supported; one of the six seats can be keyboard + mouse
+instead. Screen layout: 1 player full screen, 2 stacked, 3–4 in a 2×2 grid,
+5–6 in a 3×2 grid. Unused cells show a spectator camera and the scoreboard.
+
+## Folder layout / portability
+
+The whole game is this one folder. Copy it to a USB stick or another PC and it
+runs; nothing is installed and nothing is written outside it.
+
+```
+Play.bat / Edit.bat   launchers (game / Godot editor)
+project.godot         Godot project file
+main.tscn             the only scene; everything else is built in code
+scripts/              all game code (see docs/ARCHITECTURE.md)
+docs/                 architecture + handoff notes
+tools/                build.bat, setup_engine.ps1
+engine/               bundled Godot editor + export templates  (not in git)
+build/Fragdeck.exe    standalone single-file game              (not in git)
+```
+
+`build\Fragdeck.exe` on its own is also fully portable: it is a single file
+with the game data embedded.
+
+### Restoring from GitHub
+
+`engine/` and `build/` are too large for git (each file is over GitHub's 100 MB
+limit). After cloning:
+
+```
+powershell -ExecutionPolicy Bypass -File tools\setup_engine.ps1 -Templates
+tools\build.bat
+```
+
+The first command re-downloads Godot 4.7.2 into `engine/`; the second
+re-exports `build\Fragdeck.exe`. A ready-made build is also attached to the
+repository's GitHub Releases.
+
+## Developing
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how everything works and
+how to add cards, change the map, or test without controllers.

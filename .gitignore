@@ -1,0 +1,11 @@
+# Godot cache (regenerated automatically)
+.godot/
+
+# Engine binaries and export templates: >100 MB each, restored by tools/setup_engine.ps1
+engine/
+
+# Exported game (published as a GitHub Release asset instead)
+build/
+
+# Test screenshots
+shots/
