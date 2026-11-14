@@ -52,7 +52,7 @@ func setup(p, _origin: Vector3, dir: Vector3) -> void:
 	mi.mesh = _mesh
 	mi.material_override = p.bullet_material
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.scale = Vector3(radius, radius, radius * 4.0)
+	mi.scale = Vector3(radius, radius, radius * 7.0)
 	add_child(mi)
 
 
@@ -137,10 +137,11 @@ func _steer(delta: float) -> void:
 
 func _hit_player(p, pos: Vector3) -> void:
 	var dmg := damage
-	var headshot: bool = pos.y - p.global_position.y > 1.42
+	# The head is the big sphere above the shoulders (see character.gd).
+	var headshot: bool = pos.y - p.global_position.y > 1.12
 	if headshot:
 		dmg *= 1.5
-	var dealt: float = p.take_damage(dmg, shooter)
+	var dealt: float = p.take_damage(dmg, shooter, false, headshot)
 	if dealt > 0.0 and p.alive:
 		if poison > 0.0:
 			p.apply_poison(dealt * poison, shooter)
@@ -157,5 +158,6 @@ func _impact(pos: Vector3, direct_victim) -> void:
 	if explosive > 0.0:
 		game.explode(pos, explosive, damage * 0.8, shooter, direct_victim)
 	else:
-		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 5.0 + 0.15, 0.15)
+		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.12, 0.12)
+		Fx.burst(game.world, pos, color.lerp(Color.WHITE, 0.4), 6, 5.0, 0.16, 0.3, -9.0)
 	queue_free()

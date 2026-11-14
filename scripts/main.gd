@@ -1,22 +1,28 @@
 extends Node
-## Entry point (main.tscn). Switches between the lobby and a match.
+## Entry point (main.tscn). Switches between the lobby and a match with a
+## quick fade.
 ##
 ## Developer flags, passed after "--" on the command line:
 ##   --autotest            skip the lobby: start a match of 6 bots
 ##   --views=N             in autotest, give the first N bots a splitscreen view
 ##   --kb                  in autotest, make player 1 a keyboard/mouse human
+##   --target=<kills>      kill target for the autotest match
+##   --lobby-demo=H,B      show the lobby with H fake humans and B bots seated
 ##   --shot=<file.png>     save a screenshot, print stats, then quit
 ##   --shot-time=<sec>     when to take it (default 6)
-##   --target=<kills>      kill target for the autotest match
+##   --pause-at=<sec>      open the pause menu after that many seconds
+##   --debug               extra bot info in the --shot printout
 ## Example:
 ##   godot --path . -w --resolution 1920x1080 -- --autotest --views=6 --shot=out.png
 
 const Lobby = preload("res://scripts/lobby.gd")
 const Game = preload("res://scripts/game.gd")
+const UiKit = preload("res://scripts/ui_kit.gd")
 
 var lobby
 var game = null
 var _args := {}
+var _fade: ColorRect
 
 
 func _ready() -> void:
@@ -27,35 +33,71 @@ func _ready() -> void:
 	add_child(lobby)
 	lobby.start.connect(_start_match)
 
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	add_child(layer)
+	_fade = ColorRect.new()
+	_fade.color = Color(UiKit.INK, 1.0)
+	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_fade)
+
 	if _args.has("autotest"):
 		var views := int(_args.get("views", "6"))
 		var parts: Array = []
 		for i in 6:
-			parts.append({"device": -2, "bot": true, "view": i < views})
+			parts.append({"device": -2, "bot": true, "view": i < views, "kind": i})
 		if _args.has("kb"):
-			parts[0] = {"device": -1, "bot": false, "view": true}
-		_start_match({"participants": parts, "kill_target": int(_args.get("target", "15"))})
+			parts[0] = {"device": -1, "bot": false, "view": true, "kind": 0}
+		lobby.visible = false
+		_begin({"participants": parts, "kill_target": int(_args.get("target", "15"))})
+	else:
+		if _args.has("lobby-demo"):
+			var hb := str(_args["lobby-demo"]).split(",")
+			lobby.demo_fill(int(hb[0]), int(hb[1]) if hb.size() > 1 else 0)
+		lobby.activate()
+		create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
+	if _args.has("pause-at"):
+		get_tree().create_timer(float(_args["pause-at"])).timeout.connect(func():
+			if game != null:
+				game._set_paused(true))
 	if _args.has("shot"):
 		_screenshot_later(float(_args.get("shot-time", "6")), _args["shot"])
 
 
 func _start_match(config: Dictionary) -> void:
-	lobby.visible = false
+	if game != null or _fade.color.a > 0.01:
+		return
+	Sfx.play("go", -4.0)
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 1.0, 0.3)
+	tw.tween_callback(_begin.bind(config))
+
+
+func _begin(config: Dictionary) -> void:
+	lobby.deactivate()
 	game = Game.new()
 	game.config = config
 	game.finished.connect(_end_match)
 	add_child(game)
+	move_child(game, 1)
+	_fade.color.a = 0.0      # the match has its own fade-in
 
 
 func _end_match() -> void:
-	if game != null:
+	if game == null:
+		return
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 1.0, 0.3)
+	tw.tween_callback(func():
 		game.queue_free()
 		game = null
-	lobby.activate()
+		lobby.activate())
+	tw.tween_property(_fade, "color:a", 0.0, 0.4)
 
 
 func _screenshot_later(delay: float, path: String) -> void:
-	await get_tree().create_timer(delay).timeout
+	await get_tree().create_timer(delay, true, false, true).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	print("[shot] screen refresh=%.0f Hz" % DisplayServer.screen_get_refresh_rate())
@@ -65,8 +107,7 @@ func _screenshot_later(delay: float, path: String) -> void:
 		for p in game.players:
 			print("[shot] %s kills=%d deaths=%d cards=%s" % [p.pname, p.kills, p.deaths, str(p.cards)])
 			if _args.has("debug"):
-				var near: Vector3 = game.map.nav.get_point_position(game.map.nav.get_closest_point(p.global_position))
-				print("        pos=%s yaw=%.2f vel=%s alive=%s near_node=%s" % [p.global_position.snapped(Vector3.ONE * 0.1), p.yaw, p.velocity.snapped(Vector3.ONE * 0.1), p.alive, near])
+				print("        pos=%s vel=%s alive=%s" % [p.global_position.snapped(Vector3.ONE * 0.1), p.velocity.snapped(Vector3.ONE * 0.1), p.alive])
 				if p.is_bot:
 					print("        los=%s path=%d/%d target=%s" % [p.brain._has_los, p.brain._path_i, p.brain._path.size(), p.brain._target.pname if p.brain._target else "-"])
 	get_tree().quit()

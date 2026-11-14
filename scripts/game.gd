@@ -1,22 +1,31 @@
 extends Node
-## One deathmatch, from first spawn to the victory screen.
+## One deathmatch, from the 3-2-1 countdown to the victory podium.
 ##
 ## Owns: the 3D world (map + players + bullets), the splitscreen layout, the
-## rules (scoring, respawns, win condition) and area damage.
+## rules (scoring, respawns, win condition), area damage, the pause menu and
+## the hand-over to results.gd.
+##
+## Flow:  countdown -> play -> (kill target reached) slow-motion "GAME!" ->
+##        fade -> world freed, results.gd podium -> finished signal.
+## `frozen` is true whenever players must not act (countdown / match over).
+##
+## Pausing uses SceneTree.paused. This node runs with PROCESS_MODE_ALWAYS so it
+## can read the pause buttons; `world` is PROCESS_MODE_PAUSABLE.
 ##
 ## Splitscreen: all gameplay nodes live under `world`, in the root viewport's
 ## World3D. Each human gets a SubViewportContainer > SubViewport holding only a
-## Camera3D (+ first-person gun) and a CanvasLayer with hud.gd. SubViewports
-## share the parent World3D by default, so every camera sees the same match.
-## Cameras are moved here in _process() from each player's yaw/pitch.
+## Camera3D (+ viewmodel.gd blaster) and a CanvasLayer with hud.gd.
+## SubViewports share the parent World3D by default, so every camera sees the
+## same match. Cameras are moved here in _process() from each player's
+## yaw/pitch, plus screen shake, FOV kick and landing dip.
 ##
 ## Visibility layers (VisualInstance3D.layers / Camera3D.cull_mask):
 ##   bit 0        world geometry, bullets, effects
 ##   bit 1 + i    player i's third-person body (hidden from player i's camera)
-##   bit 8 + i    player i's first-person gun (visible only to player i)
+##   bit 8 + i    player i's first-person gun and the damage numbers they cause
 ##
-## config = { "participants": [ { "device": int, "bot": bool, "view": bool } ],
-##            "kill_target": int }
+## config = { "participants": [ { "device": int, "bot": bool, "view": bool,
+##            "kind": int } ], "kill_target": int }
 
 signal finished
 
@@ -26,11 +35,9 @@ const Hud = preload("res://scripts/hud.gd")
 const InputSource = preload("res://scripts/input_source.gd")
 const BotBrain = preload("res://scripts/bot_brain.gd")
 const Fx = preload("res://scripts/fx.gd")
-
-const COLORS := [
-	Color(0.86, 0.22, 0.2), Color(0.2, 0.47, 0.9), Color(0.25, 0.75, 0.3),
-	Color(0.95, 0.78, 0.15), Color(0.7, 0.35, 0.85), Color(0.95, 0.5, 0.15),
-]
+const UiKit = preload("res://scripts/ui_kit.gd")
+const Viewmodel = preload("res://scripts/viewmodel.gd")
+const Results = preload("res://scripts/results.gd")
 
 var config := {}
 var world: Node3D
@@ -38,20 +45,32 @@ var map
 var players: Array = []
 var kill_target := 15
 var match_over := false
+var frozen := true
 var winner = null
 var time := 0.0
-var feed: Array = []          # [{text, color, t}] newest first
+var countdown := 3.8
+var go_flash := 0.0
+var end_real_time := 0.0      # real seconds since the winning kill
+var feed: Array = []          # [{killer, victim, t}] newest first
 
 var _ui: Control
-var _views: Array = []        # [{container, viewport, camera, gun, player}]
+var _views: Array = []        # [{container, viewport, camera, gun, player, fov}]
 var _kb_brain = null
-var _end_time := 0.0
-var _quit_hold := 0.0
+var _last_usec := 0
+var _prev := {}
+var _paused := false
+var _pause_ui: Control
+var _pause_sel := 0
+var _fade: ColorRect
+var _results = null
+var _last_count := 99
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	kill_target = config.get("kill_target", 15)
 	world = Node3D.new()
+	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
 	map = Map.new()
 	world.add_child(map)
@@ -63,12 +82,13 @@ func _ready() -> void:
 		var part: Dictionary = parts[i]
 		var p = Player.new()
 		p.index = i
-		p.color = COLORS[i % COLORS.size()]
+		p.color = UiKit.PLAYER_COLORS[i % UiKit.PLAYER_COLORS.size()]
+		p.kind = part.get("kind", i)
 		p.game = self
 		p.is_bot = part.bot
 		if part.bot:
 			bot_n += 1
-			p.pname = "BOT %d" % bot_n
+			p.pname = "CPU %d" % bot_n
 			p.brain = BotBrain.new()
 			p.brain.skill = randf_range(0.35, 0.75)
 		else:
@@ -80,6 +100,7 @@ func _ready() -> void:
 		world.add_child(p)
 
 	_build_views()
+	_build_overlays()
 	get_viewport().size_changed.connect(_layout)
 	if _kb_brain != null:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -90,15 +111,24 @@ func _ready() -> void:
 		var pos: Vector3 = spots[i % spots.size()]
 		players[i].spawn(pos, _yaw_to_centre(pos))
 	map.build_nav()
+	_last_usec = Time.get_ticks_usec()
 
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Engine.time_scale = 1.0
+	get_tree().paused = false
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseMotion and _kb_brain != null:
+	if event is InputEventMouseMotion and _kb_brain != null and not _paused:
 		_kb_brain.mouse_accum += event.relative
+
+
+func _edge(key: String, now: bool) -> bool:
+	var was: bool = _prev.get(key, true)
+	_prev[key] = now
+	return now and not was
 
 
 # --------------------------------------------------------------------------
@@ -111,7 +141,7 @@ func _build_views() -> void:
 	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_ui)
 	var bg := ColorRect.new()
-	bg.color = Color.BLACK
+	bg.color = UiKit.INK
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui.add_child(bg)
@@ -140,8 +170,12 @@ func _add_view(player) -> void:
 	var container := SubViewportContainer.new()
 	container.stretch = true
 	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# Give the cell a real size before its viewport exists: post-processing
+	# buffers (glow, blur) cannot be created for a 2x2 viewport.
+	container.size = get_viewport().get_visible_rect().size / 3.0
 	_ui.add_child(container)
 	var vp := SubViewport.new()
+	vp.size = Vector2i(container.size)
 	vp.msaa_3d = Viewport.MSAA_2X
 	vp.gui_disable_input = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
@@ -149,16 +183,17 @@ func _add_view(player) -> void:
 
 	var cam := Camera3D.new()
 	cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	cam.near = 0.08
-	cam.far = 250.0
+	cam.near = 0.06
+	cam.far = 400.0
 	var all_bodies := 0
 	for p in players:
 		all_bodies |= p.body_layer_bit()
-	var gun: Node3D = null
+	var gun = null
 	if player != null:
 		cam.cull_mask = 1 | (all_bodies & ~player.body_layer_bit()) | player.viewmodel_layer_bit()
-		gun = _make_viewmodel(player)
+		gun = Viewmodel.new()
 		cam.add_child(gun)
+		gun.build(player.color, player.viewmodel_layer_bit())
 	else:
 		cam.cull_mask = 1 | all_bodies
 	vp.add_child(cam)
@@ -170,37 +205,7 @@ func _add_view(player) -> void:
 	hud.player = player
 	hud.game = self
 	layer.add_child(hud)
-	_views.append({"container": container, "viewport": vp, "camera": cam, "gun": gun, "player": player})
-
-
-func _make_viewmodel(player) -> Node3D:
-	var root := Node3D.new()
-	var metal := StandardMaterial3D.new()
-	metal.albedo_color = Color(0.22, 0.22, 0.26)
-	metal.roughness = 0.4
-	metal.metallic = 0.5
-	var accent := StandardMaterial3D.new()
-	accent.albedo_color = player.color
-	accent.roughness = 0.7
-	var parts := [
-		[Vector3(0.07, 0.09, 0.42), Vector3(0, 0, 0), metal],
-		[Vector3(0.05, 0.05, 0.2), Vector3(0, 0.015, -0.3), metal],
-		[Vector3(0.06, 0.16, 0.08), Vector3(0, -0.11, 0.12), accent],
-		[Vector3(0.075, 0.03, 0.3), Vector3(0, 0.055, 0.02), accent],
-	]
-	for part in parts:
-		var mesh := BoxMesh.new()
-		mesh.size = part[0]
-		var mi := MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.position = part[1]
-		mi.material_override = part[2]
-		mi.layers = player.viewmodel_layer_bit()
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-		root.add_child(mi)
-	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	return root
+	_views.append({"container": container, "viewport": vp, "camera": cam, "gun": gun, "player": player, "fov": 70.0})
 
 
 func _layout() -> void:
@@ -213,62 +218,196 @@ func _layout() -> void:
 		var v: Dictionary = _views[i]
 		var gx := i % grid.x
 		var gy := i / grid.x
-		var gap := 2.0 if _views.size() > 1 else 0.0
+		var gap := 4.0 if _views.size() > 1 else 0.0
 		v.container.position = Vector2(gx, gy) * cell + Vector2(gap, gap) * 0.5
 		v.container.size = cell - Vector2(gap, gap)
 		# Aim for ~100 deg horizontal FOV whatever the cell's aspect ratio.
 		var aspect := cell.x / cell.y
 		var vfov := rad_to_deg(2.0 * atan(tan(deg_to_rad(50.0)) / aspect))
-		v.camera.fov = clampf(vfov, 52.0, 75.0)
+		v.fov = clampf(vfov, 52.0, 75.0)
+		v.camera.fov = v.fov
 
 
-func _process(delta: float) -> void:
-	time += delta
+func _update_cameras(delta: float) -> void:
 	for v in _views:
 		var p = v.player
 		var cam: Camera3D = v.camera
 		if p == null:
-			var a := time * 0.12
-			cam.global_position = Vector3(cos(a) * 40.0, 24.0, sin(a) * 34.0)
-			cam.look_at(Vector3(0, 1, 0))
+			var a := time * 0.1
+			cam.look_at_from_position(Vector3(cos(a) * 38.0, 17.0, sin(a) * 32.0), Vector3(0, 1.5, 0))
 			continue
 		if p.alive:
-			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT, 0)
-			cam.global_transform = Transform3D(Basis.from_euler(Vector3(p.pitch + p.recoil * 0.012, p.yaw, 0.0)), eye)
+			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT - p.land_dip * 0.14, 0)
+			var sh: float = p.shake * p.shake * 0.035
+			var euler := Vector3(
+				p.pitch + p.recoil * 0.014 + sin(time * 61.0) * sh,
+				p.yaw + sin(time * 47.0 + 1.3) * sh,
+				sin(time * 53.0 + 2.1) * sh * 0.8)
+			cam.global_transform = Transform3D(Basis.from_euler(euler), eye)
+			cam.fov = v.fov + p.fov_kick * 7.0
 		else:
-			# Death cam: drift upward a little from where we fell.
-			cam.global_position += Vector3(0, delta * 0.35, 0)
-		v.gun.visible = p.alive
-		var sway: float = sin(time * 9.0) * 0.004 * clampf(p.velocity.length() / 7.0, 0.0, 1.0)
-		v.gun.position = Vector3(0.2, -0.19 + sway, -0.42 + p.recoil * 0.06)
-		v.gun.rotation.x = p.recoil * 0.12
+			# Death cam: drift up and tilt away.
+			cam.global_position += Vector3(0, delta * 0.5, 0)
+			cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
+		v.gun.update(delta, p)
 
-	# Leaving the match: Esc, or hold Start + Back/Select on any pad.
-	var quit_now := Input.is_physical_key_pressed(KEY_ESCAPE)
-	var holding := false
+
+# --------------------------------------------------------------------------
+# Overlays: pause menu and screen fade (drawn above the splitscreen cells)
+# --------------------------------------------------------------------------
+
+func _build_overlays() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 10
+	add_child(layer)
+	var sh := Shader.new()
+	sh.code = Hud.BLUR_SHADER
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	mat.set_shader_parameter("amount", 1.0)
+	_pause_ui = ColorRect.new()
+	_pause_ui.material = mat
+	_pause_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_pause_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pause_ui.visible = false
+	layer.add_child(_pause_ui)
+	var menu := Control.new()
+	menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_pause_ui.add_child(menu)
+	menu.draw.connect(_draw_pause.bind(menu))
+
+	_fade = ColorRect.new()
+	_fade.color = Color(UiKit.INK, 1.0)
+	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_fade)
+	create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
+
+
+func _draw_pause(menu: Control) -> void:
+	var w := menu.size.x
+	var h := menu.size.y
+	var s := h / 1080.0
+	var r := Rect2(w * 0.5 - 330 * s, h * 0.5 - 250 * s, 660 * s, 500 * s)
+	UiKit.card(menu, r, UiKit.PANEL, 50 * s, s * 2.0)
+	UiKit.text(menu, Vector2(r.position.x, r.position.y + 120 * s), "PAUSED", 96 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.14)
+	var items := ["RESUME", "QUIT TO LOBBY"]
+	for i in items.size():
+		var sel := i == _pause_sel
+		var ir := Rect2(r.position.x + 70 * s, r.position.y + 190 * s + i * 120 * s, r.size.x - 140 * s, 92 * s)
+		if sel:
+			ir = ir.grow(6 * s + sin(time * 6.0) * 2 * s)
+		UiKit.card(menu, ir, UiKit.GOLD if sel else Color(0.36, 0.3, 0.5), 46 * s, s * 1.5)
+		UiKit.text(menu, Vector2(ir.position.x, ir.get_center().y + 17 * s), items[i], 48 * s, UiKit.INK if sel else UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, ir.size.x, 700, 0.0 if sel else 0.12)
+	UiKit.text(menu, Vector2(r.position.x, r.end.y - 30 * s), "UP / DOWN  choose     A / ENTER  confirm", 22 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 500, 0.0)
+
+
+func _set_paused(on: bool) -> void:
+	_paused = on
+	get_tree().paused = on
+	_pause_ui.visible = on
+	_pause_sel = 0
+	if _kb_brain != null:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if on else Input.MOUSE_MODE_CAPTURED
+	Sfx.play("tick", -6.0, 0.8 if on else 1.2)
+
+
+func _poll_pause() -> void:
+	var toggle := _edge("esc", Input.is_physical_key_pressed(KEY_ESCAPE))
+	var up := _edge("k_up", Input.is_physical_key_pressed(KEY_UP) or Input.is_physical_key_pressed(KEY_W))
+	var down := _edge("k_down", Input.is_physical_key_pressed(KEY_DOWN) or Input.is_physical_key_pressed(KEY_S))
+	var accept := _edge("k_ok", Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_SPACE))
+	var back := false
 	for d in Input.get_connected_joypads():
-		if Input.is_joy_button_pressed(d, JOY_BUTTON_START) and Input.is_joy_button_pressed(d, JOY_BUTTON_BACK):
-			holding = true
-	_quit_hold = _quit_hold + delta if holding else 0.0
-	if quit_now or _quit_hold > 0.6:
-		_finish()
+		var k := "j%d" % d
+		toggle = _edge(k + "start", Input.is_joy_button_pressed(d, JOY_BUTTON_START)) or toggle
+		var sy := Input.get_joy_axis(d, JOY_AXIS_LEFT_Y)
+		up = _edge(k + "up", Input.is_joy_button_pressed(d, JOY_BUTTON_DPAD_UP) or sy < -0.6) or up
+		down = _edge(k + "down", Input.is_joy_button_pressed(d, JOY_BUTTON_DPAD_DOWN) or sy > 0.6) or down
+		accept = _edge(k + "a", Input.is_joy_button_pressed(d, JOY_BUTTON_A)) or accept
+		back = _edge(k + "b", Input.is_joy_button_pressed(d, JOY_BUTTON_B)) or back
+	if match_over or countdown > 0.0:
 		return
+	if not _paused:
+		if toggle:
+			_set_paused(true)
+		return
+	_pause_ui.get_child(0).queue_redraw()
+	if toggle or back:
+		_set_paused(false)
+		return
+	if up or down:
+		_pause_sel = 1 - _pause_sel
+		Sfx.play("tick", -8.0)
+	if accept:
+		if _pause_sel == 0:
+			_set_paused(false)
+		else:
+			_set_paused(false)
+			_leave()
+
+
+# --------------------------------------------------------------------------
+# Main loop
+# --------------------------------------------------------------------------
+
+func _process(delta: float) -> void:
+	var now := Time.get_ticks_usec()
+	var real_delta := (now - _last_usec) / 1000000.0
+	_last_usec = now
+	if _results != null:
+		return
+	_poll_pause()
+	if _paused:
+		return
+	time += delta
+
+	if countdown > 0.0:
+		countdown -= delta
+		var c := ceili(countdown)
+		if c != _last_count and c <= 3 and c >= 1:
+			Sfx.play("count", -4.0)
+		_last_count = c
+		if countdown <= 0.0:
+			frozen = false
+			go_flash = 1.0
+			Sfx.play("go", -3.0)
+	go_flash = maxf(0.0, go_flash - delta * 0.9)
+
+	_update_cameras(delta)
 
 	if match_over:
-		_end_time += delta
-		var skip := false
-		if _end_time > 3.0:
-			skip = Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_SPACE)
-			for d in Input.get_connected_joypads():
-				if Input.is_joy_button_pressed(d, JOY_BUTTON_A) or Input.is_joy_button_pressed(d, JOY_BUTTON_START):
-					skip = true
-		if skip or _end_time > 14.0:
-			_finish()
+		end_real_time += real_delta
+		if end_real_time > 2.8 and _results == null and _fade.color.a <= 0.0:
+			var tw := create_tween()
+			tw.set_ignore_time_scale(true)
+			tw.tween_property(_fade, "color:a", 1.0, 0.35)
+			tw.tween_callback(_show_results)
+			tw.tween_property(_fade, "color:a", 0.0, 0.4)
 
 
-func _finish() -> void:
+func _leave() -> void:
 	set_process(false)
 	finished.emit()
+
+
+## Swap the match world for the podium screen.
+func _show_results() -> void:
+	Engine.time_scale = 1.0
+	var rows: Array = []
+	for p in ranked():
+		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size()})
+	_views.clear()
+	players.clear()
+	_ui.queue_free()
+	world.queue_free()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_results = Results.new()
+	_results.rows = rows
+	add_child(_results)
+	move_child(_results, 0)
+	_results.done.connect(func(): finished.emit())
 
 
 # --------------------------------------------------------------------------
@@ -279,30 +418,33 @@ func _yaw_to_centre(pos: Vector3) -> float:
 	return atan2(pos.x, pos.z)
 
 
-func on_player_died(victim, killer) -> void:
-	var credited: bool = killer != null and is_instance_valid(killer) and killer != victim
+func on_player_died(victim, attacker) -> void:
+	var credited: bool = attacker != null and is_instance_valid(attacker) and attacker != victim
 	if credited:
-		killer.kills += 1
-		killer.kill_flash = 1.0
-		_feed("%s  >  %s" % [killer.pname, victim.pname], killer.color.lerp(Color.WHITE, 0.35))
-		if killer.kills >= kill_target:
+		attacker.kills += 1
+		attacker.kill_flash = 1.0
+		attacker.kill_name = victim.pname
+		attacker.shake = maxf(attacker.shake, 0.4)
+		if not attacker.is_bot and attacker.brain.device >= 0:
+			Input.start_joy_vibration(attacker.brain.device, 0.2, 0.9, 0.25)
+		feed.push_front({"killer": attacker, "victim": victim, "t": time})
+		if attacker.kills >= kill_target:
 			match_over = true
-			winner = killer
-			Sfx.play("win", -2.0)
+			frozen = true
+			winner = attacker
+			end_real_time = 0.0
+			Engine.time_scale = 0.3
+			Sfx.play("go", -2.0, 0.7)
 	else:
 		# Falling out of the world or blowing yourself up costs a point.
 		victim.kills = maxi(0, victim.kills - 1)
-		_feed("%s self-destructed" % victim.pname, Color(0.8, 0.8, 0.8))
-
-
-func _feed(text: String, color: Color) -> void:
-	feed.push_front({"text": text, "color": color, "t": time})
+		feed.push_front({"killer": null, "victim": victim, "t": time})
 	if feed.size() > 5:
 		feed.pop_back()
 
 
 func respawn_later(p, delay: float) -> void:
-	get_tree().create_timer(delay).timeout.connect(func():
+	get_tree().create_timer(delay, false).timeout.connect(func():
 		if not match_over and is_instance_valid(p) and not p.alive:
 			respawn(p))
 
@@ -322,15 +464,19 @@ func respawn(p) -> void:
 
 
 func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim) -> void:
-	Fx.flash(world, pos, Color(1.0, 0.55, 0.15, 0.85), radius * 0.25, radius, 0.3)
-	Fx.flash(world, pos, Color(1.0, 0.9, 0.6, 0.9), radius * 0.1, radius * 0.5, 0.18)
+	Fx.flash(world, pos, Color(1.0, 0.6, 0.2, 0.85), radius * 0.25, radius, 0.3)
+	Fx.flash(world, pos, Color(1.0, 0.95, 0.7, 0.95), radius * 0.1, radius * 0.55, 0.18)
+	Fx.burst(world, pos, Color(1.0, 0.75, 0.3), 16, radius * 4.0, 0.4, 0.5, -6.0)
+	Fx.puff(world, pos, Color(0.4, 0.36, 0.45, 0.7), 10, radius * 0.5)
+	Fx.ring(world, pos, Color(1, 1, 1, 0.8), radius * 0.2, radius * 1.1, 0.3)
 	Sfx.play("boom", -4.0)
 	for p in players:
-		if not p.alive or p == direct_victim:
+		if not p.alive:
 			continue
 		var to_p: Vector3 = p.chest_position() - pos
 		var d := to_p.length()
-		if d > radius + 0.5:
+		p.shake = maxf(p.shake, clampf(1.2 - d / (radius * 4.0), 0.0, 1.0))
+		if p == direct_victim or d > radius + 0.5:
 			continue
 		var f := 1.0 - 0.6 * clampf(d / radius, 0.0, 1.0)
 		p.velocity += (to_p.normalized() + Vector3(0, 0.4, 0)) * 9.0 * f

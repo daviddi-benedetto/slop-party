@@ -7,23 +7,51 @@ extends CharacterBody3D
 ## rendered frame, independent of the physics rate; game.gd builds the camera
 ## transform from them.
 ##
+## Visuals are a character.gd model (animated from _physics_process), a name
+## tag and a small health bar, all on this player's private visual layer so the
+## owner's own camera does not see them.
+##
 ## Life cycle:  spawn() -> alive -> _die() -> card pick (HUD draws it, input is
 ## handled here in _dead_tick) -> game.respawn() -> spawn() ...
+## Nothing moves while game.frozen is true (countdown, match over).
 
 const Stats = preload("res://scripts/stats.gd")
 const Cards = preload("res://scripts/cards.gd")
 const Bullet = preload("res://scripts/bullet.gd")
 const Fx = preload("res://scripts/fx.gd")
+const Character = preload("res://scripts/character.gd")
+const UiKit = preload("res://scripts/ui_kit.gd")
 
 const EYE_HEIGHT := 1.6
 const GRAVITY := 22.0
 const WORLD_MASK := 1
 const PLAYER_MASK := 2
 
+const BAR_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled, shadows_disabled;
+instance uniform float fill = 1.0;
+instance uniform vec4 tint : source_color = vec4(0.3, 0.9, 0.4, 1.0);
+void vertex() {
+	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
+	MODELVIEW_NORMAL_MATRIX = mat3(MODELVIEW_MATRIX);
+}
+void fragment() {
+	vec2 uv = UV;
+	float inside = step(0.035, uv.x) * step(uv.x, 0.965) * step(0.2, uv.y) * step(uv.y, 0.8);
+	float f = (uv.x - 0.035) / 0.93;
+	vec3 bar = f < fill ? tint.rgb * (uv.y < 0.45 ? 1.25 : 1.0) : vec3(0.3, 0.26, 0.38);
+	ALBEDO = mix(vec3(0.17, 0.12, 0.24), bar, inside);
+}
+"""
+
+static var _bar_material: ShaderMaterial
+
 # Identity (set by game.gd before add_child)
 var index := 0
 var pname := "P1"
 var color := Color.WHITE
+var kind := 0
 var brain
 var is_bot := false
 var game
@@ -31,7 +59,9 @@ var game
 # State
 var stats = Stats.new()
 var cards: Array = []            # names of every card picked so far
+var card_icons: Array = []       # [icon, rarity] per picked card, for the HUD
 var health := 100.0
+var health_ghost := 100.0        # trails behind health for the HUD bar
 var alive := false
 var kills := 0
 var deaths := 0
@@ -56,20 +86,31 @@ var slow_amount := 0.0
 var card_choices: Array = []
 var card_sel := 1
 var dead_time := 0.0
-var killer_name := ""
+var killer = null
 var respawn_pending := false
+var pick_time := 0.0             # seconds since the card was confirmed
 
-# HUD feedback values (decay over time, read by hud.gd)
+# Feedback values read by hud.gd / game.gd (all decay over time)
 var hit_marker := 0.0
+var hit_crit := false
 var hurt_flash := 0.0
 var recoil := 0.0
 var kill_flash := 0.0
+var kill_name := ""
+var shake := 0.0
+var fov_kick := 0.0
+var land_dip := 0.0
+var muzzle_flash := 0.0
+var damage_dirs: Array = []      # [[world_pos, time_left], ...]
+var spawn_time := 0.0
 
-var body_root: Node3D
-var head_pivot: Node3D
+var character
 var name_label: Label3D
+var health_bar: MeshInstance3D
 var bullet_material: StandardMaterial3D
 var _shape: CollisionShape3D
+var _was_floor := true
+var _fall_speed := 0.0
 
 
 func body_layer_bit() -> int:
@@ -94,100 +135,52 @@ func _ready() -> void:
 	_shape.position.y = 0.9
 	add_child(_shape)
 
+	# Bullets glow in the owner's colour (emission > 1 feeds the bloom).
 	bullet_material = StandardMaterial3D.new()
-	bullet_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	bullet_material.albedo_color = color.lerp(Color.WHITE, 0.45)
+	bullet_material.albedo_color = Color.BLACK
+	bullet_material.emission_enabled = true
+	bullet_material.emission = color.lerp(Color.WHITE, 0.35)
+	bullet_material.emission_energy_multiplier = 3.2
 
-	_build_body()
-	_set_alive_visuals(false)
-
-
-## Third-person model, built from primitives. Lives on this player's private
-## visual layer so the owner's camera can cull it.
-func _build_body() -> void:
-	body_root = Node3D.new()
-	add_child(body_root)
-	var layer := body_layer_bit()
-
-	var suit := StandardMaterial3D.new()
-	suit.albedo_color = color
-	suit.roughness = 0.8
-	suit.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	suit.rim_enabled = true
-	suit.rim = 0.5
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = color.darkened(0.55)
-	dark.roughness = 0.6
-	var skin := StandardMaterial3D.new()
-	skin.albedo_color = Color(0.93, 0.76, 0.6)
-	skin.roughness = 0.9
-	skin.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	var metal := StandardMaterial3D.new()
-	metal.albedo_color = Color(0.2, 0.2, 0.23)
-	metal.roughness = 0.45
-	metal.metallic = 0.5
-
-	var torso := CapsuleMesh.new()
-	torso.radius = 0.36
-	torso.height = 1.0
-	_part(body_root, torso, suit, Vector3(0, 0.95, 0), layer)
-	var legs := CylinderMesh.new()
-	legs.top_radius = 0.3
-	legs.bottom_radius = 0.24
-	legs.height = 0.6
-	_part(body_root, legs, dark, Vector3(0, 0.3, 0), layer)
-	var belt := CylinderMesh.new()
-	belt.top_radius = 0.37
-	belt.bottom_radius = 0.37
-	belt.height = 0.1
-	_part(body_root, belt, metal, Vector3(0, 0.62, 0), layer)
-
-	head_pivot = Node3D.new()
-	head_pivot.position.y = EYE_HEIGHT
-	body_root.add_child(head_pivot)
-	var head := SphereMesh.new()
-	head.radius = 0.25
-	head.height = 0.5
-	_part(head_pivot, head, skin, Vector3(0, 0.02, 0), layer)
-	var helmet := SphereMesh.new()
-	helmet.radius = 0.27
-	helmet.height = 0.3
-	helmet.is_hemisphere = true
-	_part(head_pivot, helmet, suit, Vector3(0, 0.06, 0), layer)
-	var visor := BoxMesh.new()
-	visor.size = Vector3(0.36, 0.09, 0.14)
-	_part(head_pivot, visor, metal, Vector3(0, 0.03, -0.2), layer)
-	var gun := BoxMesh.new()
-	gun.size = Vector3(0.1, 0.14, 0.7)
-	_part(head_pivot, gun, metal, Vector3(0.3, -0.32, -0.42), layer)
-	var arm := BoxMesh.new()
-	arm.size = Vector3(0.13, 0.13, 0.45)
-	_part(head_pivot, arm, suit, Vector3(0.33, -0.36, -0.12), layer)
+	character = Character.new()
+	add_child(character)
+	character.build(kind, color, body_layer_bit())
 
 	name_label = Label3D.new()
 	name_label.text = pname
+	name_label.font = UiKit.font(700)
 	name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	name_label.font_size = 64
-	name_label.pixel_size = 0.005
+	name_label.font_size = 56
+	name_label.pixel_size = 0.0042
 	name_label.outline_size = 16
-	name_label.modulate = color.lerp(Color.WHITE, 0.3)
-	name_label.position.y = 2.2
-	name_label.layers = layer
-	body_root.add_child(name_label)
+	name_label.outline_modulate = UiKit.INK
+	name_label.modulate = color.lerp(Color.WHITE, 0.45)
+	name_label.position.y = 2.52
+	name_label.layers = body_layer_bit()
+	add_child(name_label)
 
+	if _bar_material == null:
+		var sh := Shader.new()
+		sh.code = BAR_SHADER
+		_bar_material = ShaderMaterial.new()
+		_bar_material.shader = sh
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.95, 0.15)
+	health_bar = MeshInstance3D.new()
+	health_bar.mesh = quad
+	health_bar.material_override = _bar_material
+	health_bar.position.y = 2.24
+	health_bar.layers = body_layer_bit()
+	health_bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(health_bar)
 
-func _part(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3, layer: int) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = mat
-	mi.position = pos
-	mi.layers = layer
-	parent.add_child(mi)
-	return mi
+	_set_alive_visuals(false)
 
 
 func _set_alive_visuals(on: bool) -> void:
-	body_root.visible = on
+	character.visible = on
+	name_label.visible = on
+	health_bar.visible = on
 	collision_layer = PLAYER_MASK if on else 0
 	_shape.set_deferred("disabled", not on)
 
@@ -199,6 +192,7 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 	pitch = 0.0
 	rotation.y = yaw
 	health = stats.max_health
+	health_ghost = health
 	ammo = stats.mag_size
 	reload_left = 0.0
 	fire_cd = 0.2
@@ -209,10 +203,15 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 	spawn_protect = 1.5
 	since_damage = 99.0
 	card_choices = []
+	damage_dirs.clear()
 	respawn_pending = false
 	alive = true
+	spawn_time = 0.0
+	_was_floor = true
 	_set_alive_visuals(true)
+	character.pop_in()
 	reset_physics_interpolation()
+	Fx.ring(game.world, pos + Vector3(0, 0.1, 0), Color(color.lerp(Color.WHITE, 0.4), 0.9), 0.3, 1.8, 0.5)
 
 
 func eye_position() -> Vector3:
@@ -228,16 +227,33 @@ func aim_basis() -> Basis:
 
 
 func _process(delta: float) -> void:
-	hit_marker = maxf(0.0, hit_marker - delta * 4.0)
-	hurt_flash = maxf(0.0, hurt_flash - delta * 2.5)
+	hit_marker = maxf(0.0, hit_marker - delta * 3.5)
+	hurt_flash = maxf(0.0, hurt_flash - delta * 2.2)
 	recoil = maxf(0.0, recoil - delta * 9.0)
-	kill_flash = maxf(0.0, kill_flash - delta * 0.7)
+	kill_flash = maxf(0.0, kill_flash - delta * 0.55)
+	shake = maxf(0.0, shake - delta * 2.8)
+	fov_kick = maxf(0.0, fov_kick - delta * 3.5)
+	land_dip = maxf(0.0, land_dip - delta * 5.0)
+	muzzle_flash = maxf(0.0, muzzle_flash - delta * 16.0)
+	spawn_time += delta
+	if health_ghost > health:
+		health_ghost = maxf(health, health_ghost - delta * stats.max_health * 0.7)
+	else:
+		health_ghost = health
+	for d in damage_dirs:
+		d[1] -= delta
+	damage_dirs = damage_dirs.filter(func(d): return d[1] > 0.0)
+	if respawn_pending:
+		pick_time += delta
 	if alive and not game.match_over:
 		brain.update_look(self, delta)
 
 
 func _physics_process(delta: float) -> void:
-	if game.match_over:
+	if game.frozen:
+		if alive:
+			character.animate(delta, 0.0, true, 0.0, pitch)
+			rotation.y = yaw
 		return
 	brain.update_buttons(self, delta)
 	if not alive:
@@ -269,8 +285,14 @@ func _physics_process(delta: float) -> void:
 	horiz = horiz.move_toward(wish * speed, (70.0 if on_floor else 22.0) * delta)
 	if on_floor:
 		air_jumps = stats.max_jumps - 1
+		if not _was_floor and _fall_speed > 6.0:
+			land_dip = clampf(_fall_speed / 16.0, 0.3, 1.0)
+			Fx.puff(game.world, global_position + Vector3(0, 0.1, 0), Color(1, 1, 1, 0.6), 6, 0.45)
+			Sfx.play("land", -16.0)
 	else:
 		velocity.y -= GRAVITY * delta
+		_fall_speed = -velocity.y
+	_was_floor = on_floor
 	if brain.jump:
 		if on_floor:
 			velocity.y = stats.jump_velocity
@@ -279,11 +301,14 @@ func _physics_process(delta: float) -> void:
 			air_jumps -= 1
 			velocity.y = stats.jump_velocity
 			Sfx.play("jump", -12.0, 1.3)
+			Fx.ring(game.world, global_position, Color(1, 1, 1, 0.8), 0.2, 0.9, 0.3)
 	if brain.dash and dash_cd <= 0.0:
 		dash_dir = wish.normalized() if wish.length() > 0.1 else Basis(Vector3.UP, yaw) * Vector3.FORWARD
 		dash_left = 0.16
 		dash_cd = stats.dash_cooldown
+		fov_kick = 1.0
 		Sfx.play("dash", -8.0)
+		Fx.puff(game.world, chest_position(), Color(color.lerp(Color.WHITE, 0.6), 0.7), 10, 0.5)
 	if dash_left > 0.0:
 		dash_left -= delta
 		horiz = dash_dir * maxf(22.0, speed * 2.4)
@@ -291,7 +316,11 @@ func _physics_process(delta: float) -> void:
 	velocity.z = horiz.z
 	move_and_slide()
 	rotation.y = yaw
-	head_pivot.rotation.x = pitch
+
+	character.animate(delta, Vector2(velocity.x, velocity.z).length() / stats.move_speed, is_on_floor(), velocity.y, pitch, recoil)
+	var frac: float = clampf(health / stats.max_health, 0.0, 1.0)
+	health_bar.set_instance_shader_parameter("fill", frac)
+	health_bar.set_instance_shader_parameter("tint", Color(1.0, 0.3, 0.3).lerp(Color(0.35, 0.9, 0.4), frac))
 
 	if global_position.y < -25.0:
 		take_damage(99999.0, null, true)
@@ -302,6 +331,7 @@ func _physics_process(delta: float) -> void:
 		reload_left -= delta
 		if reload_left <= 0.0:
 			ammo = stats.mag_size
+			Sfx.play("tick", -10.0, 1.5)
 	elif ammo <= 0 or (brain.reload and ammo < stats.mag_size):
 		reload_left = stats.reload_time
 		Sfx.play("reload", -10.0)
@@ -313,6 +343,8 @@ func _shoot() -> void:
 	ammo -= 1
 	fire_cd = stats.fire_interval
 	recoil = 1.0
+	muzzle_flash = 1.0
+	shake = maxf(shake, 0.12)
 	Sfx.play("shoot", -7.0, clampf(1.15 - stats.damage / 160.0, 0.6, 1.2))
 
 	var eye := eye_position()
@@ -328,6 +360,7 @@ func _shoot() -> void:
 	var block := PhysicsRayQueryParameters3D.create(eye, muzzle, WORLD_MASK)
 	if space.intersect_ray(block) or target.distance_to(eye) < 1.2:
 		muzzle = eye
+	Fx.flash(game.world, character.muzzle_position(), Color(1.0, 0.95, 0.7, 0.9), 0.08, 0.3, 0.07)
 
 	for i in stats.pellets:
 		var s: float = stats.spread + (0.02 if i > 0 else 0.0)
@@ -344,6 +377,8 @@ func _shoot() -> void:
 func launch(v: Vector3) -> void:
 	velocity = v
 	dash_left = 0.0
+	fov_kick = 0.6
+	Fx.ring(game.world, global_position + Vector3(0, 0.2, 0), Color(0.4, 1.0, 0.9, 0.9), 0.5, 1.8, 0.35)
 
 
 func heal(amount: float) -> void:
@@ -352,23 +387,30 @@ func heal(amount: float) -> void:
 
 
 ## Returns the damage actually dealt. `silent` skips hit feedback (poison ticks).
-func take_damage(amount: float, attacker, silent := false) -> float:
-	if not alive or game.match_over:
+func take_damage(amount: float, attacker, silent := false, crit := false) -> float:
+	if not alive or game.frozen:
 		return 0.0
 	if spawn_protect > 0.0 and amount < 9999.0:
 		return 0.0
 	amount *= stats.damage_taken
 	health -= amount
 	since_damage = 0.0
+	var has_attacker: bool = attacker != null and is_instance_valid(attacker) and attacker != self
 	if not silent:
 		hurt_flash = 1.0
+		shake = maxf(shake, clampf(amount / 60.0, 0.25, 0.9))
+		character.hit_flash()
 		Sfx.play("hurt", -12.0)
 		if not is_bot and brain.device >= 0:
 			Input.start_joy_vibration(brain.device, 0.4, 0.7, 0.18)
-	if attacker != null and is_instance_valid(attacker) and attacker != self:
+		if has_attacker:
+			damage_dirs.append([attacker.global_position, 1.2])
+	if has_attacker:
 		if not silent:
 			attacker.hit_marker = 1.0
-			Sfx.play("hit", -9.0)
+			attacker.hit_crit = crit
+			Sfx.play("hit", -9.0, 1.35 if crit else 1.0)
+			Fx.damage_number(game.world, global_position + Vector3(0, 2.0, 0), amount, crit, attacker.viewmodel_layer_bit())
 		if attacker.stats.lifesteal > 0.0:
 			attacker.heal(amount * attacker.stats.lifesteal)
 	if health <= 0.0:
@@ -387,20 +429,26 @@ func apply_slow(amount: float) -> void:
 	slow_left = 2.0
 
 
-func _die(killer) -> void:
+func _die(attacker) -> void:
 	alive = false
 	deaths += 1
 	health = 0.0
 	_set_alive_visuals(false)
 	velocity = Vector3.ZERO
-	killer_name = killer.pname if (killer != null and is_instance_valid(killer) and killer != self) else ""
+	killer = attacker if (attacker != null and is_instance_valid(attacker) and attacker != self) else null
 	card_choices = Cards.draw(3)
 	card_sel = 1
 	dead_time = 0.0
+	pick_time = 0.0
 	respawn_pending = false
-	Sfx.play("death", -6.0)
-	Fx.flash(game.world, chest_position(), Color(color, 0.8), 0.3, 1.6, 0.45)
-	game.on_player_died(self, killer)
+	shake = 1.0
+	Sfx.play("pop", -4.0)
+	# Party-popper death: confetti and a puff, no gore.
+	var c := chest_position()
+	Fx.confetti(game.world, c, 46)
+	Fx.puff(game.world, c, Color(color.lerp(Color.WHITE, 0.5), 0.85), 14, 0.9)
+	Fx.flash(game.world, c, Color(1, 1, 1, 0.8), 0.3, 1.5, 0.2)
+	game.on_player_died(self, attacker)
 
 
 ## While dead: choose one of the offered cards, then respawn.
@@ -409,10 +457,10 @@ func _dead_tick(delta: float) -> void:
 		return
 	dead_time += delta
 	if is_bot:
-		if dead_time > 1.6:
+		if dead_time > 1.9:
 			_pick_card(randi() % card_choices.size())
 		return
-	if dead_time < 0.6:
+	if dead_time < 0.85:
 		return
 	if brain.ui_left:
 		card_sel = maxi(0, card_sel - 1)
@@ -428,8 +476,10 @@ func _pick_card(i: int) -> void:
 	var card: Dictionary = card_choices[i]
 	card.apply.call(stats)
 	cards.append(card.name)
+	card_icons.append([card.icon, card.rarity])
 	card_sel = i
 	respawn_pending = true
+	pick_time = 0.0
 	if not is_bot:
 		Sfx.play("card", -6.0)
-	game.respawn_later(self, 0.45)
+	game.respawn_later(self, 0.7)
