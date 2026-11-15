@@ -42,10 +42,11 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 	env.glow_intensity = 0.4
 	env.glow_hdr_threshold = 1.5
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.18
+	env.adjustment_saturation = 1.22
+	env.adjustment_contrast = 1.08
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.78, 0.9, 1.0)
-	env.fog_density = 0.004
+	env.fog_density = 0.0012
 	env.fog_sky_affect = 0.0
 	var we := WorldEnvironment.new()
 	we.environment = env

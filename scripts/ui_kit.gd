@@ -146,10 +146,10 @@ static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: i
 
 
 ## Controller button / key prompt. Returns the width it used.
-static func prompt(ci: CanvasItem, pos: Vector2, label: String, px: float) -> float:
+static func prompt(ci: CanvasItem, pos: Vector2, label: String, px: float, is_key := false) -> float:
 	var colors := {"A": Color(0.35, 0.82, 0.4), "B": Color(1.0, 0.4, 0.4), "X": Color(0.3, 0.6, 1.0), "Y": Color(1.0, 0.8, 0.2)}
 	var h := px * 1.25
-	if colors.has(label):
+	if colors.has(label) and not is_key:
 		var c := pos + Vector2(h * 0.5, -px * 0.36)
 		ci.draw_circle(c, h * 0.5 + maxf(2.0, px * 0.1), INK)
 		ci.draw_circle(c, h * 0.5, colors[label])

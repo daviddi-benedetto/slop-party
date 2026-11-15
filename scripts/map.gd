@@ -236,11 +236,6 @@ func _build_environment() -> void:
 	env.fog_light_color = Color(0.74, 0.88, 1.0)
 	env.fog_density = 0.0016
 	env.fog_sky_affect = 0.0
-	var dbg := OS.get_cmdline_user_args()
-	if "--noglow" in dbg: env.glow_enabled = false
-	if "--nossao" in dbg: env.ssao_enabled = false
-	if "--nofog" in dbg: env.fog_enabled = false
-	if "--noadj" in dbg: env.adjustment_enabled = false
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -255,7 +250,6 @@ func _build_environment() -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	sun.directional_shadow_max_distance = 80.0
 	sun.shadow_bias = 0.06
-	if "--noshadow" in dbg: sun.shadow_enabled = false
 	add_child(sun)
 
 

@@ -100,7 +100,7 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	var s := h / 1080.0
-	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.12, 0.06, 0.25, 0.45))
+	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.12, 0.06, 0.25, 0.25))
 	if rows.is_empty():
 		return
 	var win: Dictionary = rows[0]

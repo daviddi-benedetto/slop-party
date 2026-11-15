@@ -72,7 +72,7 @@ static func _free_later(node: Node, parent: Node, time: float) -> void:
 
 ## One-shot burst of soft round particles.
 static func burst(parent: Node, pos: Vector3, color: Color, amount: int, speed: float, size: float,
-		life: float, gravity := -9.0, dir := Vector3.UP, spread := 180.0, flat := false) -> CPUParticles3D:
+		life: float, gravity := -9.0, dir := Vector3.UP, spread := 180.0, flat := false, start := true) -> CPUParticles3D:
 	_init_shared()
 	var p := CPUParticles3D.new()
 	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -96,14 +96,14 @@ static func burst(parent: Node, pos: Vector3, color: Color, amount: int, speed: 
 	p.color = color
 	parent.add_child(p)
 	p.global_position = pos
-	p.emitting = true
+	p.emitting = start
 	_free_later(p, parent, life + 0.4)
 	return p
 
 
 ## Party-popper burst of spinning coloured squares.
 static func confetti(parent: Node, pos: Vector3, amount := 40, speed := 7.0, life := 1.6) -> void:
-	var p := burst(parent, pos, Color.WHITE, amount, speed, 0.16, life, -7.0, Vector3.UP, 70.0, true)
+	var p := burst(parent, pos, Color.WHITE, amount, speed, 0.16, life, -7.0, Vector3.UP, 70.0, true, false)
 	p.color_initial_ramp = _confetti_ramp
 	p.angle_min = 0.0
 	p.angle_max = 360.0
@@ -111,6 +111,7 @@ static func confetti(parent: Node, pos: Vector3, amount := 40, speed := 7.0, lif
 	p.angular_velocity_max = 500.0
 	p.damping_min = 2.0
 	p.damping_max = 4.0
+	p.emitting = true
 
 
 ## Continuous confetti rain (victory screen). Caller owns the returned node.

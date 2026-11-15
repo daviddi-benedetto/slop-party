@@ -248,7 +248,7 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	var s := h / 1080.0
-	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.12, 0.06, 0.25, 0.4))
+	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.12, 0.06, 0.25, 0.22))
 
 	# Bouncing logo.
 	var title := "FRAGDECK"
@@ -292,7 +292,7 @@ func _draw() -> void:
 		var r := Rect2(cx, by, 320 * s, 60 * s)
 		UiKit.card(self, r, UiKit.PANEL, 30 * s, s)
 		var ox := r.position.x + 18 * s
-		ox += UiKit.prompt(self, Vector2(ox, by + 42 * s), chip[0], 28 * s) + 14 * s
+		ox += UiKit.prompt(self, Vector2(ox, by + 42 * s), chip[0], 28 * s, not pad) + 14 * s
 		UiKit.text(self, Vector2(ox, by + 41 * s), chip[1], 26 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_LEFT, -1, 600, 0.0)
 		UiKit.text(self, Vector2(r.position.x, by + 42 * s), chip[2], 30 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 24 * s)
 		cx += 340 * s

@@ -4,9 +4,13 @@ Local splitscreen first-person deathmatch for 1–6 players on one PC. Every tim
 you die you are dealt three random powerup cards and keep one for the rest of
 the match, so whoever is losing keeps getting stronger.
 
-Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript,
-no external art or audio assets: the map, textures and sounds are all generated
-in code.
+You play as a plush animal (bear, bunny, cat, dog, fox or frog) in a bright
+toy-park arena.
+
+Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript.
+The map, characters, textures, icons and sounds are all generated in code; the
+only bundled asset is the Fredoka UI font (SIL Open Font License, see
+`fonts/OFL.txt`).
 
 ## Play
 
@@ -14,8 +18,10 @@ Double-click **`Play.bat`**. It runs `build\Fragdeck.exe` if it exists,
 otherwise it runs the project from source with the bundled engine.
 
 In the lobby each player presses **A** on their own gamepad to take a seat
-(Space joins a keyboard + mouse player). Add bots with D-pad up/down, pick the
-kill target with D-pad left/right, press **Start** (or Enter) to begin.
+(Space joins a keyboard + mouse player) and picks an animal with left/right.
+**Y** (keyboard: B) cycles the number of bots, **X** (keyboard: K) cycles the
+kill target, **B** (keyboard: Backspace) leaves, and **Start** (or Enter)
+begins the match.
 
 | Action | Gamepad | Keyboard + mouse |
 |---|---|---|
@@ -26,7 +32,7 @@ kill target with D-pad left/right, press **Start** (or Enter) to begin.
 | Dash | B, LB or L-stick click | Shift or right click |
 | Reload | X | R |
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |
-| Leave match | Hold Start + Back | Esc |
+| Pause / quit to lobby | Start | Esc |
 | Toggle fullscreen (lobby) | – | F11 |
 
 Up to six gamepads are supported; one of the six seats can be keyboard + mouse
@@ -43,6 +49,7 @@ Play.bat / Edit.bat   launchers (game / Godot editor)
 project.godot         Godot project file
 main.tscn             the only scene; everything else is built in code
 scripts/              all game code (see docs/ARCHITECTURE.md)
+fonts/                Fredoka UI font + its licence
 docs/                 architecture + handoff notes
 tools/                build.bat, setup_engine.ps1
 engine/               bundled Godot editor + export templates  (not in git)

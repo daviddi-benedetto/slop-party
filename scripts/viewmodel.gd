@@ -15,7 +15,7 @@ var _rest := Vector3(0.27, -0.25, -0.58)
 func build(color: Color, layer_bit: int) -> void:
 	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	var shell := _mat(Color(0.93, 0.91, 0.88), 0.65)
-	var accent := _mat(color, 0.35)
+	var accent := _mat(color, 0.55)
 	var dark := _mat(Color(0.2, 0.17, 0.27), 0.5)
 	var plush := _mat(color.lerp(Color(1, 0.97, 0.9), 0.3), 0.95)
 	plush.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
@@ -24,22 +24,22 @@ func build(color: Color, layer_bit: int) -> void:
 	var glow := _mat(color.lerp(Color.WHITE, 0.4), 0.2)
 	glow.emission_enabled = true
 	glow.emission = color.lerp(Color.WHITE, 0.3)
-	glow.emission_energy_multiplier = 1.4
+	glow.emission_energy_multiplier = 0.6
 
 	var body := CapsuleMesh.new()
 	body.radius = 0.055
 	body.height = 0.4
-	_part(body, shell, Vector3(0, 0, 0), layer_bit).rotation.x = PI / 2
+	_part(body, accent, Vector3(0, 0, 0), layer_bit).rotation.x = PI / 2
 	var ring := CylinderMesh.new()
 	ring.top_radius = 0.07
 	ring.bottom_radius = 0.07
 	ring.height = 0.07
-	_part(ring, accent, Vector3(0, 0, -0.15), layer_bit).rotation.x = PI / 2
+	_part(ring, shell, Vector3(0, 0, -0.15), layer_bit).rotation.x = PI / 2
 	var ring2 := CylinderMesh.new()
 	ring2.top_radius = 0.064
 	ring2.bottom_radius = 0.064
 	ring2.height = 0.03
-	_part(ring2, accent, Vector3(0, 0, 0.1), layer_bit).rotation.x = PI / 2
+	_part(ring2, shell, Vector3(0, 0, 0.1), layer_bit).rotation.x = PI / 2
 	var nozzle := CylinderMesh.new()
 	nozzle.top_radius = 0.036
 	nozzle.bottom_radius = 0.046
@@ -48,7 +48,7 @@ func build(color: Color, layer_bit: int) -> void:
 	var sphere := SphereMesh.new()
 	sphere.radius = 1.0
 	sphere.height = 2.0
-	_part(sphere, glow, Vector3(0, 0.07, 0.0), layer_bit).scale = Vector3(0.045, 0.045, 0.09)
+	_part(sphere, glow, Vector3(0, 0.065, -0.02), layer_bit).scale = Vector3(0.03, 0.03, 0.07)
 	_part(sphere, accent, Vector3(0, 0.055, -0.1), layer_bit).scale = Vector3(0.018, 0.03, 0.018)
 	var grip := CapsuleMesh.new()
 	grip.radius = 0.034
@@ -112,7 +112,7 @@ func update(delta: float, p) -> void:
 		var dip := sin(f * PI)
 		pos.y -= dip * 0.12
 		rot.x -= dip * 0.5
-		rot.z += smoothstep(0.15, 0.85, f) * TAU
+		rot.z += sin(f * TAU) * 0.35
 	position = pos
 	rotation = rot
 
