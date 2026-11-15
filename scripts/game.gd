@@ -39,6 +39,7 @@ const UiKit = preload("res://scripts/ui_kit.gd")
 const Viewmodel = preload("res://scripts/viewmodel.gd")
 const Results = preload("res://scripts/results.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
+const Pickup = preload("res://scripts/pickup.gd")
 
 var config := {}
 var world: Node3D
@@ -118,7 +119,26 @@ func _ready() -> void:
 		var pos: Vector3 = spots[i % spots.size()]
 		players[i].spawn(pos, _yaw_to_centre(pos))
 	map.build_nav()
+	for spot in map.pickup_spots:
+		var pk = Pickup.new()
+		pk.kind = spot[0]
+		pk.game = self
+		pk.position = spot[1]
+		world.add_child(pk)
+	_prewarm()
 	_last_usec = Time.get_ticks_usec()
+
+
+## Play every effect once, out of sight, while the countdown runs, so the
+## first real explosion or confetti burst does not hitch on shader setup.
+func _prewarm() -> void:
+	var p := Vector3(0, -60, 0)
+	Fx.flash(world, p, Color.WHITE, 0.1, 0.5, 0.2)
+	Fx.ring(world, p, Color.WHITE, 0.1, 0.5, 0.2)
+	Fx.burst(world, p, Color.WHITE, 4, 1.0, 0.2, 0.3)
+	Fx.confetti(world, p, 4)
+	Fx.puff(world, p)
+	Fx.damage_number(world, p, 1.0, false, 0)
 
 
 func _exit_tree() -> void:
@@ -474,6 +494,7 @@ func on_player_died(victim, attacker) -> void:
 		attacker.kills += 1
 		attacker.kill_flash = 1.0
 		attacker.kill_name = victim.pname
+		attacker.on_kill()
 		attacker.shake = maxf(attacker.shake, 0.4)
 		if not attacker.is_bot and attacker.brain.device >= 0 and Settings.v("rumble"):
 			Input.start_joy_vibration(attacker.brain.device, 0.2, 0.9, 0.25)

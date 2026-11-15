@@ -12,7 +12,9 @@ has not been verified.
 - ROUNDS-style progression: **on every death** the dead player is shown three
   random cards and must pick one before respawning. Cards permanently modify
   that player's stats for the match and stack.
-- Everyone has the same blaster; cards are the only source of variety.
+- Seven weapons (everyone starts with the Blaster). Weapons come from weapon
+  cards in the deck and from pickup pads on the map; health pads too.
+- 40 stat cards plus the weapon cards.
 - Art direction: bright, soft, toy-like party game. Plush animal characters,
   rounded pastel geometry, chunky "sticker" UI with the Fredoka font.
 - Engine: Godot 4.7.2, Forward+ renderer, GDScript only. The only imported
@@ -78,10 +80,13 @@ parse error in one script.
 | `scripts/map.gd` | Builds the arena, materials, lighting, scenery, spawn points, jump pads, bot nav graph. |
 | `scripts/player.gd` | `CharacterBody3D`: movement, weapon, health, status effects, feedback values, death → card pick → respawn. |
 | `scripts/character.gd` | The plush animal model (6 species) and its procedural animation. |
-| `scripts/viewmodel.gd` | First-person toy blaster and its sway/recoil/reload animation. |
-| `scripts/stats.gd` | Plain data object of per-player stats that cards modify. |
-| `scripts/cards.gd` | The card deck (name, icon, rarity, description, `apply` lambda) and weighted draw. |
-| `scripts/bullet.gd` | Ray-stepped projectile; bounce, homing, explosion, poison, frost, knockback, headshots. |
+| `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
+| `scripts/viewmodel.gd` | Toy gun model per weapon style; first-person sway/recoil/reload animation; also used as the pickup prop. |
+| `scripts/pickup.gd` | Weapon and health pickup pads. |
+| `scripts/sky.gd` | Sky shader (gradient, sun halo, painted clouds) shared by the arena and the stage. |
+| `scripts/stats.gd` | Per-player stats, rebuilt from defaults + weapon + cards. |
+| `scripts/cards.gd` | The card deck (stat cards and weapon cards) and the weighted draw. |
+| `scripts/bullet.gd` | Ray-stepped projectile; bounce, pierce, homing, explosion, grenade fuse, smoke, poison, frost, knockback, headshots. |
 | `scripts/input_source.gd` | Human input for one device (keyboard+mouse or one gamepad). |
 | `scripts/bot_brain.gd` | AI that exposes the same interface as `input_source.gd`. |
 | `scripts/hud.gd` | Per-viewport HUD and the animated card picker. |
@@ -220,6 +225,19 @@ ears, tail and face. `animate()` drives walk cycle, bob, lean, landing squash
 (a damped spring), blinking, ear/tail wiggle and the `cheer`/`sad` emotes.
 `ui_kit.portrait()` draws the matching 2D face used across the UI.
 
+### Rendering extras
+
+- **Sky** (`sky.gd`): a sky shader with no `TIME` dependency, so its lighting
+  cubemap is rendered once.
+- **Surface detail**: `map.gd::_texture` also produces a height image that is
+  converted to a normal map (`_normals`), so seams and grain catch the light.
+  Characters get a fine felt normal map (`character.gd::_felt`).
+- **Grass** (`map.gd::_grass`): 60,000 single-triangle blades in one
+  MultiMesh, bent by a wind vertex shader. Flowers are a second MultiMesh,
+  petals a CPUParticles3D. All three are skipped on Low scenery detail.
+- **Warm-up** (`game.gd::_prewarm`): every effect is played once out of sight
+  during the countdown so the first real one does not hitch.
+
 ### Map (`map.gd`)
 
 Built from `_box()` (rounded-edge mesh, plain box collider), `_wedge()`
@@ -307,15 +325,44 @@ farthest from living enemies → `spawn()`.
 - Feedback fields (`hit_marker`, `hurt_flash`, `shake`, `fov_kick`,
   `damage_dirs`, …) are written here and read by `hud.gd` / `game.gd`.
 
-### Cards (`cards.gd`, `stats.gd`)
+### Stats, weapons and cards (`stats.gd`, `weapons.gd`, `cards.gd`)
+
+A player's `stats` object is never edited in place. `player.gd::rebuild_stats`
+builds a fresh one every time something changes:
+
+    defaults (stats.gd)  ->  Weapons.apply(player.weapon)  ->  each card in player.picked
+
+So swapping weapon keeps every card, and cards work with every weapon (a
+"+50% magazine" card gives the 2-rocket Boomer 3 rockets). Anything written
+straight into `player.stats` is lost at the next rebuild.
 
 A card is `{name, icon, rarity, desc, apply}` where `apply` is `func(stats)`
-and `icon` names a pictogram in `ui_kit.icon()`.
+and `icon` names a pictogram in `ui_kit.icon()`. Weapon cards (rarity
+`WEAPON`, generated from `Weapons.LIST`) carry a `weapon` id instead and set
+`player.weapon`.
 **To add a card, append one entry to `deck()`.** If it needs a new mechanic,
 add a field to `stats.gd`, copy it in `bullet.gd::setup` if it is a bullet
 property, and implement it where relevant (`bullet.gd` for on-hit effects,
-`player.gd` for movement/defence). Draw weights: common 60, rare 30, epic 12.
-The three offered cards are always distinct; picked cards stack without limit.
+`player.gd` for movement/defence/on-KO).
+**To add a weapon,** append to `Weapons.LIST`, add its profile in
+`Weapons.apply`, and add a branch for its `style` in
+`viewmodel.gd::_build_gun`; its card appears automatically.
+
+Draw weights: common 60, rare 30, epic 12; all weapon cards together are about
+15% of each draw, at most one per hand, never the weapon already held. A hand
+is 3 cards (more with the Lucky Draw card).
+
+Where the less obvious card mechanics live in `player.gd`: bubble shield and
+ghost dash and thorns and second wind in `take_damage`; adrenaline in the
+movement/fire code; last-round and rampage bonuses in `_shoot`; scavenger and
+fresh mag in `on_kill`.
+
+### Pickups (`pickup.gd`)
+
+`map.gd` lists `pickup_spots`; `game.gd` creates a `Pickup` at each. Weapon
+pads hold a random non-default weapon and re-roll 16 s after being taken;
+health pads restore 50 and return after 12 s. Bots only collect them by
+walking over them.
 
 ### Bullets (`bullet.gd`)
 
@@ -346,14 +393,16 @@ re-path when stuck. Bots cannot use the jump pads or roofs deliberately.
 Verified by automated runs on an RTX 2070 at 1920×1080:
 - Lobby, Options screen, match (2/3/4/5/6 views), card picker, pause menu and
   victory podium all render with no script errors.
-- 6-way splitscreen with vsync off and no frame cap: roughly 230 FPS on the
-  High preset, roughly 350 FPS on Low.
+- 6-way splitscreen with vsync off and no frame cap: roughly 200 FPS on the
+  High preset (measured after the grass/sky/normal-map upgrade).
 - A settings file is read and applied (Low preset, wide FOV, hard bots).
 - Bots fight, die, pick cards, respawn; a match reaches the kill target, shows
   the podium and returns to the lobby.
 - The exported `build\Fragdeck.exe` starts and plays.
 
 **Not verified:**
+- Weapon balance. Every weapon and card runs without errors in bot matches,
+  but the numbers in `weapons.gd` and `cards.gd` are first guesses.
 - Anything audible. The music and sound effects are generated without errors
   but nobody has listened to them; expect to tune `sfx.gd` by ear.
 - The Options screen was only rendered, not operated: changing values at

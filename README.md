@@ -7,6 +7,14 @@ the match, so whoever is losing keeps getting stronger.
 You play as a plush animal (bear, bunny, cat, dog, fox or frog) in a bright
 toy-park arena.
 
+- **7 weapons:** Blaster, Scatter (shotgun), Zapper (rapid fire), Boomer
+  (rockets), Rail (piercing sniper), Lobber (bouncing grenades) and Bubbler
+  (homing bubbles). Swap by picking a weapon card or walking over a purple
+  weapon pad; your powerups carry over.
+- **40 powerup cards** in three rarities, from simple stat boosts to bubble
+  shields, ricochets, piercing rounds and a second wind.
+- **Pickups:** weapon pads and pink health pads around the arena.
+
 Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript.
 The map, characters, textures, icons, sounds and music are all generated in code; the
 only bundled asset is the Fredoka UI font (SIL Open Font License, see

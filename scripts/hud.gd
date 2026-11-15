@@ -100,7 +100,7 @@ func _sig_ammo():
 	if not player.alive:
 		return [0]
 	var reloading: bool = player.reload_left > 0.0
-	return [size, player.ammo, player.stats.mag_size,
+	return [size, player.ammo, player.stats.mag_size, player.weapon, player.shield_ready(),
 		int(player.reload_left / player.stats.reload_time * 50.0) if reloading else -1,
 		int(player.dash_cd / player.stats.dash_cooldown * 40.0)]
 
@@ -232,6 +232,16 @@ func _draw_ammo(ci: Control) -> void:
 		return
 	var w := size.x
 	var h := size.y
+	# Weapon name tag (and bubble shield status) above the ammo read-out.
+	var wname: String = player.weapon_name().to_upper()
+	var tag_w := UiKit.text_width(wname, 12 * s) + 22 * s
+	var tag := Rect2(w - 20 * s - tag_w, h - 106 * s, tag_w, 20 * s)
+	UiKit.panel(ci, tag, Cards.RARITY_COLORS[Cards.WEAPON], 10 * s, UiKit.INK, 2 * s)
+	ci.draw_string(UiKit.font(700), tag.position + Vector2(0, 14.5 * s), wname, HORIZONTAL_ALIGNMENT_CENTER, tag_w, maxi(8, int(12 * s)), Color.WHITE)
+	if player.stats.shield_cd > 0.0:
+		var ready_col := Color(0.45, 0.9, 1.0) if player.shield_ready() else Color(0.36, 0.3, 0.46)
+		ci.draw_circle(Vector2(tag.position.x - 16 * s, tag.get_center().y), 11 * s, UiKit.INK)
+		UiKit.icon(ci, "shield", Vector2(tag.position.x - 16 * s, tag.get_center().y), 7 * s, ready_col)
 	# --- bottom right: ammo, reload, dash ---
 	var ax := w - 20.0 * s
 	if player.reload_left > 0.0:
@@ -246,7 +256,7 @@ func _draw_ammo(ci: Control) -> void:
 		_t(Vector2(0, h - 24 * s), "%d" % player.ammo, 42, Color(1.0, 0.45, 0.4) if low else Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, ax - mw - 4 * s, 700, ci)
 		# Bullet pips.
 		var n: int = player.stats.mag_size
-		if n <= 20:
+		if n <= 16:
 			var pw := 6.0 * s
 			var pg := 3.0 * s
 			var x0 := ax - n * (pw + pg) + pg
@@ -296,7 +306,7 @@ func _draw_dead(w: float, h: float) -> void:
 	var n: int = player.card_choices.size()
 	if n == 0:
 		return
-	var cw := minf(w * 0.27, 176.0 * s)
+	var cw := minf(w * 0.86 / n - 6 * s, 176.0 * s)
 	var ch := cw * 1.36
 	var gap := cw * 0.1
 	var x0 := (w - (cw * n + gap * (n - 1))) * 0.5 + cw * 0.5
@@ -442,6 +452,10 @@ func _big(centre: Vector2, text: String, px: float, color: Color, scl: float, ro
 
 func _draw_banners(w: float, h: float) -> void:
 	var c := Vector2(w * 0.5, h * 0.36)
+	# Short notices (weapon pickup, second wind).
+	if player.notice_t > 0.0 and player.alive:
+		var nt: float = 1.6 - player.notice_t
+		_big(Vector2(w * 0.5, h * 0.66), player.notice, 20, Color(0.8, 0.95, 1.0, clampf(player.notice_t * 4.0, 0.0, 1.0)), UiKit.back_out(clampf(nt * 7.0, 0.0, 1.0)))
 	# Kill confirmation.
 	if player.kill_flash > 0.0 and player.alive:
 		var t: float = 1.0 - player.kill_flash

@@ -21,6 +21,7 @@ const Bullet = preload("res://scripts/bullet.gd")
 const Fx = preload("res://scripts/fx.gd")
 const Character = preload("res://scripts/character.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
+const Weapons = preload("res://scripts/weapons.gd")
 
 const EYE_HEIGHT := 1.6
 const GRAVITY := 22.0
@@ -59,7 +60,9 @@ var game
 
 # State
 var stats = Stats.new()
-var cards: Array = []            # names of every card picked so far
+var weapon := 0                  # index into weapons.gd LIST
+var picked: Array = []           # stat cards picked so far (card dictionaries)
+var cards: Array = []            # names of every card picked so far (incl. weapons)
 var card_icons: Array = []       # [icon, rarity] per picked card, for the HUD
 var health := 100.0
 var health_ghost := 100.0        # trails behind health for the HUD bar
@@ -82,6 +85,11 @@ var poison_dps := 0.0
 var poison_src = null
 var slow_left := 0.0
 var slow_amount := 0.0
+var shield_timer := 0.0           # > 0 while the bubble shield recharges
+var second_wind_left := 0
+var kills_life := 0
+var notice := ""                 # short HUD message ("GOT SCATTER!")
+var notice_t := 0.0
 
 # Card selection while dead
 var card_choices: Array = []
@@ -113,6 +121,7 @@ var _shape: CollisionShape3D
 var _was_floor := true
 var _fall_speed := 0.0
 var _step_dist := 0.0
+var _shield_mesh: MeshInstance3D
 
 
 func body_layer_bit() -> int:
@@ -176,11 +185,81 @@ func _ready() -> void:
 	health_bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(health_bar)
 
+	# Bubble shield (only shown when a card grants one and it is charged).
+	var bubble := SphereMesh.new()
+	bubble.radius = 1.2
+	bubble.height = 2.4
+	var bmat := StandardMaterial3D.new()
+	bmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	bmat.albedo_color = Color(0.5, 0.9, 1.0, 0.16)
+	bmat.rim_enabled = true
+	bmat.rim = 1.0
+	bmat.roughness = 0.1
+	bmat.emission_enabled = true
+	bmat.emission = Color(0.4, 0.8, 1.0)
+	bmat.emission_energy_multiplier = 0.35
+	bmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_shield_mesh = MeshInstance3D.new()
+	_shield_mesh.mesh = bubble
+	_shield_mesh.material_override = bmat
+	_shield_mesh.position.y = 0.95
+	_shield_mesh.layers = body_layer_bit()
+	_shield_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_shield_mesh.visible = false
+	add_child(_shield_mesh)
+
 	_set_alive_visuals(false)
+
+
+## Defaults -> weapon -> every picked card. Call after anything that changes
+## the weapon or the card list.
+func rebuild_stats() -> void:
+	var s = Stats.new()
+	Weapons.apply(weapon, s)
+	for card in picked:
+		card.apply.call(s)
+	stats = s
+	ammo = mini(ammo, stats.mag_size)
+	character.set_weapon(weapon)
+
+
+func weapon_name() -> String:
+	return Weapons.LIST[weapon].name
+
+
+## Swap weapon mid-life (pickup pads). Cards are kept.
+func pick_weapon(id: int) -> void:
+	weapon = id
+	rebuild_stats()
+	ammo = stats.mag_size
+	reload_left = 0.0
+	fire_cd = 0.25
+	say("GOT %s!" % weapon_name().to_upper())
+
+
+func say(text: String) -> void:
+	notice = text
+	notice_t = 1.6
+
+
+func shield_ready() -> bool:
+	return stats.shield_cd > 0.0 and shield_timer <= 0.0
+
+
+## Called by game.gd for every credited KO.
+func on_kill() -> void:
+	kills_life += 1
+	if stats.kill_heal > 0.0:
+		heal(stats.kill_heal)
+	if stats.kill_reload and alive:
+		ammo = stats.mag_size
+		reload_left = 0.0
 
 
 func _set_alive_visuals(on: bool) -> void:
 	character.visible = on
+	if not on:
+		_shield_mesh.visible = false
 	name_label.visible = on
 	health_bar.visible = on
 	collision_layer = PLAYER_MASK if on else 0
@@ -207,6 +286,9 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 	card_choices = []
 	damage_dirs.clear()
 	respawn_pending = false
+	shield_timer = 0.0
+	second_wind_left = stats.second_wind
+	kills_life = 0
 	alive = true
 	spawn_time = 0.0
 	_was_floor = true
@@ -237,6 +319,7 @@ func _process(delta: float) -> void:
 	fov_kick = maxf(0.0, fov_kick - delta * 3.5)
 	land_dip = maxf(0.0, land_dip - delta * 5.0)
 	muzzle_flash = maxf(0.0, muzzle_flash - delta * 16.0)
+	notice_t = maxf(0.0, notice_t - delta)
 	spawn_time += delta
 	if health_ghost > health:
 		health_ghost = maxf(health, health_ghost - delta * stats.max_health * 0.7)
@@ -268,6 +351,9 @@ func _physics_process(delta: float) -> void:
 	spawn_protect = maxf(0.0, spawn_protect - delta)
 	since_damage += delta
 	slow_left = maxf(0.0, slow_left - delta)
+	shield_timer = maxf(0.0, shield_timer - delta)
+	_shield_mesh.visible = shield_ready()
+	var rush: float = stats.adrenaline if health < stats.max_health * 0.4 else 0.0
 	if stats.regen > 0.0:
 		health = minf(stats.max_health, health + stats.regen * delta)
 	elif since_damage > 6.0:
@@ -281,7 +367,7 @@ func _physics_process(delta: float) -> void:
 	# --- movement ---
 	var input: Vector2 = brain.move
 	var wish := Basis(Vector3.UP, yaw) * Vector3(input.x, 0.0, -input.y)
-	var speed: float = stats.move_speed * (1.0 - (slow_amount if slow_left > 0.0 else 0.0))
+	var speed: float = stats.move_speed * (1.0 + rush) * (1.0 - (slow_amount if slow_left > 0.0 else 0.0))
 	var on_floor := is_on_floor()
 	var horiz := Vector3(velocity.x, 0.0, velocity.z)
 	horiz = horiz.move_toward(wish * speed, (70.0 if on_floor else 22.0) * delta)
@@ -292,7 +378,7 @@ func _physics_process(delta: float) -> void:
 			Fx.puff(game.world, global_position + Vector3(0, 0.1, 0), Color(1, 1, 1, 0.6), 6, 0.45)
 			Sfx.play_at("land", global_position, -12.0)
 	else:
-		velocity.y -= GRAVITY * delta
+		velocity.y -= GRAVITY * stats.gravity_mult * delta
 		_fall_speed = -velocity.y
 	_was_floor = on_floor
 	if brain.jump:
@@ -346,15 +432,20 @@ func _physics_process(delta: float) -> void:
 		Sfx.play_at("reload", global_position, -6.0)
 	elif brain.fire and fire_cd <= 0.0:
 		_shoot()
+		fire_cd = stats.fire_interval / (1.0 + rush)
 
 
 func _shoot() -> void:
+	# Per-shot damage bonuses.
+	var mult: float = 1.0 + minf(kills_life, 5) * stats.rampage
+	if ammo == 1 and stats.overcharge > 0.0 and stats.mag_size > 1:
+		mult *= 1.0 + stats.overcharge
 	ammo -= 1
 	fire_cd = stats.fire_interval
 	recoil = 1.0
 	muzzle_flash = 1.0
-	shake = maxf(shake, 0.12)
-	Sfx.play_at("shoot", global_position, -5.0, clampf(1.15 - stats.damage / 160.0, 0.6, 1.2))
+	shake = maxf(shake, 0.1 * stats.recoil_kick)
+	Sfx.play_at("shoot", global_position, -5.0 + (2.0 if stats.recoil_kick > 1.5 else 0.0), stats.shoot_pitch)
 
 	var eye := eye_position()
 	var basis := aim_basis()
@@ -376,7 +467,7 @@ func _shoot() -> void:
 		var dir := (target - muzzle).normalized()
 		dir = (dir + basis.x * randf_range(-s, s) + basis.y * randf_range(-s, s)).normalized()
 		var b = Bullet.new()
-		b.setup(self, muzzle, dir)
+		b.setup(self, dir, mult)
 		game.world.add_child(b)
 		b.global_position = muzzle
 		b.orient()
@@ -399,7 +490,19 @@ func heal(amount: float) -> void:
 func take_damage(amount: float, attacker, silent := false, crit := false) -> float:
 	if not alive or game.frozen:
 		return 0.0
-	if spawn_protect > 0.0 and amount < 9999.0:
+	var lethal_zone: bool = amount >= 9999.0      # falling out of the world
+	if spawn_protect > 0.0 and not lethal_zone:
+		return 0.0
+	if stats.dash_invuln and dash_left > 0.0 and not lethal_zone:
+		return 0.0
+	if not silent and not lethal_zone and shield_ready():
+		# The bubble eats this hit and starts recharging.
+		shield_timer = stats.shield_cd
+		Fx.ring(game.world, chest_position(), Color(0.5, 0.9, 1.0, 0.9), 0.4, 1.8, 0.3)
+		Fx.burst(game.world, chest_position(), Color(0.6, 0.9, 1.0), 10, 5.0, 0.2, 0.35, -2.0)
+		Sfx.play_at("bounce", global_position, -4.0, 0.6)
+		if attacker != null and is_instance_valid(attacker):
+			attacker.hit_marker = 0.6
 		return 0.0
 	amount *= stats.damage_taken
 	health -= amount
@@ -414,6 +517,8 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 			Input.start_joy_vibration(brain.device, 0.4, 0.7, 0.18)
 		if has_attacker:
 			damage_dirs.append([attacker.global_position, 1.2])
+			if stats.thorns > 0.0:
+				attacker.take_damage(amount * stats.thorns, self, true)
 	if has_attacker:
 		if not silent:
 			attacker.hit_marker = 1.0
@@ -425,7 +530,15 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 		if attacker.stats.lifesteal > 0.0:
 			attacker.heal(amount * attacker.stats.lifesteal)
 	if health <= 0.0:
-		_die(attacker)
+		if second_wind_left > 0 and not lethal_zone:
+			second_wind_left -= 1
+			health = 1.0
+			spawn_protect = 1.0
+			say("SECOND WIND!")
+			Fx.ring(game.world, chest_position(), Color(1.0, 0.85, 0.3, 0.9), 0.3, 2.0, 0.4)
+			Sfx.play_at("join", global_position, -4.0)
+		else:
+			_die(attacker)
 	return amount
 
 
@@ -447,8 +560,8 @@ func _die(attacker) -> void:
 	_set_alive_visuals(false)
 	velocity = Vector3.ZERO
 	killer = attacker if (attacker != null and is_instance_valid(attacker) and attacker != self) else null
-	card_choices = Cards.draw(3)
-	card_sel = 1
+	card_choices = Cards.draw(stats.card_draw, weapon)
+	card_sel = mini(1, card_choices.size() - 1)
 	dead_time = 0.0
 	pick_time = 0.0
 	respawn_pending = false
@@ -485,7 +598,11 @@ func _dead_tick(delta: float) -> void:
 
 func _pick_card(i: int) -> void:
 	var card: Dictionary = card_choices[i]
-	card.apply.call(stats)
+	if card.has("weapon"):
+		weapon = card.weapon
+	else:
+		picked.append(card)
+	rebuild_stats()
 	cards.append(card.name)
 	card_icons.append([card.icon, card.rarity])
 	card_sel = i

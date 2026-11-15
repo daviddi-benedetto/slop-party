@@ -84,7 +84,9 @@ func update_buttons(player, delta: float) -> void:
 		to_t = to_t.normalized()
 		var side := to_t.cross(Vector3.UP) * _strafe
 		var fwd := 0.0
-		if dist > 16.0:
+		# Short-range weapons (Scatter) have to get close.
+		var reach: float = player.stats.bullet_speed * player.stats.bullet_life
+		if dist > minf(16.0, reach * 0.45):
 			fwd = 1.0
 		elif dist < 6.0:
 			fwd = -1.0

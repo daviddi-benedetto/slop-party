@@ -18,12 +18,16 @@ extends Node3D
 ## height layers, so space under decks counts too), links neighbours that are
 ## actually walkable, and keeps the largest connected component in an AStar3D.
 
+const SkyKit = preload("res://scripts/sky.gd")
+
 const HALF_X := 32.0
 const HALF_Z := 24.0
 const NAV_STEP := 2.0
 const WALL_H := 4.5
 
 var spawn_points: Array = []      # Array of Vector3
+var pickup_spots: Array = []      # [["weapon" | "health", Vector3], ...] read by game.gd
+var _normals := {}                # texture kind -> normal map
 var nav := AStar3D.new()
 var nav_ready := false
 var _nav_ids := PackedInt64Array()
@@ -79,15 +83,15 @@ func _process(delta: float) -> void:
 
 func _make_materials() -> void:
 	_mats["grass"] = _mat(Color(0.5, 0.8, 0.38), _texture("soft"), 0.07)
-	_mats["path"] = _mat(Color(1.0, 0.88, 0.62), _texture("soft"), 0.11)
-	_mats["wall"] = _mat(Color(1.0, 0.94, 0.8), _texture("panels"), 0.25)
+	_mats["path"] = _mat(Color(1.0, 0.88, 0.62), _texture("soft"), 0.11, "soft")
+	_mats["wall"] = _mat(Color(1.0, 0.94, 0.8), _texture("panels"), 0.25, "panels")
 	_mats["coral"] = _mat(Color(1.0, 0.47, 0.42), null, 1.0)
-	_mats["stone"] = _mat(Color(0.93, 0.91, 0.96), _texture("panels"), 0.25)
+	_mats["stone"] = _mat(Color(0.93, 0.91, 0.96), _texture("panels"), 0.25, "panels")
 	_mats["teal"] = _mat(Color(0.16, 0.74, 0.72), null, 1.0)
-	_mats["wood"] = _mat(Color(1.0, 0.75, 0.42), _texture("planks"), 0.5)
+	_mats["wood"] = _mat(Color(1.0, 0.75, 0.42), _texture("planks"), 0.5, "planks")
 	_mats["blue"] = _mat(Color(0.26, 0.56, 1.0), null, 1.0)
-	_mats["pink"] = _mat(Color(1.0, 0.62, 0.7), _texture("bricks"), 0.4)
-	_mats["roof"] = _mat(Color(0.5, 0.42, 0.92), _texture("planks"), 0.35)
+	_mats["pink"] = _mat(Color(1.0, 0.62, 0.7), _texture("bricks"), 0.4, "bricks")
+	_mats["roof"] = _mat(Color(0.5, 0.42, 0.92), _texture("planks"), 0.35, "planks")
 	_mats["block_r"] = _mat(Color(1.0, 0.4, 0.4), _texture("soft"), 0.3)
 	_mats["block_y"] = _mat(Color(1.0, 0.82, 0.25), _texture("soft"), 0.3)
 	_mats["block_b"] = _mat(Color(0.3, 0.66, 1.0), _texture("soft"), 0.3)
@@ -119,10 +123,14 @@ func _make_materials() -> void:
 	_mats["pad"] = pad
 
 
-func _mat(tint: Color, tex: Texture2D, uv_scale: float) -> StandardMaterial3D:
+func _mat(tint: Color, tex: Texture2D, uv_scale: float, bump := "") -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = tint
 	m.roughness = 0.9
+	if bump != "" and _normals.has(bump):
+		m.normal_enabled = true
+		m.normal_texture = _normals[bump]
+		m.normal_scale = 0.9
 	if tex != null:
 		m.albedo_texture = tex
 		m.uv1_triplanar = true
@@ -167,6 +175,7 @@ func _texture(kind: String) -> ImageTexture:
 		return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fy)
 
 	var img := Image.create(N, N, true, Image.FORMAT_RGB8)
+	var himg := Image.create(N, N, false, Image.FORMAT_RGB8)
 	for py in N:
 		for px in N:
 			var u := float(px) / N
@@ -174,6 +183,7 @@ func _texture(kind: String) -> ImageTexture:
 			var n: float = noise.call(u, v, 4) * 0.65 + noise.call(u, v, 8) * 0.35
 			var val := 0.9 + n * 0.1
 			var col := Color(val, val, val)
+			var seam := false
 			match kind:
 				"soft":
 					val = 0.84 + n * 0.16
@@ -181,12 +191,14 @@ func _texture(kind: String) -> ImageTexture:
 				"panels":
 					if px % 128 < 3 or py % 128 < 3:
 						val *= 0.86
+						seam = true
 					col = Color(val, val, val)
 				"planks":
 					var plank := py / 32
 					val *= 0.92 + 0.08 * lattice[plank % (P * P)]
 					if py % 32 < 3 or (px + plank * 67) % 128 < 3:
 						val *= 0.8
+						seam = true
 					col = Color(val, val, val)
 				"bricks":
 					var row := py / 32
@@ -194,12 +206,20 @@ func _texture(kind: String) -> ImageTexture:
 					val *= 0.93 + 0.07 * lattice[(row * 5 + ((px + (row % 2) * 32) / 64) * 3) % (P * P)]
 					if py % 32 < 3 or bx < 3:
 						val = 1.0
+						seam = true
 					col = Color(val, val, val)
 				"stripes":
 					var band := ((px + py) % 128) < 64
 					col = Color(1.0, 0.36, 0.38) if band else Color(1.0, 0.98, 0.94)
 			img.set_pixel(px, py, col)
+			var hgt := 0.0 if seam else 0.75 + n * 0.25
+			himg.set_pixel(px, py, Color(hgt, hgt, hgt))
 	img.generate_mipmaps()
+	# Height -> normal map, so seams and grain catch the light.
+	if kind != "stripes":
+		himg.bump_map_to_normal_map(5.0 if kind != "soft" else 2.0)
+		himg.generate_mipmaps(true)
+		_normals[kind] = ImageTexture.create_from_image(himg)
 	return ImageTexture.create_from_image(img)
 
 
@@ -208,20 +228,12 @@ func _texture(kind: String) -> ImageTexture:
 # --------------------------------------------------------------------------
 
 func _build_environment() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.2, 0.5, 0.98)
-	sky_mat.sky_horizon_color = Color(0.72, 0.9, 1.0)
-	sky_mat.sky_curve = 0.12
-	sky_mat.ground_horizon_color = Color(0.72, 0.9, 1.0)
-	sky_mat.ground_bottom_color = Color(0.45, 0.75, 0.5)
-	sky_mat.sun_angle_max = 12.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
+	var sky: Sky = SkyKit.make()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.95
+	env.ambient_light_energy = 0.7
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_white = 1.0
 	env.ssao_enabled = true
@@ -233,7 +245,7 @@ func _build_environment() -> void:
 	env.glow_hdr_threshold = 1.5
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.2
-	env.adjustment_contrast = 1.08
+	env.adjustment_contrast = 1.14
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.74, 0.88, 1.0)
 	env.fog_density = 0.0004
@@ -253,6 +265,13 @@ func _build_environment() -> void:
 	sun.directional_shadow_max_distance = 80.0
 	sun.shadow_bias = 0.06
 	add_child(sun)
+	# Cool fill light from the opposite side keeps shaded faces readable.
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-30.0, -150.0, 0.0)
+	fill.light_color = Color(0.7, 0.82, 1.0)
+	fill.light_energy = 0.16
+	fill.light_specular = 0.0
+	add_child(fill)
 	_env = env
 	_sun = sun
 	_on_settings()
@@ -339,6 +358,10 @@ func _build_geometry() -> void:
 			Vector3(24, 0.1, -21.5), Vector3(-23, 0.1, 13)]:
 		spawn_points.append(p)
 		spawn_points.append(Vector3(-p.x, p.y, -p.z))
+	for spot in [["weapon", Vector3(0, 3.0, 3.9)], ["weapon", Vector3(-5.0, 3.0, 19.6)],
+			["health", Vector3(-25.6, 0.0, 10.4)], ["health", Vector3(20.0, 0.0, 2.0)]]:
+		pickup_spots.append(spot)
+		pickup_spots.append([spot[0], Vector3(-spot[1].x, spot[1].y, -spot[1].z)])
 
 
 func _collider(pos: Vector3, size: Vector3, yaw := 0.0) -> void:
@@ -637,6 +660,8 @@ func _build_scenery() -> void:
 
 	if rich:
 		_flowers()
+		_grass()
+		_petals()
 
 	# Bunting across the corners and balloons on the roofs.
 	for sgn in [1.0, -1.0]:
@@ -645,6 +670,108 @@ func _build_scenery() -> void:
 	for p in [Vector3(-18.6, 3.6, 8.6), Vector3(-27.4, 3.6, 17.4), Vector3(7.6, 3.0, 21.6), Vector3(16, 4.3, -9.2)]:
 		_balloon_bunch(p)
 		_balloon_bunch(Vector3(-p.x, p.y, -p.z))
+
+
+## True when a ground decoration at `p` would sit on a path or inside a hut.
+func _off_lawn(p: Vector3) -> bool:
+	if absf(p.x) < 3.8 or absf(p.z) < 3.8:
+		return true
+	for sgn in [1.0, -1.0]:
+		if absf(p.x - sgn * -23.0) < 4.7 and absf(p.z - sgn * 13.0) < 4.7:
+			return true
+	return false
+
+
+const GRASS_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, diffuse_lambert_wrap, specular_disabled;
+uniform vec3 base : source_color = vec3(0.36, 0.68, 0.3);
+uniform vec3 tip : source_color = vec3(0.58, 0.88, 0.42);
+void vertex() {
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float bend = 1.0 - UV.y;
+	float wave = sin(TIME * 1.7 + wp.x * 0.55 + wp.z * 0.8) + 0.5 * sin(TIME * 2.9 + wp.x * 1.3);
+	VERTEX.x += wave * 0.045 * bend;
+	VERTEX.z += wave * 0.03 * bend;
+	NORMAL = vec3(0.0, 1.0, 0.0);
+}
+void fragment() {
+	ALBEDO = mix(base, tip, 1.0 - UV.y) * COLOR.rgb;
+	ROUGHNESS = 1.0;
+}
+"""
+
+
+## Tens of thousands of swaying grass blades in one draw call. Each blade is
+## a single triangle; the vertex shader bends the tips in the wind and forces
+## the normal upward so the lawn shades like the ground beneath it.
+func _grass() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for vtx in [[Vector3(-0.028, 0, 0), Vector2(0, 1)], [Vector3(0.028, 0, 0), Vector2(1, 1)], [Vector3(0, 0.2, 0), Vector2(0.5, 0)]]:
+		st.set_uv(vtx[1])
+		st.set_normal(Vector3.UP)
+		st.add_vertex(vtx[0])
+	var sh := Shader.new()
+	sh.code = GRASS_SHADER
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = st.commit()
+	var spots: Array = []
+	while spots.size() < 60000:
+		var p := Vector3(_rng.randf_range(-HALF_X + 0.3, HALF_X - 0.3), 0, _rng.randf_range(-HALF_Z + 0.3, HALF_Z - 0.3))
+		if not _off_lawn(p):
+			spots.append(p)
+	mm.instance_count = spots.size()
+	for i in spots.size():
+		var scl := _rng.randf_range(0.6, 1.35)
+		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(scl, scl * _rng.randf_range(0.7, 1.3), scl))
+		mm.set_instance_transform(i, Transform3D(basis, spots[i]))
+		var tone := _rng.randf_range(0.86, 1.08)
+		mm.set_instance_color(i, Color(tone, tone, tone * 0.95))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
+
+
+## Slow drifting petals for a bit of life in the air.
+func _petals() -> void:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.vertex_color_use_as_albedo = true
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.billboard_keep_scale = true
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1.0, 0.75, 0.85))
+	ramp.set_color(1, Color(1.0, 1.0, 0.95))
+	var p := CPUParticles3D.new()
+	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	p.mesh = QuadMesh.new()
+	p.material_override = mat
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.amount = 110
+	p.lifetime = 11.0
+	p.preprocess = 11.0
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	p.emission_box_extents = Vector3(HALF_X, 3.5, HALF_Z)
+	p.direction = Vector3(1, 0, 0.4)
+	p.spread = 25.0
+	p.initial_velocity_min = 0.3
+	p.initial_velocity_max = 0.9
+	p.gravity = Vector3(0, -0.22, 0)
+	p.scale_amount_min = 0.05
+	p.scale_amount_max = 0.1
+	p.angle_max = 360.0
+	p.angular_velocity_min = -90.0
+	p.angular_velocity_max = 90.0
+	p.color_initial_ramp = ramp
+	p.position = Vector3(0, 5.0, 0)
+	add_child(p)
 
 
 ## Hundreds of little flowers on the grass, drawn in one call with a MultiMesh.
@@ -666,8 +793,7 @@ func _flowers() -> void:
 	var spots: Array = []
 	while spots.size() < 520:
 		var p := Vector3(_rng.randf_range(-HALF_X + 0.6, HALF_X - 0.6), 0, _rng.randf_range(-HALF_Z + 0.6, HALF_Z - 0.6))
-		# Keep off the painted paths.
-		if absf(p.x) < 3.9 or absf(p.z) < 3.9:
+		if _off_lawn(p):
 			continue
 		spots.append(p)
 	mm.instance_count = spots.size()

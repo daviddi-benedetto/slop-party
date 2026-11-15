@@ -10,6 +10,8 @@ extends Node3D
 ##
 ## Local space: feet at y = 0, facing -Z, about 1.75 m tall plus ears.
 
+const Weapons = preload("res://scripts/weapons.gd")
+
 const KIND_COUNT := 6
 
 var kind := 0
@@ -20,6 +22,8 @@ var rig: Node3D                # squash / stretch / lean
 var head: Node3D
 var aim: Node3D                # right arm + blaster, pitches with the view
 var muzzle: Node3D
+var _gun: Node3D
+var _weapon := -1
 var _arm_l: Node3D
 var _foot_l: Node3D
 var _foot_r: Node3D
@@ -96,19 +100,10 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
 	muzzle.position = Vector3(0.4, 0.04, -0.95)
 	aim.add_child(muzzle)
 	if with_gun:
-		var gun_mat := _plain(col.lerp(Color(1, 1, 1), 0.12), 0.5)
-		var barrel := CapsuleMesh.new()
-		barrel.radius = 0.085
-		barrel.height = 0.62
-		var b := _mesh(aim, barrel, gun_mat, Vector3(0.4, 0.05, -0.58))
-		b.rotation.x = PI / 2
-		var ring := CylinderMesh.new()
-		ring.top_radius = 0.105
-		ring.bottom_radius = 0.105
-		ring.height = 0.1
-		var rg := _mesh(aim, ring, _plain(Color(0.95, 0.93, 0.9), 0.5), Vector3(0.4, 0.05, -0.78))
-		rg.rotation.x = PI / 2
-		_ball(aim, _plain(col.lerp(Color.WHITE, 0.3), 0.2), Vector3(0.4, 0.15, -0.5), Vector3(0.07, 0.07, 0.1))
+		_gun = Node3D.new()
+		_gun.position = Vector3(0.4, 0.05, -0.3)
+		aim.add_child(_gun)
+		set_weapon(0)
 
 	# Head.
 	head = Node3D.new()
@@ -184,6 +179,31 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
 			_ball(_tail, _mat_light, Vector3(0, 0, 0.5), Vector3(0.1, 0.1, 0.13))
 
 
+## Third-person gun: a simple barrel sized per weapon ("tp" in weapons.gd).
+func set_weapon(id: int) -> void:
+	if _gun == null or id == _weapon:
+		return
+	_weapon = id
+	for c in _gun.get_children():
+		c.queue_free()
+	var tp: Array = Weapons.LIST[id].tp
+	var rad: float = tp[0]
+	var length: float = tp[1]
+	var barrel := CapsuleMesh.new()
+	barrel.radius = rad
+	barrel.height = maxf(length, rad * 2.0)
+	var b := _mesh(_gun, barrel, _plain(color.lerp(Color(1, 1, 1), 0.12), 0.5), Vector3(0, 0, -length * 0.5 + 0.05))
+	b.rotation.x = PI / 2
+	var ring := CylinderMesh.new()
+	ring.top_radius = rad * 1.22
+	ring.bottom_radius = rad * 1.22
+	ring.height = 0.09
+	var rg := _mesh(_gun, ring, _plain(Color(0.95, 0.93, 0.9), 0.5), Vector3(0, 0, -length + 0.14))
+	rg.rotation.x = PI / 2
+	_ball(_gun, _plain(color.lerp(Color.WHITE, 0.3), 0.2), Vector3(0, rad + 0.02, -0.15), Vector3(0.06, 0.06, 0.09))
+	muzzle.position = Vector3(0.4, 0.05, -0.3 - length)
+
+
 func _plush(col: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = col
@@ -195,6 +215,12 @@ func _plush(col: Color) -> StandardMaterial3D:
 	m.emission_enabled = true
 	m.emission = Color.WHITE
 	m.emission_energy_multiplier = 0.0
+	# Fine felt bumps so the plush catches light like fabric.
+	m.normal_enabled = true
+	m.normal_texture = _felt()
+	m.normal_scale = 0.45
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3.ONE * 5.0
 	m.next_pass = _outline
 	return m
 
@@ -207,6 +233,22 @@ func _plain(col: Color, rough: float) -> StandardMaterial3D:
 
 
 static var _sphere: SphereMesh
+static var _felt_tex: NoiseTexture2D
+
+
+static func _felt() -> NoiseTexture2D:
+	if _felt_tex == null:
+		var n := FastNoiseLite.new()
+		n.frequency = 0.09
+		_felt_tex = NoiseTexture2D.new()
+		_felt_tex.noise = n
+		_felt_tex.width = 256
+		_felt_tex.height = 256
+		_felt_tex.seamless = true
+		_felt_tex.as_normal_map = true
+		_felt_tex.bump_strength = 5.0
+		_felt_tex.generate_mipmaps = true
+	return _felt_tex
 
 
 func _ball(parent: Node3D, mat: Material, pos: Vector3, radii: Vector3, _outlined := true) -> MeshInstance3D:

@@ -7,6 +7,7 @@ extends Node3D
 ## must be freed before a match starts (main.gd / game.gd take care of that).
 
 const Character = preload("res://scripts/character.gd")
+const SkyKit = preload("res://scripts/sky.gd")
 
 var camera: Camera3D
 var characters: Array = []       # character.gd nodes this stage animates
@@ -24,14 +25,7 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 	_sphere.radial_segments = 24
 	_sphere.rings = 12
 
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.22, 0.5, 0.98)
-	sky_mat.sky_horizon_color = Color(0.78, 0.92, 1.0)
-	sky_mat.sky_curve = 0.12
-	sky_mat.ground_horizon_color = Color(0.78, 0.92, 1.0)
-	sky_mat.ground_bottom_color = Color(0.5, 0.78, 0.5)
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
+	var sky: Sky = SkyKit.make()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
@@ -62,6 +56,13 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 	sun.shadow_blur = 2.0
 	sun.directional_shadow_max_distance = 40.0
 	add_child(sun)
+	# Cool fill light from the opposite side keeps shaded faces readable.
+	var fill := DirectionalLight3D.new()
+	fill.rotation_degrees = Vector3(-30.0, -150.0, 0.0)
+	fill.light_color = Color(0.7, 0.82, 1.0)
+	fill.light_energy = 0.28
+	fill.light_specular = 0.0
+	add_child(fill)
 	_env = env
 	_sun = sun
 	_on_settings()
