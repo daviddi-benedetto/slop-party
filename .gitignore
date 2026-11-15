@@ -9,3 +9,6 @@ build/
 
 # Test screenshots
 shots/
+
+# Local options file (when running from source it is written next to the engine)
+fragdeck_settings.cfg

@@ -8,7 +8,7 @@ You play as a plush animal (bear, bunny, cat, dog, fox or frog) in a bright
 toy-park arena.
 
 Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript.
-The map, characters, textures, icons and sounds are all generated in code; the
+The map, characters, textures, icons, sounds and music are all generated in code; the
 only bundled asset is the Fredoka UI font (SIL Open Font License, see
 `fonts/OFL.txt`).
 
@@ -21,7 +21,7 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 (Space joins a keyboard + mouse player) and picks an animal with left/right.
 **Y** (keyboard: B) cycles the number of bots, **X** (keyboard: K) cycles the
 kill target, **B** (keyboard: Backspace) leaves, and **Start** (or Enter)
-begins the match.
+begins the match. **Back/Select** (keyboard: O) opens **Options**.
 
 | Action | Gamepad | Keyboard + mouse |
 |---|---|---|
@@ -34,6 +34,19 @@ begins the match.
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |
 | Pause / quit to lobby | Start | Esc |
 | Toggle fullscreen (lobby) | – | F11 |
+
+### Options
+
+Reachable from the lobby and from the pause menu:
+
+- **Display:** fullscreen, V-Sync, frame rate limit (60 by default).
+- **Graphics:** quality preset (Low to Ultra), anti-aliasing (Off, FXAA,
+  MSAA 2x/4x/8x), render scale, shadows, ambient occlusion, bloom, scenery.
+- **Audio:** master, music and effects volume.
+- **Controls:** gamepad and mouse look speed, invert Y, aim assist, rumble.
+- **Gameplay:** field of view, screen shake, damage numbers, bot difficulty.
+
+Options are saved in `fragdeck_settings.cfg` beside the game executable.
 
 Up to six gamepads are supported; one of the six seats can be keyboard + mouse
 instead. Screen layout: 1 player full screen, 2 stacked, 3–4 in a 2×2 grid,

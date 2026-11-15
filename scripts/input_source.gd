@@ -48,17 +48,19 @@ func _axis(axis: int) -> float:
 ## Called every rendered frame while alive: turns the view.
 func update_look(player, delta: float) -> void:
 	if device == KEYBOARD:
-		player.yaw -= mouse_accum.x * mouse_sens
-		player.pitch -= mouse_accum.y * mouse_sens
+		var ms: float = mouse_sens * (0.4 + Settings.v("mouse") * 0.15)
+		player.yaw -= mouse_accum.x * ms
+		player.pitch -= mouse_accum.y * ms * (-1.0 if Settings.v("invert_y") else 1.0)
 		mouse_accum = Vector2.ZERO
 	else:
 		var lx := _axis(JOY_AXIS_RIGHT_X)
 		var ly := _axis(JOY_AXIS_RIGHT_Y)
 		# Squared response curve: fine aim near centre, fast turns at the edge.
 		# aim_friction() is the aim assist: the stick slows while on a target.
-		var f: float = player.game.aim_friction(player)
-		player.yaw -= lx * absf(lx) * stick_sens * f * delta
-		player.pitch -= ly * absf(ly) * stick_sens * 0.7 * f * delta
+		var f: float = player.game.aim_friction(player) if Settings.v("aim_assist") else 1.0
+		var ss: float = stick_sens * (0.4 + Settings.v("stick") * 0.15) * f
+		player.yaw -= lx * absf(lx) * ss * delta
+		player.pitch -= ly * absf(ly) * ss * 0.7 * delta * (-1.0 if Settings.v("invert_y") else 1.0)
 	player.pitch = clampf(player.pitch, -1.5, 1.5)
 
 

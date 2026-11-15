@@ -13,6 +13,7 @@ signal start(config)
 const Stage = preload("res://scripts/stage.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
 const Fx = preload("res://scripts/fx.gd")
+const SettingsMenu = preload("res://scripts/settings_menu.gd")
 
 const MAX_PLAYERS := 6
 const KEYBOARD := -1
@@ -32,6 +33,7 @@ var _slot_bump: Array = []   # per-slot UI pop animation timers
 var _prev := {}
 var _t := 0.0
 var _armed := false          # ignore buttons still held from the previous screen
+var _options
 
 
 func _ready() -> void:
@@ -42,6 +44,11 @@ func _ready() -> void:
 		_slot_sig.append("")
 		_slot_char.append(null)
 		_slot_bump.append(1.0)
+	_options = SettingsMenu.new()
+	add_child(_options)
+	_options.closed.connect(func():
+		_armed = false
+		_prev.clear())
 
 
 func activate() -> void:
@@ -49,6 +56,7 @@ func activate() -> void:
 	_prev.clear()
 	message = ""
 	visible = true
+	Sfx.music("lobby")
 	if _stage == null:
 		_stage = Stage.new()
 		add_child(_stage)
@@ -109,8 +117,12 @@ func _process(delta: float) -> void:
 	for i in MAX_PLAYERS:
 		_slot_bump[i] = minf(1.0, _slot_bump[i] + delta * 3.0)
 	queue_redraw()
+	if _options.visible:
+		_sync_stage()
+		return
 
 	var want_start := false
+	var want_options := _edge("k_opt", Input.is_physical_key_pressed(KEY_O) or Input.is_physical_key_pressed(KEY_TAB))
 	var bot_step := false
 	var target_step := false
 
@@ -131,8 +143,7 @@ func _process(delta: float) -> void:
 	if _edge("k_quit", Input.is_physical_key_pressed(KEY_ESCAPE)) and _armed:
 		get_tree().quit()
 	if _edge("k_full", Input.is_physical_key_pressed(KEY_F11)):
-		var win := get_window()
-		win.mode = Window.MODE_WINDOWED if win.mode != Window.MODE_WINDOWED else Window.MODE_FULLSCREEN
+		Settings.step("fullscreen", 1)
 
 	# Gamepad seats.
 	for d in Input.get_connected_joypads():
@@ -151,7 +162,12 @@ func _process(delta: float) -> void:
 			want_start = true
 		if _edge(k + "y", Input.is_joy_button_pressed(d, JOY_BUTTON_Y)): bot_step = true
 		if _edge(k + "x", Input.is_joy_button_pressed(d, JOY_BUTTON_X)): target_step = true
+		if _edge(k + "back", Input.is_joy_button_pressed(d, JOY_BUTTON_BACK)): want_options = true
+	var was_armed := _armed
 	_armed = true
+	if want_options and was_armed:
+		_options.open()
+		return
 
 	if bot_step:
 		var room := MAX_PLAYERS - seats.size()
@@ -274,7 +290,7 @@ func _draw() -> void:
 	UiKit.text(self, Vector2(0, 228 * s), tag, 26 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, w, 600, 0.0)
 
 	# Seat plates, positioned under the 3D podiums.
-	if _stage != null and _stage.camera != null:
+	if _stage != null and _stage.camera != null and not _options.visible:
 		for i in MAX_PLAYERS:
 			var base: Vector2 = _stage.camera.unproject_position(_slot_pos(i) + Vector3(0, 0.0, 0.9))
 			var head: Vector2 = _stage.camera.unproject_position(_slot_pos(i) + Vector3(0, 3.05, 0))
@@ -286,8 +302,9 @@ func _draw() -> void:
 	var chips := [
 		["Y" if pad else "B", "BOTS", str(bots)],
 		["X" if pad else "K", "FIRST TO", "%d KOs" % KILL_TARGETS[target_i]],
+		["BACK" if pad else "O", "OPTIONS", ""],
 	]
-	var cx := w * 0.5 - 330 * s
+	var cx := w * 0.5 - 500 * s
 	for chip in chips:
 		var r := Rect2(cx, by, 320 * s, 60 * s)
 		UiKit.card(self, r, UiKit.PANEL, 30 * s, s)

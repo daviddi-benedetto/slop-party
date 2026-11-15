@@ -54,6 +54,7 @@ var color := Color.WHITE
 var kind := 0
 var brain
 var is_bot := false
+var has_view := false      # true when a splitscreen cell follows this player
 var game
 
 # State
@@ -111,6 +112,7 @@ var bullet_material: StandardMaterial3D
 var _shape: CollisionShape3D
 var _was_floor := true
 var _fall_speed := 0.0
+var _step_dist := 0.0
 
 
 func body_layer_bit() -> int:
@@ -288,7 +290,7 @@ func _physics_process(delta: float) -> void:
 		if not _was_floor and _fall_speed > 6.0:
 			land_dip = clampf(_fall_speed / 16.0, 0.3, 1.0)
 			Fx.puff(game.world, global_position + Vector3(0, 0.1, 0), Color(1, 1, 1, 0.6), 6, 0.45)
-			Sfx.play("land", -16.0)
+			Sfx.play_at("land", global_position, -12.0)
 	else:
 		velocity.y -= GRAVITY * delta
 		_fall_speed = -velocity.y
@@ -296,19 +298,19 @@ func _physics_process(delta: float) -> void:
 	if brain.jump:
 		if on_floor:
 			velocity.y = stats.jump_velocity
-			Sfx.play("jump", -14.0)
+			Sfx.play_at("jump", global_position, -12.0)
 		elif air_jumps > 0:
 			air_jumps -= 1
 			velocity.y = stats.jump_velocity
-			Sfx.play("jump", -12.0, 1.3)
+			Sfx.play_at("jump", global_position, -10.0, 1.3)
 			Fx.ring(game.world, global_position, Color(1, 1, 1, 0.8), 0.2, 0.9, 0.3)
 	if brain.dash and dash_cd <= 0.0:
 		dash_dir = wish.normalized() if wish.length() > 0.1 else Basis(Vector3.UP, yaw) * Vector3.FORWARD
 		dash_left = 0.16
 		dash_cd = stats.dash_cooldown
 		fov_kick = 1.0
-		Sfx.play("dash", -8.0)
-		Fx.puff(game.world, chest_position(), Color(color.lerp(Color.WHITE, 0.6), 0.7), 10, 0.5)
+		Sfx.play_at("dash", global_position, -6.0)
+		Fx.puff(game.world, global_position + Vector3(0, 0.4, 0) - dash_dir * 0.9, Color(1, 1, 1, 0.6), 8, 0.4)
 	if dash_left > 0.0:
 		dash_left -= delta
 		horiz = dash_dir * maxf(22.0, speed * 2.4)
@@ -317,7 +319,14 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	rotation.y = yaw
 
-	character.animate(delta, Vector2(velocity.x, velocity.z).length() / stats.move_speed, is_on_floor(), velocity.y, pitch, recoil)
+	var hspeed := Vector2(velocity.x, velocity.z).length()
+	var strafe: float = (Basis(Vector3.UP, yaw).inverse() * velocity).x / stats.move_speed
+	character.animate(delta, hspeed / stats.move_speed, is_on_floor(), velocity.y, pitch, recoil, clampf(strafe, -1.0, 1.0))
+	if is_on_floor():
+		_step_dist += hspeed * delta
+		if _step_dist > 2.3:
+			_step_dist = 0.0
+			Sfx.play_at("step", global_position, -9.0)
 	var frac: float = clampf(health / stats.max_health, 0.0, 1.0)
 	health_bar.set_instance_shader_parameter("fill", frac)
 	health_bar.set_instance_shader_parameter("tint", Color(1.0, 0.3, 0.3).lerp(Color(0.35, 0.9, 0.4), frac))
@@ -331,10 +340,10 @@ func _physics_process(delta: float) -> void:
 		reload_left -= delta
 		if reload_left <= 0.0:
 			ammo = stats.mag_size
-			Sfx.play("tick", -10.0, 1.5)
+			Sfx.play_at("tick", global_position, -8.0, 1.5)
 	elif ammo <= 0 or (brain.reload and ammo < stats.mag_size):
 		reload_left = stats.reload_time
-		Sfx.play("reload", -10.0)
+		Sfx.play_at("reload", global_position, -6.0)
 	elif brain.fire and fire_cd <= 0.0:
 		_shoot()
 
@@ -345,7 +354,7 @@ func _shoot() -> void:
 	recoil = 1.0
 	muzzle_flash = 1.0
 	shake = maxf(shake, 0.12)
-	Sfx.play("shoot", -7.0, clampf(1.15 - stats.damage / 160.0, 0.6, 1.2))
+	Sfx.play_at("shoot", global_position, -5.0, clampf(1.15 - stats.damage / 160.0, 0.6, 1.2))
 
 	var eye := eye_position()
 	var basis := aim_basis()
@@ -400,8 +409,8 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 		hurt_flash = 1.0
 		shake = maxf(shake, clampf(amount / 60.0, 0.25, 0.9))
 		character.hit_flash()
-		Sfx.play("hurt", -12.0)
-		if not is_bot and brain.device >= 0:
+		Sfx.play_at("hurt", global_position, -8.0)
+		if not is_bot and brain.device >= 0 and Settings.v("rumble"):
 			Input.start_joy_vibration(brain.device, 0.4, 0.7, 0.18)
 		if has_attacker:
 			damage_dirs.append([attacker.global_position, 1.2])
@@ -409,8 +418,10 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 		if not silent:
 			attacker.hit_marker = 1.0
 			attacker.hit_crit = crit
-			Sfx.play("hit", -9.0, 1.35 if crit else 1.0)
-			Fx.damage_number(game.world, global_position + Vector3(0, 2.0, 0), amount, crit, attacker.viewmodel_layer_bit())
+			if attacker.has_view:
+				Sfx.play("hit", -8.0, 1.3 if crit else 1.0)
+				if Settings.v("numbers"):
+					Fx.damage_number(game.world, global_position + Vector3(0, 2.0, 0), amount, crit, attacker.viewmodel_layer_bit())
 		if attacker.stats.lifesteal > 0.0:
 			attacker.heal(amount * attacker.stats.lifesteal)
 	if health <= 0.0:
@@ -442,7 +453,7 @@ func _die(attacker) -> void:
 	pick_time = 0.0
 	respawn_pending = false
 	shake = 1.0
-	Sfx.play("pop", -4.0)
+	Sfx.play_at("pop", global_position, -2.0)
 	# Party-popper death: confetti and a puff, no gore.
 	var c := chest_position()
 	Fx.confetti(game.world, c, 46)

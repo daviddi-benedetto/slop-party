@@ -38,6 +38,7 @@ const Fx = preload("res://scripts/fx.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
 const Viewmodel = preload("res://scripts/viewmodel.gd")
 const Results = preload("res://scripts/results.gd")
+const SettingsMenu = preload("res://scripts/settings_menu.gd")
 
 var config := {}
 var world: Node3D
@@ -61,6 +62,8 @@ var _prev := {}
 var _paused := false
 var _pause_ui: Control
 var _pause_sel := 0
+var _pause_note := ""
+var _options
 var _fade: ColorRect
 var _results = null
 var _last_count := 99
@@ -90,7 +93,8 @@ func _ready() -> void:
 			bot_n += 1
 			p.pname = "CPU %d" % bot_n
 			p.brain = BotBrain.new()
-			p.brain.skill = randf_range(0.35, 0.75)
+			var tier: int = Settings.v("bots")
+			p.brain.skill = [randf_range(0.1, 0.35), randf_range(0.35, 0.75), randf_range(0.8, 1.0)][tier]
 		else:
 			p.pname = "P%d" % (i + 1)
 			p.brain = InputSource.new(part.device)
@@ -102,6 +106,9 @@ func _ready() -> void:
 	_build_views()
 	_build_overlays()
 	get_viewport().size_changed.connect(_layout)
+	Settings.changed.connect(_on_settings)
+	Input.joy_connection_changed.connect(_on_joy_changed)
+	Sfx.music("battle")
 	if _kb_brain != null:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -116,8 +123,28 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Sfx.listeners = []
+	Sfx.duck(false)
 	Engine.time_scale = 1.0
 	get_tree().paused = false
+
+
+func _on_settings() -> void:
+	for v in _views:
+		Settings.apply_viewport(v.viewport)
+	_layout()
+
+
+## A controller in use was unplugged: pause so nobody is left helpless.
+func _on_joy_changed(device: int, connected: bool) -> void:
+	if connected or _results != null or match_over:
+		return
+	for p in players:
+		if not p.is_bot and p.brain.device == device:
+			_pause_note = "%s's controller disconnected" % p.pname
+			if not _paused and countdown <= 0.0:
+				_set_paused(true)
+			return
 
 
 func _input(event: InputEvent) -> void:
@@ -176,7 +203,7 @@ func _add_view(player) -> void:
 	_ui.add_child(container)
 	var vp := SubViewport.new()
 	vp.size = Vector2i(container.size)
-	vp.msaa_3d = Viewport.MSAA_2X
+	Settings.apply_viewport(vp)
 	vp.gui_disable_input = true
 	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	container.add_child(vp)
@@ -201,6 +228,8 @@ func _add_view(player) -> void:
 
 	var layer := CanvasLayer.new()
 	vp.add_child(layer)
+	if player != null:
+		player.has_view = true
 	var hud = Hud.new()
 	hud.player = player
 	hud.game = self
@@ -221,14 +250,17 @@ func _layout() -> void:
 		var gap := 4.0 if _views.size() > 1 else 0.0
 		v.container.position = Vector2(gx, gy) * cell + Vector2(gap, gap) * 0.5
 		v.container.size = cell - Vector2(gap, gap)
-		# Aim for ~100 deg horizontal FOV whatever the cell's aspect ratio.
+		# Keep the chosen horizontal FOV whatever the cell's aspect ratio.
 		var aspect := cell.x / cell.y
-		var vfov := rad_to_deg(2.0 * atan(tan(deg_to_rad(50.0)) / aspect))
-		v.fov = clampf(vfov, 52.0, 75.0)
+		var half_h: float = deg_to_rad(Settings.v("fov") * 0.5)
+		var vfov := rad_to_deg(2.0 * atan(tan(half_h) / aspect))
+		v.fov = clampf(vfov, 50.0, 82.0)
 		v.camera.fov = v.fov
 
 
 func _update_cameras(delta: float) -> void:
+	var ears: Array = []
+	var shake_amount: float = Settings.v("shake")
 	for v in _views:
 		var p = v.player
 		var cam: Camera3D = v.camera
@@ -238,7 +270,7 @@ func _update_cameras(delta: float) -> void:
 			continue
 		if p.alive:
 			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT - p.land_dip * 0.14, 0)
-			var sh: float = p.shake * p.shake * 0.035
+			var sh: float = p.shake * p.shake * 0.035 * shake_amount
 			var euler := Vector3(
 				p.pitch + p.recoil * 0.014 + sin(time * 61.0) * sh,
 				p.yaw + sin(time * 47.0 + 1.3) * sh,
@@ -250,6 +282,8 @@ func _update_cameras(delta: float) -> void:
 			cam.global_position += Vector3(0, delta * 0.5, 0)
 			cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
 		v.gun.update(delta, p)
+		ears.append(cam.global_position)
+	Sfx.listeners = ears
 
 
 # --------------------------------------------------------------------------
@@ -276,6 +310,9 @@ func _build_overlays() -> void:
 	menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pause_ui.add_child(menu)
 	menu.draw.connect(_draw_pause.bind(menu))
+	_options = SettingsMenu.new()
+	layer.add_child(_options)
+	_options.closed.connect(func(): _prev.clear())
 
 	_fade = ColorRect.new()
 	_fade.color = Color(UiKit.INK, 1.0)
@@ -289,10 +326,14 @@ func _draw_pause(menu: Control) -> void:
 	var w := menu.size.x
 	var h := menu.size.y
 	var s := h / 1080.0
-	var r := Rect2(w * 0.5 - 330 * s, h * 0.5 - 250 * s, 660 * s, 500 * s)
+	if _options.visible:
+		return
+	var r := Rect2(w * 0.5 - 330 * s, h * 0.5 - 310 * s, 660 * s, 620 * s)
 	UiKit.card(menu, r, UiKit.PANEL, 50 * s, s * 2.0)
 	UiKit.text(menu, Vector2(r.position.x, r.position.y + 120 * s), "PAUSED", 96 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.14)
-	var items := ["RESUME", "QUIT TO LOBBY"]
+	if _pause_note != "":
+		UiKit.text(menu, Vector2(r.position.x, r.position.y - 30 * s), _pause_note, 34 * s, Color(1.0, 0.55, 0.5), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.16)
+	var items := ["RESUME", "OPTIONS", "QUIT TO LOBBY"]
 	for i in items.size():
 		var sel := i == _pause_sel
 		var ir := Rect2(r.position.x + 70 * s, r.position.y + 190 * s + i * 120 * s, r.size.x - 140 * s, 92 * s)
@@ -308,12 +349,18 @@ func _set_paused(on: bool) -> void:
 	get_tree().paused = on
 	_pause_ui.visible = on
 	_pause_sel = 0
+	if not on:
+		_pause_note = ""
+	Sfx.duck(on)
 	if _kb_brain != null:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if on else Input.MOUSE_MODE_CAPTURED
 	Sfx.play("tick", -6.0, 0.8 if on else 1.2)
 
 
 func _poll_pause() -> void:
+	if _options.visible:
+		_pause_ui.get_child(0).queue_redraw()
+		return
 	var toggle := _edge("esc", Input.is_physical_key_pressed(KEY_ESCAPE))
 	var up := _edge("k_up", Input.is_physical_key_pressed(KEY_UP) or Input.is_physical_key_pressed(KEY_W))
 	var down := _edge("k_down", Input.is_physical_key_pressed(KEY_DOWN) or Input.is_physical_key_pressed(KEY_S))
@@ -338,11 +385,13 @@ func _poll_pause() -> void:
 		_set_paused(false)
 		return
 	if up or down:
-		_pause_sel = 1 - _pause_sel
+		_pause_sel = posmod(_pause_sel + (1 if down else -1), 3)
 		Sfx.play("tick", -8.0)
 	if accept:
 		if _pause_sel == 0:
 			_set_paused(false)
+		elif _pause_sel == 1:
+			_options.open()
 		else:
 			_set_paused(false)
 			_leave()
@@ -403,6 +452,7 @@ func _show_results() -> void:
 	_ui.queue_free()
 	world.queue_free()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	Sfx.listeners = []
 	_results = Results.new()
 	_results.rows = rows
 	add_child(_results)
@@ -425,7 +475,7 @@ func on_player_died(victim, attacker) -> void:
 		attacker.kill_flash = 1.0
 		attacker.kill_name = victim.pname
 		attacker.shake = maxf(attacker.shake, 0.4)
-		if not attacker.is_bot and attacker.brain.device >= 0:
+		if not attacker.is_bot and attacker.brain.device >= 0 and Settings.v("rumble"):
 			Input.start_joy_vibration(attacker.brain.device, 0.2, 0.9, 0.25)
 		feed.push_front({"killer": attacker, "victim": victim, "t": time})
 		if attacker.kills >= kill_target:
@@ -469,7 +519,7 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 	Fx.burst(world, pos, Color(1.0, 0.75, 0.3), 16, radius * 4.0, 0.4, 0.5, -6.0)
 	Fx.puff(world, pos, Color(0.4, 0.36, 0.45, 0.7), 10, radius * 0.5)
 	Fx.ring(world, pos, Color(1, 1, 1, 0.8), radius * 0.2, radius * 1.1, 0.3)
-	Sfx.play("boom", -4.0)
+	Sfx.play_at("boom", pos, -1.0)
 	for p in players:
 		if not p.alive:
 			continue

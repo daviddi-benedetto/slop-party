@@ -13,6 +13,8 @@ var characters: Array = []       # character.gd nodes this stage animates
 var _sphere: SphereMesh
 var _floaters: Array = []        # [node, base_y, phase]
 var _time := 0.0
+var _env: Environment
+var _sun: DirectionalLight3D
 
 
 func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
@@ -60,6 +62,10 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 	sun.shadow_blur = 2.0
 	sun.directional_shadow_max_distance = 40.0
 	add_child(sun)
+	_env = env
+	_sun = sun
+	_on_settings()
+	Settings.changed.connect(_on_settings)
 
 	var ground := CylinderMesh.new()
 	ground.top_radius = 150.0
@@ -129,6 +135,10 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 	add_child(camera)
 	camera.look_at_from_position(cam_pos, look_at_pos)
 	camera.current = true
+
+
+func _on_settings() -> void:
+	Settings.apply_environment(_env, _sun)
 
 
 func _flat(col: Color) -> StandardMaterial3D:

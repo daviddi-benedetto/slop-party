@@ -41,6 +41,7 @@ func _ready() -> void:
 	Fx.confetti(_stage, Vector3(-3, 1.5, 2), 60, 9.0, 2.2)
 	Fx.confetti(_stage, Vector3(3, 1.5, 2), 60, 9.0, 2.2)
 	Sfx.play("win", -2.0)
+	Sfx.music("lobby")
 
 
 func _add_crown(c) -> void:

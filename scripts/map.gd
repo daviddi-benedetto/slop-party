@@ -35,6 +35,8 @@ var _rng := RandomNumberGenerator.new()
 
 # Animated decorations.
 var _clouds: Node3D
+var _env: Environment
+var _sun: DirectionalLight3D
 var _balloons: Array = []         # [node, base_y, phase]
 var _pad_rings: Array = []        # [mesh_instance, material, phase]
 var _time := 0.0
@@ -234,7 +236,7 @@ func _build_environment() -> void:
 	env.adjustment_contrast = 1.08
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.74, 0.88, 1.0)
-	env.fog_density = 0.0016
+	env.fog_density = 0.0004
 	env.fog_sky_affect = 0.0
 	var we := WorldEnvironment.new()
 	we.environment = env
@@ -251,6 +253,14 @@ func _build_environment() -> void:
 	sun.directional_shadow_max_distance = 80.0
 	sun.shadow_bias = 0.06
 	add_child(sun)
+	_env = env
+	_sun = sun
+	_on_settings()
+	Settings.changed.connect(_on_settings)
+
+
+func _on_settings() -> void:
+	Settings.apply_environment(_env, _sun)
 
 
 # --------------------------------------------------------------------------
@@ -567,7 +577,7 @@ func _jump_pad(pos: Vector3, power: float) -> void:
 		area.body_entered.connect(func(body):
 			if body.has_method("launch"):
 				body.launch(Vector3(body.velocity.x, power, body.velocity.z))
-				Sfx.play("pad", -8.0))
+				Sfx.play_at("pad", body.global_position, -5.0))
 
 
 # --------------------------------------------------------------------------
@@ -575,6 +585,7 @@ func _jump_pad(pos: Vector3, power: float) -> void:
 # --------------------------------------------------------------------------
 
 func _build_scenery() -> void:
+	var rich: bool = Settings.v("scenery") == 1
 	# Rolling hills on the horizon.
 	for i in 16:
 		var a := TAU * i / 16.0 + _rng.randf_range(-0.12, 0.12)
@@ -585,8 +596,9 @@ func _build_scenery() -> void:
 		hill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 	# Trees: a ring outside the walls plus one in each inside corner.
-	for i in 46:
-		var a2 := TAU * i / 46.0 + _rng.randf_range(-0.05, 0.05)
+	var tree_n := 46 if rich else 18
+	for i in tree_n:
+		var a2 := TAU * i / float(tree_n) + _rng.randf_range(-0.05, 0.05)
 		var dir := Vector2(cos(a2), sin(a2))
 		var edge := minf((HALF_X + 4.0) / maxf(absf(dir.x), 0.001), (HALF_Z + 4.0) / maxf(absf(dir.y), 0.001))
 		var d2 := edge + _rng.randf_range(1.0, 16.0)
@@ -596,7 +608,7 @@ func _build_scenery() -> void:
 		_tree(Vector3(-c.x, 0, -c.z), 1.0, true)
 
 	# Bushes hugging the inside of the walls.
-	for i in 26:
+	for i in (26 if rich else 0):
 		var along := _rng.randf_range(-1.0, 1.0)
 		var pos: Vector3
 		match i % 4:
@@ -612,7 +624,7 @@ func _build_scenery() -> void:
 	_clouds = Node3D.new()
 	_clouds.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	add_child(_clouds)
-	for i in 15:
+	for i in (15 if rich else 7):
 		var a3 := TAU * i / 15.0 + _rng.randf_range(-0.2, 0.2)
 		var d3 := _rng.randf_range(55.0, 130.0)
 		var centre := Vector3(cos(a3) * d3, _rng.randf_range(26.0, 48.0), sin(a3) * d3)
@@ -623,6 +635,9 @@ func _build_scenery() -> void:
 			var puff := _prop(_unit_sphere, "cloud", centre + off, Vector3(rr, rr * 0.7, rr), _clouds)
 			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
+	if rich:
+		_flowers()
+
 	# Bunting across the corners and balloons on the roofs.
 	for sgn in [1.0, -1.0]:
 		_bunting(Vector3(-HALF_X, WALL_H + 0.4, sgn * 6.0), Vector3(-12.0, WALL_H + 0.4, sgn * HALF_Z))
@@ -630,6 +645,44 @@ func _build_scenery() -> void:
 	for p in [Vector3(-18.6, 3.6, 8.6), Vector3(-27.4, 3.6, 17.4), Vector3(7.6, 3.0, 21.6), Vector3(16, 4.3, -9.2)]:
 		_balloon_bunch(p)
 		_balloon_bunch(Vector3(-p.x, p.y, -p.z))
+
+
+## Hundreds of little flowers on the grass, drawn in one call with a MultiMesh.
+func _flowers() -> void:
+	var blob := SphereMesh.new()
+	blob.radius = 1.0
+	blob.height = 2.0
+	blob.radial_segments = 8
+	blob.rings = 4
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 1.0
+	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = blob
+	var cols := [Color(1, 1, 1), Color(1.0, 0.85, 0.3), Color(1.0, 0.55, 0.7), Color(0.75, 0.6, 1.0), Color(0.36, 0.7, 0.3), Color(0.36, 0.7, 0.3)]
+	var spots: Array = []
+	while spots.size() < 520:
+		var p := Vector3(_rng.randf_range(-HALF_X + 0.6, HALF_X - 0.6), 0, _rng.randf_range(-HALF_Z + 0.6, HALF_Z - 0.6))
+		# Keep off the painted paths.
+		if absf(p.x) < 3.9 or absf(p.z) < 3.9:
+			continue
+		spots.append(p)
+	mm.instance_count = spots.size()
+	for i in spots.size():
+		var c: Color = cols[i % cols.size()]
+		var tuft: bool = c.g > c.r and c.g > c.b
+		var sz := _rng.randf_range(0.05, 0.09)
+		var scl := Vector3(sz * 0.6, sz * 2.4, sz * 0.6) if tuft else Vector3(sz, sz * 0.6, sz)
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(scl), spots[i] + Vector3(0, scl.y * 0.6, 0)))
+		mm.set_instance_color(i, c)
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
 
 
 func _tree(pos: Vector3, scl: float, solid: bool) -> void:

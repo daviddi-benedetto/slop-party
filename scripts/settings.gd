@@ -1,0 +1,176 @@
+extends Node
+## Autoload "Settings". Every user option lives in ITEMS; each one is stored
+## as an index into its list of choices (`idx[key]`). Read a value anywhere
+## with Settings.v("key"). settings_menu.gd draws and edits this list, so
+## adding an option is: add an entry here, then read it where it matters.
+##
+## Things this node applies itself: window mode, v-sync, frame cap, master
+## volume, shadow atlas size, and anti-aliasing / render scale of any viewport
+## passed to apply_viewport(). Everything else reacts to the `changed` signal
+## (map.gd, stage.gd, game.gd, sfx.gd) or simply reads v() when needed.
+##
+## Saved to "fragdeck_settings.cfg" next to the executable, so the game folder
+## stays portable and nothing is written to the user profile.
+##
+## Dev flags (after "--"): --uncapped leaves v-sync / frame cap alone so
+## benchmarks work; running with -w / --windowed keeps the window windowed.
+
+signal changed
+
+const ON_OFF := ["Off", "On"]
+const ITEMS := [
+	{"section": "DISPLAY"},
+	{"key": "fullscreen", "label": "Fullscreen", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "vsync", "label": "V-Sync", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "fps", "label": "Frame rate limit", "opts": ["30", "60", "120", "144", "240", "Unlimited"], "vals": [30, 60, 120, 144, 240, 0], "def": 1},
+	{"section": "GRAPHICS"},
+	{"key": "preset", "label": "Quality preset", "opts": ["Custom", "Low", "Medium", "High", "Ultra"], "vals": [0, 1, 2, 3, 4], "def": 3},
+	{"key": "aa", "label": "Anti-aliasing", "opts": ["Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x"], "vals": [0, 1, 2, 3, 4], "def": 2},
+	{"key": "scale", "label": "Render scale", "opts": ["50%", "67%", "75%", "85%", "100%"], "vals": [0.5, 0.67, 0.75, 0.85, 1.0], "def": 4},
+	{"key": "shadows", "label": "Shadows", "opts": ["Off", "Low", "High"], "vals": [0, 1, 2], "def": 2},
+	{"key": "ssao", "label": "Ambient occlusion", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "glow", "label": "Bloom", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "scenery", "label": "Scenery detail", "opts": ["Low", "High"], "vals": [0, 1], "def": 1},
+	{"section": "AUDIO"},
+	{"key": "master", "label": "Master volume", "range": [0, 10], "def": 8},
+	{"key": "music", "label": "Music volume", "range": [0, 10], "def": 6},
+	{"key": "sfx", "label": "Effects volume", "range": [0, 10], "def": 8},
+	{"section": "CONTROLS"},
+	{"key": "stick", "label": "Gamepad look speed", "range": [1, 10], "def": 4},
+	{"key": "mouse", "label": "Mouse look speed", "range": [1, 10], "def": 4},
+	{"key": "invert_y", "label": "Invert look Y", "opts": ON_OFF, "vals": [false, true], "def": 0},
+	{"key": "aim_assist", "label": "Gamepad aim assist", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "rumble", "label": "Controller rumble", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"section": "GAMEPLAY"},
+	{"key": "fov", "label": "Field of view", "opts": ["Narrow", "Normal", "Wide"], "vals": [86.0, 100.0, 112.0], "def": 1},
+	{"key": "shake", "label": "Screen shake", "opts": ["Off", "Low", "Full"], "vals": [0.0, 0.5, 1.0], "def": 2},
+	{"key": "numbers", "label": "Damage numbers", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "bots", "label": "Bot difficulty", "opts": ["Easy", "Normal", "Hard"], "vals": [0, 1, 2], "def": 1},
+]
+
+## preset index -> {key: choice index}
+const PRESETS := {
+	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0},
+	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1},
+	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1},
+	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1},
+}
+
+var idx := {}
+var _items := {}           # key -> item dictionary (with opts/vals filled in)
+var rows: Array = []       # ITEMS with ranges expanded; what the menu shows
+var _path := ""
+var _uncapped := false
+var _keep_window := false
+
+
+func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS
+	_uncapped = "--uncapped" in OS.get_cmdline_user_args()
+	for a in OS.get_cmdline_args():
+		if a == "-w" or a == "--windowed":
+			_keep_window = true
+	for raw in ITEMS:
+		var item: Dictionary = raw.duplicate()
+		if item.has("range"):
+			var opts: Array = []
+			var vals: Array = []
+			for n in range(item.range[0], item.range[1] + 1):
+				opts.append(str(n))
+				vals.append(n)
+			item["opts"] = opts
+			item["vals"] = vals
+			item["def"] = item.def - item.range[0]
+			item["slider"] = true
+		rows.append(item)
+		if item.has("key"):
+			_items[item.key] = item
+			idx[item.key] = item.def
+	_path = OS.get_executable_path().get_base_dir().path_join("fragdeck_settings.cfg")
+	_load()
+	apply()
+
+
+func v(key: String):
+	return _items[key].vals[idx[key]]
+
+
+func label(key: String) -> String:
+	return _items[key].opts[idx[key]]
+
+
+## Move a setting one step. Two-way toggles and choice lists wrap; sliders clamp.
+func step(key: String, dir: int) -> void:
+	var item: Dictionary = _items[key]
+	var n: int = item.opts.size()
+	if item.has("slider"):
+		idx[key] = clampi(idx[key] + dir, 0, n - 1)
+	else:
+		idx[key] = posmod(idx[key] + dir, n)
+	if key == "preset":
+		if PRESETS.has(idx[key]):
+			for k in PRESETS[idx[key]]:
+				idx[k] = PRESETS[idx[key]][k]
+	elif PRESETS[1].has(key):
+		idx["preset"] = 0
+	apply()
+	save()
+
+
+func reset() -> void:
+	for key in _items:
+		idx[key] = _items[key].def
+	apply()
+	save()
+
+
+func apply() -> void:
+	var win := get_window()
+	if not _keep_window:
+		var want := Window.MODE_FULLSCREEN if v("fullscreen") else Window.MODE_WINDOWED
+		if win.mode != want:
+			win.mode = want
+	if not _uncapped:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v("vsync") else DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = v("fps")
+	var master: int = v("master")
+	AudioServer.set_bus_mute(0, master == 0)
+	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.001, master / 10.0)))
+	RenderingServer.directional_shadow_atlas_set_size(4096 if v("shadows") == 2 else 2048, true)
+	apply_viewport(get_viewport())
+	changed.emit()
+
+
+## Anti-aliasing and render scale for one viewport (root or a splitscreen cell).
+func apply_viewport(vp: Viewport) -> void:
+	var aa: int = v("aa")
+	vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X, Viewport.MSAA_8X][aa]
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if aa == 1 else Viewport.SCREEN_SPACE_AA_DISABLED
+	vp.scaling_3d_scale = v("scale")
+
+
+## Shared by map.gd and stage.gd.
+func apply_environment(env: Environment, sun: DirectionalLight3D) -> void:
+	env.ssao_enabled = v("ssao")
+	env.glow_enabled = v("glow")
+	var sh: int = v("shadows")
+	sun.shadow_enabled = sh > 0
+	sun.shadow_blur = 1.6 if sh == 2 else 0.8
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if sh == 2 else DirectionalLight3D.SHADOW_ORTHOGONAL
+
+
+func save() -> void:
+	var cfg := ConfigFile.new()
+	for key in idx:
+		cfg.set_value("settings", key, idx[key])
+	cfg.save(_path)
+
+
+func _load() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(_path) != OK:
+		return
+	for key in idx:
+		var val = cfg.get_value("settings", key, idx[key])
+		if val is int and val >= 0 and val < _items[key].opts.size():
+			idx[key] = val

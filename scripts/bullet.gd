@@ -106,7 +106,7 @@ func _physics_process(delta: float) -> void:
 			vel = vel.bounce(hit.normal) * 0.92
 			global_position = hit.position + hit.normal * 0.03
 			orient()
-			Sfx.play("bounce", -16.0)
+			Sfx.play_at("bounce", global_position, -10.0)
 			return
 		_impact(hit.position + hit.normal * 0.05, null)
 		return

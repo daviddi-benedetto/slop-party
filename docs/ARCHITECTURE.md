@@ -47,6 +47,10 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `--target=K` sets the kill target (`--target=1` reaches the podium quickly).
 - `--lobby-demo=H,B` shows the lobby with H fake humans and B bots seated.
 - `--pause-at=S` opens the pause menu after S seconds.
+- `--options-demo` opens the Options screen in the lobby after one second.
+- `--uncapped` stops `settings.gd` from applying v-sync and the frame limit.
+  **Benchmarks need both** `--disable-vsync` (engine flag, before `--`) and
+  `--uncapped` (after `--`), otherwise the default 60 FPS cap hides the result.
 - `--shot=file.png --shot-time=S` saves a screenshot after S seconds, prints
   FPS and every player's kills/deaths/cards, then quits.
 - `--debug` adds bot position / path / line-of-sight info to that printout.
@@ -62,7 +66,7 @@ parse error in one script.
 
 | File | Role |
 |---|---|
-| `project.godot` | Project settings. Notable: fullscreen, physics interpolation ON, MSAA 2×, `Sfx` autoload. |
+| `project.godot` | Project settings. Notable: physics interpolation ON; autoloads `Settings` then `Sfx`. Display and AA values here are only startup defaults – `settings.gd` overrides them. |
 | `main.tscn` | A single `Node` with `main.gd`. Every other node is created in code. |
 | `fonts/Fredoka.ttf` | The UI font (variable weight). Loaded by `ui_kit.gd`. |
 | `scripts/main.gd` | Entry point. Owns the lobby, creates/destroys a `game.gd` per match, screen fades, dev flags. |
@@ -82,7 +86,9 @@ parse error in one script.
 | `scripts/bot_brain.gd` | AI that exposes the same interface as `input_source.gd`. |
 | `scripts/hud.gd` | Per-viewport HUD and the animated card picker. |
 | `scripts/fx.gd` | Particles, flashes, rings, confetti, floating damage numbers. |
-| `scripts/sfx.gd` | Autoload. Synthesises all sound effects at startup and plays them. |
+| `scripts/sfx.gd` | Autoload. Synthesises all sound effects, composes and renders the two music loops in a thread, distance-attenuated playback. |
+| `scripts/settings.gd` | Autoload. The list of user options, their values, saving/loading, and applying display/AA/audio settings. |
+| `scripts/settings_menu.gd` | The Options screen (opened from the lobby and the pause menu). |
 
 No script uses `class_name`; scripts reference each other with `preload()`
 constants. This avoids depending on Godot's global class cache.
@@ -91,6 +97,7 @@ constants. This avoids depending on Godot's global class cache.
 
 ```
 root (Window)
+├─ Settings                 autoload
 ├─ Sfx                      autoload
 └─ Main (main.gd)
    ├─ Lobby (lobby.gd)      Control; owns a Stage while visible
@@ -234,6 +241,55 @@ Every effect frees itself with a pausable timer. For `burst()` with
 `explosiveness = 1`, all particle properties must be set **before** `emitting`
 is turned on (see `confetti()`), or they are ignored.
 
+### Options (`settings.gd`, `settings_menu.gd`)
+
+`Settings.ITEMS` is the single list of options (display, graphics, audio,
+controls, gameplay). Each is stored as an index into its choices; read the
+value anywhere with `Settings.v("key")`. The menu is generated from that list.
+
+**To add an option:** add one entry to `ITEMS`, then either read
+`Settings.v()` where the value is used, or react to the `Settings.changed`
+signal if something has to be re-applied (see `map.gd::_on_settings`,
+`game.gd::_on_settings`). Graphics keys listed in `PRESETS` are overwritten by
+the quality preset; changing one of them by hand sets the preset to "Custom".
+
+Defaults: fullscreen, v-sync on, 60 FPS limit, High preset (MSAA 2×, full
+render scale, high shadows, ambient occlusion and bloom on).
+
+What applies where:
+- window mode, v-sync, `Engine.max_fps`, master bus volume, shadow atlas
+  size, root viewport AA: `Settings.apply()`.
+- each splitscreen cell's MSAA/FXAA and render scale:
+  `Settings.apply_viewport()` from `game.gd`.
+- shadows, ambient occlusion, bloom: `Settings.apply_environment()` from
+  `map.gd` and `stage.gd`.
+- "Scenery detail" is read when a map is built, so it takes effect next match.
+- look speed, invert Y, aim assist: `input_source.gd`. These are global, not
+  per player.
+- FOV, screen shake, bot difficulty, rumble: `game.gd`. Damage numbers:
+  `player.gd`.
+
+The file is saved as `fragdeck_settings.cfg` next to the executable (the
+`engine` folder when running from source, `build` for the exported game), not
+in the user profile, to keep the folder portable. Delete it to reset.
+
+### Audio (`sfx.gd`)
+
+There are no audio files. Effects are small functions of time rendered to
+16-bit mono WAV data at startup (`_build_effects`). Music is a hand-written
+8-bar tune in C major (`PROGRESSION`, `MELODY`) rendered twice by
+`_render_track` – a slow "lobby" arrangement and a faster "battle" one – in a
+worker thread, so it starts a second or two after launch. The buffers are
+exactly one loop long and note tails wrap around, so the loops are seamless.
+
+- `Sfx.play(name)` is for UI and personal feedback.
+- `Sfx.play_at(name, pos)` is for world sounds: volume falls off with the
+  distance to the nearest human player's camera (`Sfx.listeners`, filled by
+  `game.gd::_update_cameras`). There is no stereo panning, because several
+  listeners share one pair of speakers.
+- `Sfx.music("lobby" | "battle" | "")` cross-fades; `Sfx.duck(true)` lowers
+  the music while paused.
+
 ## 6. Gameplay internals
 
 ### Player life cycle (`player.gd`)
@@ -288,14 +344,22 @@ re-path when stuck. Bots cannot use the jump pads or roofs deliberately.
 ## 7. Verified vs not verified
 
 Verified by automated runs on an RTX 2070 at 1920×1080:
-- Lobby, match (1/2/4/6 views), card picker, pause menu and victory podium all
-  render with no script errors.
-- 6-way splitscreen: roughly 180 FPS with vsync off (4 views ~300, 2 ~375).
+- Lobby, Options screen, match (2/3/4/5/6 views), card picker, pause menu and
+  victory podium all render with no script errors.
+- 6-way splitscreen with vsync off and no frame cap: roughly 230 FPS on the
+  High preset, roughly 350 FPS on Low.
+- A settings file is read and applied (Low preset, wide FOV, hard bots).
 - Bots fight, die, pick cards, respawn; a match reaches the kill target, shows
   the podium and returns to the lobby.
 - The exported `build\Fragdeck.exe` starts and plays.
 
-**Not verified (no gamepad was attached during development):**
+**Not verified:**
+- Anything audible. The music and sound effects are generated without errors
+  but nobody has listened to them; expect to tune `sfx.gd` by ear.
+- The Options screen was only rendered, not operated: changing values at
+  runtime (fullscreen toggle, AA switch mid-match) has not been exercised.
+
+**Not verified because no gamepad was attached during development:**
 - Real gamepad input: joining, animal selection, pause menu navigation,
   rumble, aim assist feel.
 - More than four gamepads at once. Godot 4.7 uses SDL for controllers, which
@@ -306,13 +370,15 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 ## 8. Known limitations / ideas
 
 - Only one keyboard + mouse player (Windows gives one shared mouse).
-- Audio is synthesised bleeps, not positional, and there is no music.
-- No settings menu (sensitivity is a constant in `input_source.gd`:
-  `mouse_sens`, `stick_sens`).
+- Audio is fully synthesised; distance affects volume but there is no
+  stereo positioning.
+- Control options (look speed, invert Y) are global rather than per player,
+  and buttons cannot be rebound.
+- If a gamepad in use disconnects, the match pauses with a message; it resumes
+  with that seat on the same device id when it is plugged back in.
 - Characters are primitive shapes with procedural animation; real modelled,
   rigged characters would be the biggest visual step up from here.
-- If performance is a problem: lower `msaa_3d` in `game.gd::_add_view`, turn
-  off `ssao_enabled`/`glow_enabled` in `map.gd::_build_environment`, or set
-  `vp.scaling_3d_scale` below 1.0 on the SubViewports.
-- Possible next steps: more maps, health/ammo pickups, team mode, options
-  screen, music, positional audio, kill-cam.
+- If performance is a problem, use the Low or Medium quality preset in
+  Options.
+- Possible next steps: more maps, health/ammo pickups, team mode, per-player
+  control options and rebinding, kill-cam.

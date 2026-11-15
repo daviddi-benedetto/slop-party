@@ -469,10 +469,10 @@ func _draw_banners(w: float, h: float) -> void:
 func _draw_spectator(w: float, h: float) -> void:
 	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.1, 0.05, 0.2, 0.35))
 	var rows: Array = game.ranked()
-	var rw := minf(w * 0.7, 300 * s)
-	var x := (w - rw) * 0.5
-	var y := h * 0.5 - (rows.size() * 32 * s + 40 * s) * 0.5
-	_t(Vector2(0, y), "SCOREBOARD", 22, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, w)
+	var rw := minf(w * 0.45, 250 * s)
+	var x := 16.0 * s
+	var y := 40.0 * s
+	_t(Vector2(x, y), "SCOREBOARD", 22, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, rw)
 	y += 16 * s
 	for i in rows.size():
 		var p = rows[i]

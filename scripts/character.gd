@@ -69,6 +69,16 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
 	_foot_l = _ball(rig, mat_dark, Vector3(-0.18, 0.1, -0.03), Vector3(0.15, 0.1, 0.2))
 	_foot_r = _ball(rig, mat_dark, Vector3(0.18, 0.1, -0.03), Vector3(0.15, 0.1, 0.2))
 
+	# Scarf in a contrasting colour hides the neck seam and adds charm.
+	var scarf_mat := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.5, 1.0))
+	var scarf := TorusMesh.new()
+	scarf.inner_radius = 0.19
+	scarf.outer_radius = 0.33
+	scarf.rings = 24
+	scarf.ring_segments = 10
+	_mesh(rig, scarf, scarf_mat, Vector3(0, 1.07, 0)).scale = Vector3(1.0, 0.8, 1.0)
+	_ball(rig, scarf_mat, Vector3(0.2, 0.93, -0.28), Vector3(0.075, 0.14, 0.05)).rotation.z = 0.25
+
 	# Left arm swings from the shoulder.
 	_arm_l = Node3D.new()
 	_arm_l.position = Vector3(-0.4, 0.92, 0)
@@ -86,7 +96,7 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
 	muzzle.position = Vector3(0.4, 0.04, -0.95)
 	aim.add_child(muzzle)
 	if with_gun:
-		var gun_mat := _plain(Color(0.95, 0.93, 0.9), 0.4)
+		var gun_mat := _plain(col.lerp(Color(1, 1, 1), 0.12), 0.5)
 		var barrel := CapsuleMesh.new()
 		barrel.radius = 0.085
 		barrel.height = 0.62
@@ -96,7 +106,7 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
 		ring.top_radius = 0.105
 		ring.bottom_radius = 0.105
 		ring.height = 0.1
-		var rg := _mesh(aim, ring, _plain(col, 0.4), Vector3(0.4, 0.05, -0.78))
+		var rg := _mesh(aim, ring, _plain(Color(0.95, 0.93, 0.9), 0.5), Vector3(0.4, 0.05, -0.78))
 		rg.rotation.x = PI / 2
 		_ball(aim, _plain(col.lerp(Color.WHITE, 0.3), 0.2), Vector3(0.4, 0.15, -0.5), Vector3(0.07, 0.07, 0.1))
 
@@ -236,7 +246,8 @@ func muzzle_position() -> Vector3:
 
 
 ## speed: 0..1+ fraction of run speed. vy: vertical velocity. pitch: view pitch.
-func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float, recoil := 0.0) -> void:
+## strafe: -1..1 sideways speed (leans the body into the turn).
+func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float, recoil := 0.0, strafe := 0.0) -> void:
 	_t += delta
 	speed = clampf(speed, 0.0, 1.5)
 	var run := minf(speed, 1.0)
@@ -274,7 +285,7 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 			aim_x = -0.9
 	rig.position.y = bob + hop
 	rig.rotation.x = -0.13 * run
-	rig.rotation.z = sin(_phase) * 0.05 * run
+	rig.rotation.z = sin(_phase) * 0.05 * run - strafe * 0.16
 	_arm_l.rotation.x = arm_x
 	aim.rotation.x = aim_x
 	head.rotation.x = head_x

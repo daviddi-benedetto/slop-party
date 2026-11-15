@@ -11,6 +11,8 @@ extends Node
 ##   --shot=<file.png>     save a screenshot, print stats, then quit
 ##   --shot-time=<sec>     when to take it (default 6)
 ##   --pause-at=<sec>      open the pause menu after that many seconds
+##   --options-demo        open the Options screen in the lobby after 1 second
+##   --uncapped            ignore the v-sync / frame-limit settings (benchmarking)
 ##   --debug               extra bot info in the --shot printout
 ## Example:
 ##   godot --path . -w --resolution 1920x1080 -- --autotest --views=6 --shot=out.png
@@ -57,6 +59,8 @@ func _ready() -> void:
 			lobby.demo_fill(int(hb[0]), int(hb[1]) if hb.size() > 1 else 0)
 		lobby.activate()
 		create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
+	if _args.has("options-demo"):
+		get_tree().create_timer(1.0).timeout.connect(func(): lobby._options.open())
 	if _args.has("pause-at"):
 		get_tree().create_timer(float(_args["pause-at"])).timeout.connect(func():
 			if game != null:
