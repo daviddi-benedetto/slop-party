@@ -7,6 +7,7 @@ extends StaticBody3D
 const Fx = preload("res://scripts/fx.gd")
 
 static var _mat: StandardMaterial3D
+static var _meshes := {}
 
 var is_glass := true
 var mass := 1.0
@@ -28,12 +29,17 @@ func _ready() -> void:
 		_mat.rim_enabled = true
 		_mat.rim = 0.6
 		_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var box := BoxMesh.new()
-	box.size = size
+	# One shared mesh per pane size, so the renderer can instance them.
+	var key := "%.2f,%.2f" % [size.x, size.y]
+	if not _meshes.has(key):
+		var box := BoxMesh.new()
+		box.size = size
+		_meshes[key] = box
 	var mi := MeshInstance3D.new()
-	mi.mesh = box
+	mi.mesh = _meshes[key]
 	mi.material_override = _mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.visibility_range_end = 38.0
 	add_child(mi)
 	var shape := BoxShape3D.new()
 	shape.size = size + Vector3(0, 0, 0.1)

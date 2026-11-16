@@ -1420,6 +1420,7 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 				_glass(Vector3(x1 - t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
 		if opts.get("furnish", true):
 			_furnish(c, sx, sz, y0, mirror)
+		_facade(c, sx, sz, y0, f, win_x, win_z, pitched, mirror)
 		_wall_x(z0 + t * 0.5, x0, x1, y0, FLOOR_H, mat, south, mirror, t)
 		_wall_x(z1 - t * 0.5, x0, x1, y0, FLOOR_H, mat, win_x, mirror, t)
 		_wall_z(x0 + t * 0.5, z0 + t, z1 - t, y0, FLOOR_H, mat, win_z, mirror, t)
@@ -1448,6 +1449,26 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 			_gable(Vector3(c.x, y, c.z), sx + 0.8, sz + 0.8, minf(sz * 0.32, 3.0), roof_mat, mirror)
 		else:
 			_slab(Rect2(x0, z0, sx, sz), y, floor_mat if not is_roof else roof_mat, holes, mirror)
+	# Foundation band and corner posts: the building reads as built, not a box.
+	var trim := "trim" if _mats.has("trim") else ("block_a" if mat != "block_a" else "block_c")
+	_box(Vector3(c.x, c.y + 0.14, c.z), Vector3(sx + 0.16, 0.28, sz + 0.16), "dark", mirror, 0.0, false)
+	for cx in [x0, x1]:
+		for cz in [z0, z1]:
+			_box(Vector3(cx, c.y + floors * FLOOR_H * 0.5, cz), Vector3(0.22, floors * FLOOR_H, 0.22), trim, mirror, 0.0, false)
+	if pitched:
+		# Chimney through the ridge side.
+		var ry := c.y + floors * FLOOR_H
+		_box(Vector3(c.x + sx * 0.28, ry + 1.5, c.z - sz * 0.14), Vector3(0.8, 3.0, 0.8), "block_b" if _mats.has("block_b") else "block_a", mirror)
+		_box(Vector3(c.x + sx * 0.28, ry + 3.05, c.z - sz * 0.14), Vector3(0.95, 0.14, 0.95), "dark", mirror, 0.0, false)
+	else:
+		# Roof clutter on the terrace: vents, a water tank, an aerial.
+		var ry2 := c.y + floors * FLOOR_H
+		_box(Vector3(c.x - sx * 0.3, ry2 + 0.4, c.z + sz * 0.3), Vector3(1.4, 0.8, 1.0), "block_c", mirror)
+		_box(Vector3(c.x - sx * 0.3, ry2 + 0.85, c.z + sz * 0.3), Vector3(1.0, 0.12, 0.7), "dark", mirror, 0.0, false)
+		_cyl(Vector3(c.x + sx * 0.32, ry2, c.z + sz * 0.3), 0.06, 3.2, "dark", mirror, false)
+		_box(Vector3(c.x + sx * 0.32, ry2 + 2.7, c.z + sz * 0.3), Vector3(0.9, 0.04, 0.04), "dark", mirror, 0.0, false)
+		if sx > 11.0:
+			_model("toon/Building/Water_Tank_Floor", Vector3(c.x + sx * 0.1, ry2, c.z - sz * 0.3), PI * 0.5, 0.8, mirror)
 	if not pitched:
 		var y := c.y + floors * FLOOR_H
 		_wall_x(z0 + 0.15, x0, x1, y, 1.0, mat, [], mirror, 0.3)
@@ -1457,6 +1478,109 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		if theme.neon:
 			_box(Vector3(c.x, y + 1.02, z0 + 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
 			_box(Vector3(c.x, y + 1.02, z1 - 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
+
+
+## Facade details for one storey: window sills, lintels and shutters, a porch
+## roof with posts and a step at each ground-floor door, a string course
+## between storeys. Visual only except the porch roof.
+func _facade(c: Vector3, sx: float, sz: float, y0: float, f: int, win_x: Array, win_z: Array, pitched: bool, mirror: bool) -> void:
+	var trim := "trim" if _mats.has("trim") else "block_a"
+	var shut := "roof_red" if _mats.has("roof_red") else "block_c"
+	var x0 := c.x - sx * 0.5
+	var x1 := c.x + sx * 0.5
+	var z0 := c.z - sz * 0.5
+	var z1 := c.z + sz * 0.5
+	for w in win_x:
+		for side in ([[z1, 1.0]] if f == 0 else [[z1, 1.0], [z0, -1.0]]):
+			var z: float = side[0] + side[1] * 0.05
+			_box(Vector3(w[0], y0 + 0.9, z), Vector3(1.7, 0.1, 0.22), trim, mirror, 0.0, false)
+			_box(Vector3(w[0], y0 + 2.36, z), Vector3(1.6, 0.12, 0.14), trim, mirror, 0.0, false)
+			if pitched:
+				for sgn in [-1.0, 1.0]:
+					_box(Vector3(w[0] + sgn * 0.92, y0 + 1.63, z), Vector3(0.36, 1.35, 0.06), shut, mirror, 0.0, false)
+	for w in win_z:
+		for side in ([[x0, -1.0]] if f == 0 else [[x0, -1.0], [x1, 1.0]]):
+			var x: float = side[0] + side[1] * 0.05
+			_box(Vector3(x, y0 + 0.9, w[0]), Vector3(0.22, 0.1, 1.7), trim, mirror, 0.0, false)
+			_box(Vector3(x, y0 + 2.36, w[0]), Vector3(0.14, 0.12, 1.6), trim, mirror, 0.0, false)
+			if pitched:
+				for sgn in [-1.0, 1.0]:
+					_box(Vector3(x, y0 + 1.63, w[0] + sgn * 0.92), Vector3(0.06, 1.35, 0.36), shut, mirror, 0.0, false)
+	if f == 0:
+		# Porches: south door (z0 side) and east door (x1 side).
+		_box(Vector3(c.x, y0 + 2.75, z0 - 0.75), Vector3(3.0, 0.14, 1.6), shut, mirror)
+		_box(Vector3(c.x, y0 + 0.08, z0 - 0.7), Vector3(2.4, 0.16, 1.4), trim, mirror, 0.0, false)
+		_box(Vector3(x1 + 0.75, y0 + 2.75, c.z), Vector3(1.6, 0.14, 3.0), shut, mirror)
+		_box(Vector3(x1 + 0.7, y0 + 0.08, c.z), Vector3(1.4, 0.16, 2.4), trim, mirror, 0.0, false)
+		for sgn in [-1.0, 1.0]:
+			_cyl(Vector3(c.x + sgn * 1.35, y0, z0 - 1.4), 0.07, 2.7, trim, mirror, false)
+			_cyl(Vector3(x1 + 1.4, y0, c.z + sgn * 1.35), 0.07, 2.7, trim, mirror, false)
+			_box(Vector3(c.x + sgn * 1.0, y0 + 1.25, z0 - 0.02), Vector3(0.14, 2.5, 0.16), trim, mirror, 0.0, false)
+			_box(Vector3(x1 + 0.02, y0 + 1.25, c.z + sgn * 1.0), Vector3(0.16, 2.5, 0.14), trim, mirror, 0.0, false)
+	else:
+		_box(Vector3(c.x, y0, c.z), Vector3(sx + 0.12, 0.12, sz + 0.12), trim, mirror, 0.0, false)
+
+
+## A dense patch of woodland in `r`: mostly light low-poly trees (cheap), a
+## few detailed ones, with undergrowth, logs and rocks. Trunks collide.
+func _forest(r: Rect2, count: int, mirror := true) -> void:
+	var light := ["survival/Tree", "survival/Tree_Tall", "survival/Tree_Large", "survival/Tree_Fall", "survival/Tree_Autumn", "toon/Plant/Tree_1", "toon/Plant/Tree_3"]
+	for i in count:
+		var p := Vector3(_rng.randf_range(r.position.x, r.end.x), 0, _rng.randf_range(r.position.y, r.end.y))
+		var roll := _rng.randf()
+		if roll < 0.04:
+			_pine(p, _rng.randf_range(0.9, 1.4), mirror)
+		elif roll < 0.07:
+			_tree(p, _rng.randf_range(0.9, 1.3), mirror)
+		else:
+			var path: String = light[_rng.randi() % light.size()]
+			var s := _rng.randf_range(3.6, 5.2) if path.begins_with("survival") else _rng.randf_range(0.9, 1.4)
+			_model(path, p, _rng.randf() * TAU, s, mirror, "none")
+			_trunk(p, 0.28, 3.0, mirror)
+	for i in count / 2:
+		var p := Vector3(_rng.randf_range(r.position.x, r.end.x), 0, _rng.randf_range(r.position.y, r.end.y))
+		var roll := _rng.randf()
+		if roll < 0.45:
+			_plant(p, _rng.randf_range(0.8, 1.3), mirror)
+		elif roll < 0.7:
+			_bush(p, _rng.randf_range(0.7, 1.2), mirror)
+		elif roll < 0.85:
+			_model("survival/Tree_Log", p, _rng.randf() * TAU, 3.0, mirror)
+		else:
+			_model(_pick(["survival/Rock_A", "survival/Rock_B", "survival/Rock_C"]), p, _rng.randf() * TAU, 2.6, mirror)
+	no_grass.append(r)
+
+
+## A camp: tents round a fire (with a flickering-free warm light), bedrolls,
+## crates and a log to sit on.
+func _camp(pos: Vector3, mirror := true) -> void:
+	_model("survival/Campfire", pos, 0.0, 3.2, mirror, "none")
+	_glow(pos + Vector3(0, 1.0, 0), Color(1.0, 0.6, 0.25), 9.0, 2.2 / maxf(light_scale, 0.5), mirror)
+	_model("survival/Tent", pos + Vector3(3.2, 0, 1.0), -1.2, 5.0, mirror)
+	_model("survival/Tent_Canvas", pos + Vector3(-2.6, 0, 2.6), 0.9, 5.0, mirror)
+	_model("survival/Tree_Log", pos + Vector3(0.2, 0, -2.2), PI * 0.5, 2.6, mirror)
+	_model("survival/Bedroll", pos + Vector3(-2.4, 0, -1.2), 0.5, 3.0, mirror, "none")
+	_prop("survival/Box", pos + Vector3(2.0, 0.05, -2.0), 0.4, 3.0, 5.0, mirror)
+	_prop("survival/Bucket", pos + Vector3(1.2, 0.05, 1.8), 0.0, 2.6, 1.5, mirror)
+	_prop("survival/Bottle", pos + Vector3(-0.9, 0.05, -1.6), 0.0, 2.6, 0.5, mirror)
+	no_grass.append(Rect2(pos.x - 2.0, pos.z - 2.0, 4.0, 4.0))
+
+
+## A sidewalk with a kerb along a road edge (visual; 6 cm high).
+func _sidewalk(r: Rect2, mirror := true) -> void:
+	var mat := "path" if _mats.has("path") else "block_a"
+	_surface(r, 0.03, mat, mirror)
+	no_grass.append(r)
+	if mirror:
+		no_grass.append(Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y))
+
+
+## Zebra crossing: stripes across a road. along_x = the road runs along X.
+func _crossing(centre: Vector3, road_w: float, along_x := true, mirror := true) -> void:
+	for i in 6:
+		var o := (i - 2.5) * (road_w / 6.5)
+		var p := centre + (Vector3(0, 0.024, o) if along_x else Vector3(o, 0.024, 0))
+		_box(p, Vector3(2.4, 0.01, road_w / 13.0) if along_x else Vector3(road_w / 13.0, 0.01, 2.4), "trim" if _mats.has("trim") else "line", mirror, 0.0, false)
 
 
 ## An underground passage along X at `z` from x0 to x1, with ramps down at
@@ -2104,10 +2228,8 @@ func _scenery_suburb(rich: bool) -> void:
 		var p := _ring_spot(i, n, 8.0, 22.0)
 		var w := _rng.randf_range(8.0, 11.0)
 		var d := _rng.randf_range(7.0, 9.0)
-		var basis := Basis(Vector3.UP, atan2(p.x, p.z))
-		_add(box, _mats[walls[i % 4]], Transform3D(basis.scaled(Vector3(w, 5.5, d)), p + Vector3(0, 2.75, 0)), false)
-		_add(prism, _mats["block_c" if i % 2 == 0 else "roof_red"], Transform3D(basis.scaled(Vector3(w + 0.6, 2.4, d + 0.6)) * Basis(Vector3.UP, PI * 0.5), p + Vector3(0, 6.7, 0)), false)
-		_add(box, _mats["window"], Transform3D(basis.scaled(Vector3(w * 0.7, 1.0, d + 0.06)), p + Vector3(0, 3.6, 0)), false)
+		# Modelled houses (Kenney suburban kit) beyond the fences.
+		_model("houses/House_Type_%02d" % (1 + _rng.randi() % 21), p, atan2(p.x, p.z) + PI * 0.5 * (_rng.randi() % 4), 8.5, false, "none")
 	_scenery_trees(40 if rich else 16, 2.0, 30.0)
 
 

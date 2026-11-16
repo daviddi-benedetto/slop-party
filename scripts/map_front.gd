@@ -48,6 +48,7 @@ static func frontline(m) -> void:
 	_farm(m)
 	_base(m)
 	_trees(m)
+	_landscape(m)
 
 	m.flags = [Vector3(-55, 0, 24), Vector3(0, 0, 0), Vector3(55, 0, -24)]
 	m.bases = [Vector3(-90, 0, 0), Vector3(90, 0, 0)]
@@ -242,6 +243,47 @@ static func _farm(m) -> void:
 	m.no_grass.append(Rect2(-64, -60, 20, 16))
 	_bld(m, Vector3(78, 0, 60), 8.6, 8.6, 2, "block_c", {"roof": "block_a"})
 	_bld(m, Vector3(78, 0, -60), 8.6, 8.6, 2, "block_c", {"roof": "block_a"})
+
+
+## Dense forests on the flanks, camps, picnic spots, sidewalks, crossings,
+## field fences: the open ground between objectives.
+static func _landscape(m) -> void:
+	m._forest(Rect2(2, 58, 26, 10), 46)
+	m._forest(Rect2(85, 44, 13, 24), 50)
+	m._forest(Rect2(4, -68, 16, 13), 40)
+	m._forest(Rect2(85, -68, 13, 32), 60)
+	m._forest(Rect2(44, 30, 18, 8), 24)
+	m._camp(Vector3(16, 0, 50))
+	m._camp(Vector3(72, 0, -62))
+	# Town sidewalks, zebra crossings and benches along the main road.
+	m._sidewalk(Rect2(-33, 4, 66, 2.2), false)
+	m._sidewalk(Rect2(-33, -6.2, 66, 2.2), false)
+	m._sidewalk(Rect2(41, 4, 30, 1.8))
+	m._crossing(Vector3(16, 0, 0), 8.0)
+	m._crossing(Vector3(37.5, 0, 9), 7.0, false)
+	m._crossing(Vector3(37.5, 0, -9), 7.0, false)
+	for x in [8.0, 24.0]:
+		m._prop("furniture/Bench", Vector3(x, 0.05, 5.6), 0.0, 3.2, 14.0)
+		m._prop("furniture/Trashcan", Vector3(x + 1.6, 0.05, 5.7), 0.0, 2.2, 3.0)
+	# Cafe tables on the square.
+	for p in [Vector3(-8.5, 0.05, 7.5), Vector3(9.5, 0.05, -8.0)]:
+		m._prop("furniture/Table_Round", p, 0.0, 2.1, 10.0)
+		m._prop("furniture/Chair_Rounded", p + Vector3(1.1, 0, 0), -PI * 0.5, 2.15, 4.0)
+		m._prop("furniture/Chair_Rounded", p + Vector3(-1.1, 0, 0), PI * 0.5, 2.15, 4.0)
+		m._prop("survival/Bottle", p + Vector3(0.1, 0.37 * 2.1, 0.1), 0.0, 2.4, 0.4)
+	# Picnic spot and a stack of logs by the farm track.
+	m._prop("furniture/Table", Vector3(34, 0.05, 30), 0.3, 2.3, 14.0)
+	m._prop("furniture/Bench", Vector3(34, 0.05, 31.2), 0.3, 3.0, 10.0)
+	m._prop("furniture/Bench", Vector3(34, 0.05, 28.8), 0.3 + PI, 3.0, 10.0)
+	for i in 4:
+		m._model("survival/Tree_Log", Vector3(60 + (i % 2) * 0.8, (i / 2) * 0.7, 28), PI * 0.5, 3.0)
+	# Field fences (jumpable) and crop rows.
+	for i in 9:
+		m._model("survival/Fence", Vector3(46 + i * 2.0, 0, 20.5), 0.0, 4.0)
+		m._model("survival/Fence", Vector3(22 + i * 2.0, 0, -28.5), 0.0, 4.0)
+	for row in 4:
+		for i in 7:
+			m._plant(Vector3(24 + i * 2.2, 0, -31 - row * 2.2), 1.1)
 
 
 ## Team bases: HQ, helipad, vehicle bays, banners in the team colour.

@@ -35,6 +35,14 @@ func _ready() -> void:
 	inst.scale = Vector3.ONE * _scl
 	inst.position = -Vector3(b.get_center().x, b.position.y, b.get_center().z) * _scl
 	add_child(inst)
+	# Small things are not drawn from far away (and never cast long shadows).
+	var far := clampf(b.size.length() * _scl * 16.0, 22.0, 48.0)
+	for mi in Models.mesh_instances(inst):
+		mi.visibility_range_end = far
+		mi.visibility_range_end_margin = 4.0
+		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		if b.size.length() * _scl < 2.6:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var shape := BoxShape3D.new()
 	shape.size = (b.size * _scl).max(Vector3(0.06, 0.06, 0.06))
 	var cs := CollisionShape3D.new()
