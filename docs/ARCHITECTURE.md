@@ -8,8 +8,8 @@ has not been verified.
 
 - Local splitscreen FPS, 1–6 humans plus optional bots, one PC, one screen.
 - One mode: free-for-all deathmatch, first to N KOs (5/10/15/20/30).
-- Three maps of different sizes and themes (see `map.gd`): Neon Yard, Ember
-  Pit, Frost Line. Chosen in the lobby.
+- Three maps of different sizes, themes and music (see `map.gd`, `sfx.gd`):
+  Neon Yard, Ember Pit, Frost Line. Chosen in the lobby.
 - ROUNDS-style progression: **on every death** the dead player is shown three
   random cards and must pick one before respawning. Cards permanently modify
   that player's stats for the match and stack.
@@ -311,13 +311,23 @@ screen at once.
 ### Maps and themes (`map.gd`)
 
 `MAPS` pairs a layout function (`_layout_yard`, `_layout_pit`, `_layout_frost`)
-with a `THEMES` entry. A theme holds surface colours, two neon accents, sky
-shader parameters, moon/sun, fog, grass colours (or none), the kind of
-backdrop scenery (`city`, `rocks`, `ice`) and the drifting motes. Layouts only
-use material *keys* (`block_a`, `deck`, `accent_a`, …), so any layout works
-with any theme. `_glow()` adds shadowless coloured point lights; emissive
-trims plus bloom do the rest. The bot nav graph is generated per map with no
-extra data.
+with a `THEMES` entry. A theme's `mats` maps each material key to
+`[colour, texture kind, tiles per metre, roughness, metallic]`; the theme also
+holds two neon accents, sky shader parameters, moon/sun, fog, backdrop
+scenery (`city`, `rocks`, `ice`) and the drifting motes.
+
+Texture kinds are generated once per session by the static `map.gd::_tex`
+(greyscale albedo + normal map, emission for lava): concrete, plates,
+corrugated metal, planks, bricks, tiles, Voronoi rock, glowing lava cracks,
+snow, cracked ice, hazard stripes. Shipping-container and crate materials use
+object-space mapping so their ribs stay aligned when rotated.
+
+Map-specific pieces: `_container()` (shipping container with end frames),
+`_sign()` (neon wall sign + light), `_cyl()` (round structures), `_lava()`
+(burning channel behind a kerb; damage in `_physics_process`, bots kept out
+by the kerb failing the nav link test), `_pine()`. `_glow()` adds shadowless
+coloured point lights. The bot nav graph is generated per map with no extra
+data.
 
 ### Character customisation
 
@@ -358,6 +368,18 @@ What applies where:
 The file is saved as `fragdeck_settings.cfg` next to the executable (the
 `engine` folder when running from source, `build` for the exported game), not
 in the user profile, to keep the folder portable. Delete it to reset.
+
+### Music (`sfx.gd`)
+
+Each song is a `TRACKS` entry: tempo, four two-bar chords, and a style per
+part (bass: funk / drive / pump / slap; chords: stab / arp / bell; drums:
+funk / four / hard / half; lead level and pad level). `lobby` is laid-back
+funk; `map0` driving synthwave (Neon Yard); `map1` fast and aggressive (Ember
+Pit); `map2` half-time funk with bells (Frost Line). `game.gd` plays
+`"map%d"` for the current map. Tracks render in a worker thread; the one
+currently wanted is rendered first. Voices: filtered saw bass with an
+envelope "wow", plucked saw, detuned-saw pad, pulse lead with echo, kick,
+snare and hats, with side-chain pumping on the chords.
 
 ### Audio (`sfx.gd`)
 
@@ -477,7 +499,8 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
   (block, pickups) or a forced-aim screenshot; no human has pressed them.
 - Weapon balance. Every weapon and card runs without errors in bot matches,
   but the numbers in `weapons.gd` and `cards.gd` are first guesses.
-- Anything audible. The music and sound effects are generated without errors
+- Anything audible, including the new songs: they render without errors
+  but nobody has listened to them. The music and sound effects are generated without errors
   but nobody has listened to them; expect to tune `sfx.gd` by ear.
 - The Options screen was only rendered, not operated: changing values at
   runtime (fullscreen toggle, AA switch mid-match) has not been exercised.

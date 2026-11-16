@@ -14,7 +14,10 @@ inspired by ROUNDS).
 - **43 powerup cards** in three rarities.
 - **Abilities:** dash, block (a short guard that negates damage and bats
   bullets back at the shooter) and aim down sights.
-- **3 maps:** Neon Yard (medium), Ember Pit (small) and Frost Line (large).
+- **3 maps, each with its own look and song:** Neon Yard (medium night
+  container yard with cranes and neon signs), Ember Pit (small sandstone
+  foundry with a forge and burning lava channels) and Frost Line (large polar
+  outpost with ice walls, lab modules and pines).
 - **Character customisation:** animal, colour, hat and face per player,
   remembered between sessions.
 

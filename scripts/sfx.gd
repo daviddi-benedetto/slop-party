@@ -1,19 +1,44 @@
 extends Node
 ## Autoload "Sfx": all audio. Nothing is loaded from disk - sound effects are
-## synthesised at startup and the two music loops are composed and rendered in
-## a background thread (so startup is not delayed; music fades in when ready).
+## synthesised at startup and the music is composed and rendered in a
+## background thread (so startup is not delayed; a track fades in when ready).
 ##
 ## play(name)            UI / personal feedback, always full volume.
 ## play_at(name, pos)    world sounds. Volume falls off with the distance to
 ##                       the nearest entry of `listeners` (game.gd keeps that
 ##                       list filled with the human players' positions). With
 ##                       several players on one screen there is no stereo pan.
-## music(name)           "lobby", "battle" or "" - cross-fades.
+## music(name)           a key of TRACKS ("lobby", "map0", "map1", "map2") or
+##                       "" - cross-fades. A track that is not rendered yet
+##                       jumps the queue and starts as soon as it is done.
+##
+## Music: every track is an 8-bar loop described by a TRACKS entry (tempo,
+## four 2-bar chords, and a style for bass, chords, lead and drums) and
+## rendered by _render_track with a few small synth voices: filtered saw bass,
+## plucked arpeggio, detuned-saw pad, pulse lead with echo, and drums, plus
+## side-chain "pumping" on the pad. Bars 1-4 are the groove alone; the lead
+## joins for bars 5-8. To add a song, add a TRACKS entry.
 ##
 ## Volumes come from Settings ("sfx", "music"; master is the audio bus).
 
 const RATE := 22050
 const VOICES := 24
+
+## chords: [bass note, then chord tones] as MIDI numbers; each lasts two bars.
+const TRACKS := {
+	# Laid-back funk for the lobby.
+	"lobby": {"bpm": 100.0, "bass": "funk", "keys": "stab", "drums": "funk", "lead": 0.0, "pad": 0.0, "lead_shift": 0,
+		"chords": [[33, 57, 60, 64, 67], [29, 57, 60, 64, 65], [36, 55, 60, 64, 67], [31, 55, 59, 62, 67]]},
+	# Neon Yard: driving synthwave.
+	"map0": {"bpm": 112.0, "bass": "drive", "keys": "arp", "drums": "four", "lead": 0.2, "pad": 0.05, "lead_shift": 0,
+		"chords": [[38, 57, 62, 65, 69], [34, 58, 62, 65, 70], [29, 57, 60, 65, 69], [36, 55, 60, 64, 67]]},
+	# Ember Pit: fast and aggressive.
+	"map1": {"bpm": 132.0, "bass": "pump", "keys": "stab", "drums": "hard", "lead": 0.2, "pad": 0.0, "lead_shift": 3,
+		"chords": [[28, 59, 64, 67, 71], [29, 60, 65, 69, 72], [28, 59, 64, 67, 71], [26, 57, 62, 66, 69]]},
+	# Frost Line: spacious half-time funk with bells.
+	"map2": {"bpm": 96.0, "bass": "slap", "keys": "bell", "drums": "half", "lead": 0.17, "pad": 0.055, "lead_shift": 5,
+		"chords": [[30, 57, 61, 66, 69], [26, 57, 62, 66, 69], [33, 57, 61, 64, 69], [28, 56, 59, 64, 68]]},
+}
 
 var listeners: Array = []          # Vector3 world positions of human players
 
@@ -25,6 +50,9 @@ var _tracks := {}
 var _want_music := ""
 var _playing_music := ""
 var _thread: Thread
+var _mutex := Mutex.new()
+var _priority := ""
+var _quit := false
 var _duck := 0.0                    # extra dB reduction (pause menu)
 
 
@@ -43,6 +71,9 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	_mutex.lock()
+	_quit = true
+	_mutex.unlock()
 	if _thread != null and _thread.is_started():
 		_thread.wait_to_finish()
 
@@ -79,6 +110,9 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> voi
 
 func music(track: String) -> void:
 	_want_music = track
+	_mutex.lock()
+	_priority = track
+	_mutex.unlock()
 
 
 func duck(on: bool) -> void:
@@ -89,7 +123,7 @@ func _process(delta: float) -> void:
 	var level: int = Settings.v("music")
 	var target := -60.0
 	if _want_music == _playing_music and _playing_music != "" and level > 0:
-		target = -15.0 + linear_to_db(level / 6.0) - _duck
+		target = -13.0 + linear_to_db(level / 6.0) - _duck
 	_music_player.volume_db = move_toward(_music_player.volume_db, target, delta * 70.0)
 	if _want_music != _playing_music and _music_player.volume_db <= -59.0:
 		_playing_music = ""
@@ -169,38 +203,26 @@ func _wav(data: PackedByteArray) -> AudioStreamWAV:
 
 
 # --------------------------------------------------------------------------
-# Music (runs in a worker thread)
+# Music (everything below runs in the worker thread)
 # --------------------------------------------------------------------------
-# Eight bars in C major, 16 steps per bar. Each track is mixed into a float
-# buffer whose length is exactly the loop length; note tails wrap around to
-# the start, so the loop is seamless.
-
-const CHORDS := {
-	"C": [36, 60, 64, 67], "G": [31, 59, 62, 67], "Am": [33, 60, 64, 69], "F": [29, 60, 65, 69],
-}
-const PROGRESSION := ["C", "G", "Am", "F", "C", "G", "F", "G"]
-## [step, midi note, length in steps] per bar.
-const MELODY := [
-	[[0, 76, 2], [2, 79, 2], [4, 84, 3], [8, 79, 2], [10, 76, 2], [12, 79, 4]],
-	[[0, 74, 2], [2, 79, 2], [4, 83, 3], [8, 79, 2], [10, 74, 2], [12, 79, 4]],
-	[[0, 76, 2], [2, 81, 2], [4, 84, 3], [8, 81, 2], [10, 76, 2], [12, 81, 4]],
-	[[0, 77, 2], [2, 81, 2], [4, 84, 2], [6, 81, 2], [8, 79, 3], [12, 76, 2], [14, 74, 2]],
-	[[0, 84, 3], [4, 79, 2], [6, 76, 2], [8, 79, 2], [10, 84, 2], [12, 88, 4]],
-	[[0, 86, 3], [4, 83, 2], [6, 79, 2], [8, 83, 2], [10, 86, 2], [12, 79, 4]],
-	[[0, 84, 2], [2, 81, 2], [4, 77, 2], [6, 81, 2], [8, 84, 3], [12, 81, 2], [14, 84, 2]],
-	[[0, 83, 2], [2, 86, 2], [4, 79, 4], [8, 86, 2], [10, 83, 2], [12, 79, 2], [14, 83, 2]],
-]
-
 
 func _hz(midi: int) -> float:
 	return 440.0 * pow(2.0, (midi - 69) / 12.0)
 
 
 func _render_music() -> void:
-	var lobby := _render_track(96.0, false)
-	call_deferred("_track_ready", "lobby", lobby)
-	var battle := _render_track(132.0, true)
-	call_deferred("_track_ready", "battle", battle)
+	var pending: Array = TRACKS.keys()
+	while not pending.is_empty():
+		_mutex.lock()
+		var stop := _quit
+		var want := _priority
+		_mutex.unlock()
+		if stop:
+			return
+		var track: String = want if pending.has(want) else pending[0]
+		pending.erase(track)
+		var data := _render_track(TRACKS[track])
+		call_deferred("_track_ready", track, data)
 
 
 func _track_ready(track: String, data: PackedByteArray) -> void:
@@ -211,108 +233,234 @@ func _track_ready(track: String, data: PackedByteArray) -> void:
 	_tracks[track] = wav
 
 
-func _render_track(bpm: float, battle: bool) -> PackedByteArray:
-	var step := 60.0 / bpm / 4.0
+## Eight bars, 16 steps per bar. Each voice is mixed into a float buffer whose
+## length is exactly the loop length; note tails wrap around to the start, so
+## the loop is seamless.
+func _render_track(tr: Dictionary) -> PackedByteArray:
+	var step: float = 60.0 / tr.bpm / 4.0
+	var beat := step * 4.0
 	var n := int(step * 16.0 * 8.0 * RATE)
-	var mix := PackedFloat32Array()
-	mix.resize(n)
-	var lead := PackedFloat32Array()
+	var drums := PackedFloat32Array()
+	drums.resize(n)
+	var bass := PackedFloat32Array()
+	bass.resize(n)
+	var keys := PackedFloat32Array()      # chords / arps / pad: side-chained to the kick
+	keys.resize(n)
+	var lead := PackedFloat32Array()      # gets an echo
 	lead.resize(n)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
 
 	for bar in 8:
-		var chord: Array = CHORDS[PROGRESSION[bar]]
+		var chord: Array = tr.chords[bar / 2]
 		var t0 := bar * 16
-		# Bass.
-		for s in ([0, 3, 6, 8, 11, 14] if battle else [0, 8, 11]):
-			_tone(mix, n, (t0 + s) * step, step * 2.6, _hz(chord[0] + 12), 0.34, 0, 9.0)
-		# Chords: off-beat stabs in battle, slow arpeggio in the lobby.
-		if battle:
-			for s in [2, 6, 10, 14]:
-				for k in 3:
-					_tone(mix, n, (t0 + s) * step, step * 1.6, _hz(chord[1 + k]), 0.075, 1, 16.0)
-		else:
-			var arp := [1, 2, 3, 2, 1, 2, 3, 2]
-			for i in 8:
-				_tone(mix, n, (t0 + i * 2) * step, step * 3.5, _hz(chord[arp[i]]), 0.1, 2, 5.0)
-		# Melody (the lobby plays a sparser version, an octave down).
-		for note in MELODY[bar]:
-			if not battle and note[2] < 3 and note[0] % 8 != 0:
-				continue
-			var midi: int = note[1] if battle else note[1] - 12
-			_tone(lead, n, (t0 + note[0]) * step, step * (note[2] + 0.8), _hz(midi), 0.2 if battle else 0.17, 2, 5.5)
-		# Drums.
+		var b := bar >= 4                 # second half: fuller arrangement
+		var root: int = chord[0]
+
+		# --- bass ---
+		match tr.bass:
+			"funk":
+				for hit in [[0, 0, 2.2], [3, 0, 1.0], [6, 12, 0.8], [7, 0, 1.4], [10, 0, 1.0], [12, 7, 1.2], [14, 12, 0.8], [15, 10, 0.8]]:
+					_bass(bass, n, (t0 + hit[0]) * step, step * hit[2], _hz(root + hit[1]), 0.42, 16.0)
+			"drive":
+				for s in range(0, 16, 2):
+					_bass(bass, n, (t0 + s) * step, step * 1.7, _hz(root + (12 if s == 6 or s == 14 else 0)), 0.4, 9.0)
+			"pump":
+				for s in 16:
+					var up := 12 if (s == 7 or s == 15 or (b and s == 11)) else 0
+					_bass(bass, n, (t0 + s) * step, step * 0.9, _hz(root + up), 0.36 if s % 4 == 0 else 0.26, 22.0)
+			"slap":
+				for hit in [[0, 0, 3.0], [3, 12, 0.7], [4, 0, 1.6], [7, 7, 0.9], [10, 0, 1.2], [11, 12, 0.7], [14, 10, 1.4]]:
+					_bass(bass, n, (t0 + hit[0]) * step, step * hit[2], _hz(root + hit[1]), 0.44, 13.0)
+
+		# --- chords ---
+		match tr.keys:
+			"stab":
+				for s in ([2, 6, 10, 14] if not b else [2, 5, 6, 10, 13, 14]):
+					for k in range(1, 5):
+						_pluck(keys, n, (t0 + s) * step, step * 1.3, _hz(chord[k]), 0.07, 20.0)
+			"arp":
+				var order := [1, 2, 3, 4, 3, 2, 1, 3]
+				for s in 16:
+					var note: int = chord[order[s % 8]] + (12 if b and s % 4 == 3 else 0)
+					_pluck(keys, n, (t0 + s) * step, step * 1.8, _hz(note), 0.09, 13.0)
+			"bell":
+				var order2 := [1, 3, 2, 4, 3, 1, 4, 2]
+				for i in 8:
+					_tone(keys, n, (t0 + i * 2) * step, step * 5.0, _hz(chord[order2[i]] + 12), 0.075, 4.5)
+		if tr.pad > 0.0 and bar % 2 == 0:
+			for k in range(1, 5):
+				_pad(keys, n, t0 * step, step * 32.0, _hz(chord[k]), tr.pad)
+
+		# --- lead: a two-bar phrase per chord, second half only ---
+		if b and tr.lead > 0.0 and bar % 2 == 0:
+			var rhythm := [0, 3, 6, 8, 12, 14, 16, 19, 22, 24, 28]
+			var shape := [3, 2, 1, 2, 3, 4, 3, 2, 1, 3, 2]
+			var shift: int = tr.lead_shift + bar
+			for i in rhythm.size():
+				var tone: int = chord[1 + (shape[(i + shift) % shape.size()] - 1)] + 12
+				var length := 2.6 if i % 3 != 2 else 3.6
+				_lead(lead, n, (t0 + rhythm[i]) * step, step * length, _hz(tone), tr.lead)
+
+		# --- drums ---
 		for s in 16:
 			var at := (t0 + s) * step
-			if battle:
-				if s % 4 == 0:
-					_kick(mix, n, at, 0.6)
-				if s % 8 == 4:
-					_snare(mix, n, at, 0.34, rng)
-				if s % 2 == 0:
-					_hat(mix, n, at, 0.1 if s % 4 == 2 else 0.05, rng)
-			else:
-				if s == 0 or s == 10:
-					_kick(mix, n, at, 0.4)
-				if s == 4 or s == 12:
-					_snare(mix, n, at, 0.16, rng)
-				if s % 4 == 2:
-					_hat(mix, n, at, 0.05, rng)
+			match tr.drums:
+				"funk":
+					if s == 0 or s == 7 or s == 10:
+						_kick(drums, n, at, 0.55)
+					if s == 4 or s == 12:
+						_snare(drums, n, at, 0.3, rng)
+					_hat(drums, n, at, 0.085 if s % 4 == 2 else 0.04, 0.035, rng)
+					if b and s == 14:
+						_hat(drums, n, at, 0.09, 0.2, rng)
+				"four":
+					if s % 4 == 0:
+						_kick(drums, n, at, 0.62)
+					if s == 4 or s == 12:
+						_snare(drums, n, at, 0.34, rng)
+					if s % 4 == 2:
+						_hat(drums, n, at, 0.1, 0.16, rng)
+					elif b:
+						_hat(drums, n, at, 0.035, 0.03, rng)
+				"hard":
+					if s % 4 == 0 or s == 14 or (b and s == 11):
+						_kick(drums, n, at, 0.66)
+					if s == 4 or s == 12:
+						_snare(drums, n, at, 0.4, rng)
+					_hat(drums, n, at, 0.09 if s % 2 == 0 else 0.045, 0.03, rng)
+					if s % 4 == 2:
+						_hat(drums, n, at, 0.07, 0.14, rng)
+				"half":
+					if s == 0 or s == 6 or (b and s == 10):
+						_kick(drums, n, at, 0.6)
+					if s == 8:
+						_snare(drums, n, at, 0.38, rng)
+					if s % 2 == 0:
+						_hat(drums, n, at, 0.07 if s % 4 == 0 else 0.04, 0.04, rng)
+					if s == 14:
+						_hat(drums, n, at, 0.06, 0.22, rng)
 
-	# Echo on the melody, then mix down with a soft clip.
+	# Mix down: side-chain pump on the keys, echo on the lead, soft clip.
 	var delay := int(step * 3.0 * RATE)
+	var pump: float = 0.55 if tr.drums == "four" or tr.drums == "hard" else 0.25
 	var data := PackedByteArray()
 	data.resize(n * 2)
 	for i in n:
-		var v := mix[i] + lead[i] + lead[(i - delay + n) % n] * 0.32 + lead[(i - delay * 2 + n * 2) % n] * 0.12
-		data.encode_s16(i * 2, int(tanh(v * 1.25) * 30000.0))
+		var phase := fmod(float(i) / RATE, beat)
+		var duck_gain := 1.0 - pump * exp(-phase * 9.0)
+		var v := drums[i] + bass[i] * (0.75 + 0.25 * duck_gain) + keys[i] * duck_gain
+		v += lead[i] + lead[(i - delay + n) % n] * 0.34 + lead[(i - delay * 2 + n * 2) % n] * 0.13
+		data.encode_s16(i * 2, int(tanh(v * 1.2) * 30000.0))
 	return data
 
 
-## wave: 0 = triangle + sub sine (bass), 1 = soft pulse (stab), 2 = bell-ish sine stack.
-func _tone(buf: PackedFloat32Array, n: int, start: float, length: float, freq: float, vol: float, wave: int, decay: float) -> void:
+## Saw bass through a low-pass whose cutoff snaps shut: the "wow" of a synth bass.
+func _bass(buf: PackedFloat32Array, n: int, start: float, length: float, freq: float, vol: float, snap: float) -> void:
 	var i0 := int(start * RATE)
 	var count := int(length * RATE)
-	var attack := 0.006 * RATE
+	var y := 0.0
+	var inc := freq / RATE
+	var ph := 0.0
+	var release := 0.02 * RATE
+	for i in count:
+		var t := float(i) / RATE
+		ph += inc
+		if ph >= 1.0:
+			ph -= 1.0
+		var x := (ph * 2.0 - 1.0) + sin(TAU * ph * 0.5) * 0.6
+		y += (x - y) * (0.06 + 0.5 * exp(-t * snap))
+		buf[(i0 + i) % n] += y * vol * minf(1.0, i / 60.0) * minf(1.0, (count - i) / release)
+
+
+## Short plucked saw: arpeggios and chord stabs.
+func _pluck(buf: PackedFloat32Array, n: int, start: float, length: float, freq: float, vol: float, decay: float) -> void:
+	var i0 := int(start * RATE)
+	var count := int(length * RATE)
+	var y := 0.0
+	var inc := freq / RATE
+	var ph := 0.0
+	for i in count:
+		var t := float(i) / RATE
+		ph += inc
+		if ph >= 1.0:
+			ph -= 1.0
+		y += ((ph * 2.0 - 1.0) - y) * (0.1 + 0.6 * exp(-t * decay))
+		buf[(i0 + i) % n] += y * vol * exp(-t * decay * 0.5) * minf(1.0, i / 40.0)
+
+
+## Two detuned saws, heavily filtered, with a slow fade in and out.
+func _pad(buf: PackedFloat32Array, n: int, start: float, length: float, freq: float, vol: float) -> void:
+	var i0 := int(start * RATE)
+	var count := int(length * RATE)
+	var y := 0.0
+	var inc_a := freq * 0.996 / RATE
+	var inc_b := freq * 1.005 / RATE
+	var pa := 0.0
+	var pb := 0.37
+	var edge := 0.35 * RATE
+	for i in count:
+		pa += inc_a
+		if pa >= 1.0:
+			pa -= 1.0
+		pb += inc_b
+		if pb >= 1.0:
+			pb -= 1.0
+		y += ((pa + pb - 1.0) - y) * 0.11
+		buf[(i0 + i) % n] += y * vol * minf(1.0, i / edge) * minf(1.0, (count - i) / edge)
+
+
+## Pulse-wave lead with vibrato.
+func _lead(buf: PackedFloat32Array, n: int, start: float, length: float, freq: float, vol: float) -> void:
+	var i0 := int(start * RATE)
+	var count := int(length * RATE)
+	var y := 0.0
+	var ph := 0.0
+	var release := 0.05 * RATE
+	for i in count:
+		var t := float(i) / RATE
+		ph += freq * (1.0 + sin(t * 36.0) * 0.006 * minf(1.0, t * 6.0)) / RATE
+		if ph >= 1.0:
+			ph -= 1.0
+		var x := (1.0 if ph < 0.3 else -0.55) + sin(TAU * ph) * 0.4
+		y += (x - y) * 0.32
+		buf[(i0 + i) % n] += y * vol * minf(1.0, i / 90.0) * minf(1.0, (count - i) / release) * (0.6 + 0.4 * exp(-t * 5.0))
+
+
+## Bell-like sine stack.
+func _tone(buf: PackedFloat32Array, n: int, start: float, length: float, freq: float, vol: float, decay: float) -> void:
+	var i0 := int(start * RATE)
+	var count := int(length * RATE)
 	var release := 0.03 * RATE
 	for i in count:
 		var t := float(i) / RATE
-		var ph := fmod(t * freq, 1.0)
-		var x := 0.0
-		match wave:
-			0:
-				x = (absf(ph * 4.0 - 2.0) - 1.0) * 0.8 + sin(TAU * freq * 0.5 * t) * 0.5
-			1:
-				x = sin(TAU * ph) + 0.33 * sin(TAU * 3.0 * ph) + 0.2 * sin(TAU * 5.0 * ph)
-			_:
-				var vib := sin(t * 34.0) * 0.004 * minf(1.0, t * 5.0)
-				x = sin(TAU * freq * t * (1.0 + vib)) + 0.3 * sin(TAU * freq * 2.0 * t) + 0.1 * sin(TAU * freq * 3.0 * t)
-		var env := exp(-t * decay) * minf(1.0, i / attack) * minf(1.0, (count - i) / release)
-		buf[(i0 + i) % n] += x * env * vol
+		var x := sin(TAU * freq * t) + 0.3 * sin(TAU * freq * 2.0 * t) + 0.12 * sin(TAU * freq * 3.01 * t)
+		buf[(i0 + i) % n] += x * exp(-t * decay) * minf(1.0, i / 100.0) * minf(1.0, (count - i) / release) * vol
 
 
 func _kick(buf: PackedFloat32Array, n: int, start: float, vol: float) -> void:
 	var i0 := int(start * RATE)
-	for i in int(0.16 * RATE):
+	for i in int(0.17 * RATE):
 		var t := float(i) / RATE
-		buf[(i0 + i) % n] += sin(TAU * (48.0 * t + 110.0 / 30.0 * (1.0 - exp(-30.0 * t)))) * exp(-t * 20.0) * vol
+		buf[(i0 + i) % n] += sin(TAU * (46.0 * t + 120.0 / 32.0 * (1.0 - exp(-32.0 * t)))) * exp(-t * 19.0) * vol
 
 
 func _snare(buf: PackedFloat32Array, n: int, start: float, vol: float, rng: RandomNumberGenerator) -> void:
 	var i0 := int(start * RATE)
 	var y := 0.0
-	for i in int(0.13 * RATE):
+	for i in int(0.16 * RATE):
 		var t := float(i) / RATE
 		y += (rng.randf_range(-1.0, 1.0) - y) * 0.7
-		buf[(i0 + i) % n] += (y * 0.8 + sin(TAU * 190.0 * t) * 0.4) * exp(-t * 26.0) * vol
+		buf[(i0 + i) % n] += (y * 0.85 + sin(TAU * 185.0 * t) * 0.4) * exp(-t * 22.0) * vol
 
 
-func _hat(buf: PackedFloat32Array, n: int, start: float, vol: float, rng: RandomNumberGenerator) -> void:
+## `length` in seconds: ~0.03 closed, ~0.2 open.
+func _hat(buf: PackedFloat32Array, n: int, start: float, vol: float, length: float, rng: RandomNumberGenerator) -> void:
 	var i0 := int(start * RATE)
 	var prev := 0.0
-	for i in int(0.035 * RATE):
+	var decay := 3.5 / length
+	for i in int(length * RATE):
 		var t := float(i) / RATE
 		var x := rng.randf_range(-1.0, 1.0)
-		buf[(i0 + i) % n] += (x - prev) * exp(-t * 110.0) * vol
+		buf[(i0 + i) % n] += (x - prev) * exp(-t * decay) * vol
 		prev = x

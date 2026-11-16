@@ -113,7 +113,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_layout)
 	Settings.changed.connect(_on_settings)
 	Input.joy_connection_changed.connect(_on_joy_changed)
-	Sfx.music("battle")
+	Sfx.music("map%d" % map.map_index)
 	if _kb_brain != null:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
