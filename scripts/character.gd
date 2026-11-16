@@ -5,8 +5,8 @@ extends Node3D
 ## It has no _process of its own: whoever owns it calls animate() once per
 ## PHYSICS tick (physics interpolation then smooths it to the display rate).
 ##
-## Kinds: 0 bear, 1 bunny, 2 cat, 3 dog, 4 fox, 5 frog  (see ui_kit.KIND_NAMES;
-## ui_kit.portrait() draws the matching 2D face).
+## Selectable kinds: Bunny, Frog, Dino, Bird, Yeti, Fish and Monkroose (see
+## ui_kit.KIND_NAMES; ui_kit.portrait() draws the matching 2D face).
 ## Customisation: a hat (ui_kit.HAT_NAMES) and a face accessory
 ## (ui_kit.FACE_NAMES), built by _build_hat() / _build_face(). To add one,
 ## append its name in ui_kit.gd and a branch in the matching function.
@@ -18,22 +18,19 @@ const GUN_SCALE := 1.6
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
 
-## Every character is an imported, rigged model driven by its own animations
-## (the old sphere-built plush rig further down is no longer reachable).
-## ROSTER[kind] = [model, "creature" | "human"]; names are ui_kit.KIND_NAMES.
+## Every selectable character is an imported, rigged animal model driven by
+## its shared creature animations. The human roster remains in the asset pack
+## for NPCs but is intentionally not selectable.
+## ROSTER[kind] = [model, "creature"] in ui_kit.KIND_NAMES order.
 ##   creatures: Quaternius Ultimate Monsters (one shared rig: Idle, Walk, Run,
 ##              Jump_Idle, Duck, Wave, No, HitReact)
 ##   humans:    Quaternius animated characters (Idle_Gun_Pointing, Run_Shoot...)
 const ROSTER := [
 	["animals/m_Bunny_14", "creature"], ["animals/m_Frog_14", "creature"], ["animals/m_Dino_14", "creature"],
 	["animals/m_Birb_14", "creature"], ["animals/m_Yeti_14", "creature"], ["animals/m_Fish_14", "creature"],
-	["animals/m_Monkroose_14", "creature"], ["animals/m_Alien_14", "creature"], ["animals/m_Orc_14", "creature"],
-	["animals/m_Ninja_14", "creature"], ["animals/m_Demon_14", "creature"], ["animals/m_BlueDemon_14", "creature"],
-	["animals/m_MushroomKing_14", "creature"], ["animals/m_Cactoro_14", "creature"], ["animals/m_Tribal_14", "creature"],
-	["chars/Swat", "human"], ["chars/Spacesuit", "human"], ["chars/Male_King", "human"], ["chars/Femal_Witch", "human"],
-	["chars/Male_Punk", "human"], ["chars/Femal_Punk", "human"], ["chars/Femal_SciFi", "human"], ["chars/Male_Adventurer", "human"],
+	["animals/m_Monkroose_14", "creature"],
 ]
-const KIND_COUNT := 23
+const KIND_COUNT := 7
 
 var kind := 0
 var color := Color.WHITE

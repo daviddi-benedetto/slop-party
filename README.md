@@ -16,8 +16,8 @@ game modes:
   four-storey towers, warehouses, bunkers and trenches, and vehicles –
   buggies, tanks and helicopters.
 
-You play as a customisable creature or human in neon-lit arenas (the look
-is inspired by ROUNDS).
+You play as one of seven customisable, rigged animal characters in stylised
+arenas with readable colour and atmosphere at every time of day.
 
 - **A lived-in world:** furnished houses, loose physics props you can kick
   and shoot around (chairs, tables, books, boxes, bottles), window glass that
@@ -25,11 +25,9 @@ is inspired by ROUNDS).
   you.
 - **Pets:** dogs, cats, a fox and a bunny wander every map. Walk up and press
   the pick-up button to pet one (it heals you a little).
-- **23 characters**, all fully modelled and animated: 15 creatures (Bunny,
-  Frog, Dino, Bird, Yeti, Shark, Moose, Alien, Orc, Ninja, Demon, Imp,
-  Mushroom, Cactus, Shaman) and 8 humans (Swat, Astronaut, King, Witch, Punk,
-  Rocker, Cyber, Explorer). Each takes a colour, one of 16 hats and one of 7
-  back accessories (cape, backpack, wings, balloon...).
+- **Seven selectable animals:** Bunny, Frog, Dino, Bird, Yeti, Fish and
+  Monkroose. Each uses the imported creature rig and animations, with colour,
+  hat and face customisation.
 - **20 weapons**, including Tesla (chain lightning), Cluster, Vortex, Ripper,
   Sticky, Longshot, Frostbite and the akimbo Twins.
 - **69 powerup cards**, among them block perks that turn your block into a
@@ -49,11 +47,15 @@ is inspired by ROUNDS).
   sights.
 - **Block** catches and reflects every bullet, rocket, grenade, bubble and
   flame that comes near you back at whoever fired it.
-- **6 arena maps** for Rounds and Zombies: Neon Yard, Ember Pit, Frost Line, and three based on real
+- **6 arena maps** for Rounds: Neon Yard, Ember Pit, Frost Line, and three based on real
   places: a **Museum** (indoor, balconies, vaults), a **Stadium** (pitch,
   bleachers, floodlights, locker rooms) and a **Suburb** (houses with stairs,
   yards, pools, a treehouse, a storm drain). Two-storey buildings, tunnels and
   basements on every outdoor map.
+- **Quarantine**, a dedicated large Zombies map with a multi-floor hospital,
+  annex, warehouse, motel, fenced campus, service roads, wooded edges, utility
+  tunnel and underground triage room. Red emergency beacons and blood effects
+  give it a scarier tone while keeping the spaces readable.
 - **Time of day and weather:** each match is day, sunset or night (or pick
   one in the lobby), with random clear / rain / fog / snow weather.
 - **Character customisation:** animal, colour, hat and face per player,
@@ -99,7 +101,7 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Block | LB | Q |
 | Reload | X | R |
 | Pick up weapon / get in or out of a vehicle | Y | E |
-| Open parachute (Frontline drop) | A | Space |
+| Open parachute (Frontline drops and high falls) | A | Space |
 | Wall run | Jump at a wall and keep moving forward | same |
 | Mantle | Move forward into a ledge in the air | same |
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |

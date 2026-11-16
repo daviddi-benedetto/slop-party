@@ -115,7 +115,9 @@ func _ready() -> void:
 	map = Map.new()
 	world.add_child(map)
 	var map_i: int = config.get("map", 0)
-	if mode == "frontline":
+	if mode == "zombies":
+		map_i = Map.ZOMBIE
+	elif mode == "frontline":
 		map_i = Map.FRONTLINE
 	elif map_i >= Map.FRONTLINE:
 		map_i = 0

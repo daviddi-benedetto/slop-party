@@ -202,6 +202,11 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 	hurt_flash = 1.0
 	_bar.visible = true
 	if not silent:
+		var spray := Vector3.UP
+		if attacker != null and is_instance_valid(attacker):
+			spray = (global_position - attacker.global_position + Vector3(0, 0.4, 0)).normalized()
+		Fx.blood_spray(game.world, chest_position(), spray, 12 if amount < max_health * 0.2 else 22)
+	if not silent:
 		_stagger = maxf(_stagger, 0.12 if type != "boss" else 0.0)
 		if amount > max_health * 0.12 and _action_t <= 0.0 and health > amount:
 			_play("HitReact", 1.5)
@@ -226,6 +231,8 @@ func _die(attacker) -> void:
 	collision_layer = 0
 	game.actors.erase(self)
 	var c := chest_position()
+	Fx.blood_spray(game.world, c, Vector3.UP, 64 if type == "boss" else 38)
+	Fx.blood_splat(game.world, global_position, 1.4 if type == "boss" else 0.9 * _scale)
 	Fx.sparks(game.world, c, color.lerp(Color(0.6, 1.0, 0.3), 0.4), 26 if type != "boss" else 80, 9.0, Vector3.UP, 180.0, 0.8)
 	Fx.puff(game.world, c, Color(color.lerp(Color(0.3, 0.4, 0.2), 0.5), 0.8), 10 if type != "boss" else 30, 0.9 * _scale)
 	Fx.flash(game.world, c, Color(0.8, 1.0, 0.5, 0.7), 0.3, 1.4 * _scale, 0.2)
@@ -290,7 +297,9 @@ func _physics_process(delta: float) -> void:
 				else:
 					move = Vector3(d.x, 0, d.z).normalized()
 					break
-			if move == Vector3.ZERO:
+			# An empty route usually means a wall or a disconnected floor. Don't
+			# steer directly through it; keep position and request a fresh route.
+			if move == Vector3.ZERO and _clear(_target):
 				move = flat.normalized()
 		var reach := 1.35 * _scale + 0.4
 		if flat.length() < reach and absf(to.y) < 1.8 * _scale and _attack_cd <= 0.0:
@@ -319,10 +328,16 @@ func _physics_process(delta: float) -> void:
 		if _stuck > 0.5 and is_on_floor():
 			velocity.y = 7.5
 			_path_i += 1
-		if _stuck > 2.5:
+		if _stuck > 1.8:
 			_stuck = 0.0
 			_repath = 0.0
-			velocity += Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized() * spd
+			_path = PackedVector3Array()
+			_path_i = 0
+			# A small grounded sidestep breaks door-frame jams without snapping
+			# the actor to another position (which looked like teleporting).
+			var side := Vector3(-move.z, 0, move.x)
+			velocity.x += side.x * minf(spd * 0.8, 2.0)
+			velocity.z += side.z * minf(spd * 0.8, 2.0)
 	else:
 		_stuck = maxf(0.0, _stuck - delta)
 	if global_position.y < -25.0:

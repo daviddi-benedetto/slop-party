@@ -10,11 +10,15 @@ has not been verified.
 - Three modes (lobby MODE chip, `config.mode`):
   - **Rounds** (default): free-for-all deathmatch, first to N KOs
     (5/10/15/20/30). Rules in `game.gd`.
-  - **Zombies**: co-op against endless waves (`zombies.gd`, `zombie.gd`).
+- **Zombies**: co-op against endless waves (`zombies.gd`, `zombie.gd`). Zombies
+  follow the navigation graph and recover from jams by repathing and sidestepping;
+  they are never teleported to players when they fall behind.
   - **Frontline**: two teams, conquest flags, tickets, vehicles, parachute
     spawns on its own huge map (`frontline.gd`, `vehicle.gd`, `map_front.gd`).
-- Six maps, each with its own theme and song (see `map.gd`, `map_places.gd`,
-  `sfx.gd`): Neon Yard, Ember Pit, Frost Line, Museum, Stadium, Suburb.
+- Six Rounds maps, each with its own theme and song (see `map.gd`,
+  `map_places.gd`, `sfx.gd`): Neon Yard, Ember Pit, Frost Line, Museum,
+  Stadium, Suburb. Zombies uses a separate, larger Quarantine campus map;
+  Frontline has its own huge battlefield.
   Every match also rolls a time of day (day / sunset / night, or the lobby's
   choice) and a weather (clear / rain / fog / snow).
 - ROUNDS-style progression: **on every death** the dead player is shown three
@@ -25,9 +29,12 @@ has not been verified.
 - Abilities everyone has: jump, dash, block (short guard that negates damage
   and reflects every projectile passing within 1.1 m; 4 s cooldown), aim down
   sights, crouch, slide, wall run, wall jump and mantle.
-- Art direction: dark, moody arenas with neon trims, coloured point lights and
-  heavy bloom, after ROUNDS. Plush animal characters (animal, colour, hat and
-  face chosen per player). Chunky UI with the Fredoka font on near-black
+- Art direction: readable colour and visibility in every time setting, with
+  moody lighting, neon trims and stronger effects. Zombies' Quarantine campus
+  adds red emergency beacons, a fenced perimeter, wrecks and an underground
+  triage route. Selectable characters are seven imported rigged animals
+  (Bunny, Frog, Dino, Bird, Yeti, Fish, Monkroose); each player chooses colour,
+  hat and face. Chunky UI with the Fredoka font on near-black
   panels.
 - Engine: Godot 4.7.2, Forward+ renderer, GDScript only. Imported assets:
   `fonts/Fredoka.ttf` (SIL OFL) and the CC0 models in `assets/models/`
@@ -104,13 +111,14 @@ parse error in one script.
 | `scripts/models.gd` | Imported models: cached `scene()`, `parts()` (mesh + transform list) and `bounds()` by path relative to `assets/models/`. |
 | `tools/inspect_models.gd` | Dev tool: prints every model's size, node tree and animations. |
 | `scripts/zombies.gd` | Zombies mode rules: endless waves, spawning, intermission card picks, revival, game over. |
-| `scripts/zombie.gd` | One zombie (walker / runner / brute / boss): model, nav pathing, melee, damage interface. |
+| `scripts/zombie.gd` | One zombie (walker / runner / brute / boss): model, nav pathing, melee, non-teleporting jam recovery, blood effects, damage interface. |
 | `scripts/frontline.gd` | Frontline mode rules: teams and CPU fill, flags, tickets, parachute spawns, vehicle respawns, bot goals, flag HUD. |
-| `scripts/vehicle.gd` | Buggy, tank and helicopter: models, driving / flying, turrets, weapons, damage, destruction. |
+| `scripts/vehicle.gd` | Buggy, tank and helicopter: models, driving / flying, turrets, visible muzzle flashes and tracers, weapons, damage, destruction. |
 | `scripts/map_front.gd` | Layout 6 (FRONTLINE): town, towers, warehouse, bunkers, trenches, farms, bases, vehicle spots, flags. |
 | `scripts/results.gd` | Victory screen: podium, crown, confetti, results table. |
-| `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day/weather lighting, procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. |
+| `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day/weather lighting, procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. Building floor slabs reserve openings for the full stair flight. |
 | `scripts/map_places.gd` | Layouts 3-5 (Museum, Stadium, Suburb) built with the map.gd helpers. |
+| `scripts/map_zombie.gd` | Dedicated large Zombies map: hospital campus, annex, warehouse, motel, quarantine fence, yard, tunnel, basement and indoor/outdoor spawns. |
 | `scripts/player.gd` | `CharacterBody3D`: movement, weapon, health, status effects, feedback values, death → card pick → respawn. |
 | `scripts/character.gd` | The plush animal model (6 species, 11 hats, 7 faces) and its procedural animation. |
 | `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
@@ -123,7 +131,7 @@ parse error in one script.
 | `scripts/input_source.gd` | Human input for one device (keyboard+mouse or one gamepad). |
 | `scripts/bot_brain.gd` | AI that exposes the same interface as `input_source.gd`. |
 | `scripts/hud.gd` | Per-viewport HUD and the animated card picker. |
-| `scripts/fx.gd` | Particles, flashes, rings, confetti, floating damage numbers. |
+| `scripts/fx.gd` | Particles, flashes, rings, confetti, floating damage numbers and blood spray/stains. |
 | `scripts/sfx.gd` | Autoload. Synthesises all sound effects, composes and renders the music loops (one per map, lobby, zombies, frontline) in a thread, distance-attenuated playback. |
 | `scripts/settings.gd` | Autoload. The list of user options, their values, saving/loading, and applying display/AA/audio settings. |
 | `scripts/settings_menu.gd` | The Options screen (opened from the lobby and the pause menu). |

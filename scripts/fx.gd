@@ -17,6 +17,38 @@ static var _shrink: Curve
 static var _confetti_ramp: Gradient
 
 
+## A quick stylised blood spray for combat hits; uses pooled particle meshes.
+static func blood_spray(parent: Node, pos: Vector3, direction := Vector3.UP, amount := 14, layers := 1) -> void:
+	var p := burst(parent, pos, Color(0.62, 0.015, 0.035, 1.0), amount, 7.0, 0.18, 0.58, -12.0, direction, 82.0)
+	p.layers = layers
+	p.material_override = _mat_flat
+
+
+## A dark red ground stain that fades after the fight has moved on.
+static func blood_splat(parent: Node, pos: Vector3, size := 1.0) -> void:
+	_init_shared()
+	var mat := StandardMaterial3D.new()
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.18, 0.006, 0.016, 0.86)
+	mat.roughness = 0.96
+	var mi := MeshInstance3D.new()
+	var puddle := SphereMesh.new()
+	puddle.radial_segments = 12
+	puddle.rings = 6
+	mi.mesh = puddle
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	parent.add_child(mi)
+	mi.global_position = pos + Vector3(0, 0.035, 0)
+	mi.rotation.y = randf() * TAU
+	mi.scale = Vector3(size, 0.018, size * randf_range(0.55, 1.15))
+	var tw := mi.create_tween()
+	tw.tween_interval(10.0)
+	tw.tween_property(mat, "albedo_color:a", 0.0, 5.0)
+	tw.tween_callback(mi.queue_free)
+
+
 static func _init_shared() -> void:
 	if _sphere != null:
 		return

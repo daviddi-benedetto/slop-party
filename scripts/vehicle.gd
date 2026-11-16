@@ -22,6 +22,11 @@ const Stats = preload("res://scripts/stats.gd")
 const Models = preload("res://scripts/models.gd")
 const Prop = preload("res://scripts/prop.gd")
 
+static var _tracer_bullet: BoxMesh
+static var _tracer_rocket: BoxMesh
+static var _tracer_orange: StandardMaterial3D
+static var _tracer_blue: StandardMaterial3D
+
 const GRAVITY := 22.0
 const SPECS := {
 	"buggy": {"label": "BUGGY", "hp": 450.0, "speed": 24.0, "accel": 18.0, "turn": 2.2, "size": Vector3(2.0, 1.3, 4.0),
@@ -377,19 +382,57 @@ func _fire_alt(target: Vector3) -> void:
 
 
 func _shoot(muzzle: Node3D, target: Vector3, s, count: int) -> void:
-	var from := muzzle.global_position
+	var origin: Vector3 = muzzle.global_position
+	var dir := (target - origin).normalized()
+	# Place the projectile just beyond the vehicle's hull. Several muzzle
+	# markers sit inside the merged model by design; starting there made shots
+	# look swallowed by the aircraft and occasionally appear to hit its body.
+	var from: Vector3 = origin + dir * 0.85
 	for i in count:
-		var dir := (target - from).normalized()
+		var shot_dir := dir
 		if s.spread > 0.0:
-			dir = (dir + Vector3(randf_range(-s.spread, s.spread), randf_range(-s.spread, s.spread), randf_range(-s.spread, s.spread))).normalized()
+			shot_dir = (dir + Vector3(randf_range(-s.spread, s.spread), randf_range(-s.spread, s.spread), randf_range(-s.spread, s.spread))).normalized()
 		var bl = Bullet.new()
-		bl.setup_stats(driver, s, dir, 1.0, [get_rid()])
+		bl.setup_stats(driver, s, shot_dir, 1.0, [get_rid()])
 		game.world.add_child(bl)
 		bl.global_position = from
 		bl.orient()
 		bl.reset_physics_interpolation()
+	# One visual streak per trigger pull keeps automatic weapons inexpensive.
+	if count > 0:
+		_tracer(from, dir, s.explosive > 0.0)
 	Fx.flash(game.world, from, Color(1.0, 0.85, 0.5, 0.9), 0.1, 0.5 if s.explosive > 0.0 else 0.25, 0.07)
 	driver.recoil = 1.0
+
+
+## A short bright streak makes fast mounted-gun rounds visible at vehicle range.
+func _tracer(pos: Vector3, dir: Vector3, rocket: bool) -> void:
+	if _tracer_bullet == null:
+		_tracer_bullet = BoxMesh.new()
+		_tracer_bullet.size = Vector3(0.055, 0.055, 1.25)
+		_tracer_rocket = BoxMesh.new()
+		_tracer_rocket.size = Vector3(0.13, 0.13, 1.8)
+		_tracer_orange = _make_tracer_material(Color(1.0, 0.48, 0.16))
+		_tracer_blue = _make_tracer_material(Color(0.22, 0.62, 1.0))
+	var streak := MeshInstance3D.new()
+	streak.mesh = _tracer_rocket if rocket else _tracer_bullet
+	streak.material_override = _tracer_blue if home_team == 1 else _tracer_orange
+	streak.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	game.world.add_child(streak)
+	streak.global_position = pos + dir * (0.65 if not rocket else 0.9)
+	streak.look_at(streak.global_position + dir, Vector3.UP if absf(dir.y) < 0.95 else Vector3.RIGHT)
+	var tw := streak.create_tween()
+	tw.tween_interval(0.055 if not rocket else 0.12)
+	tw.tween_callback(streak.queue_free)
+
+
+static func _make_tracer_material(color: Color) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = 4.0
+	return mat
 
 
 # --------------------------------------------------------------------------

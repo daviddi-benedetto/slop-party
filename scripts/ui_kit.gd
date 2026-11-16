@@ -19,11 +19,10 @@ const PLAYER_COLORS := [
 	Color(0.7, 0.95, 0.25), Color(0.9, 0.93, 1.0),
 ]
 const COLOR_NAMES := ["ORANGE", "BLUE", "GREEN", "YELLOW", "PURPLE", "PINK", "CYAN", "RED", "LIME", "WHITE"]
-const KIND_NAMES := ["BUNNY", "FROG", "DINO", "BIRD", "YETI", "SHARK", "MOOSE", "ALIEN", "ORC", "NINJA", "DEMON", "IMP", "MUSHROOM", "CACTUS", "SHAMAN",
-	"SWAT", "ASTRONAUT", "KING", "WITCH", "PUNK", "ROCKER", "CYBER", "EXPLORER"]
+const KIND_NAMES := ["BUNNY", "FROG", "DINO", "BIRD", "YETI", "FISH", "MONKEY"]
 ## Which 2D face ui_kit.portrait() draws for each kind (0-5 = the animal
 ## faces: bear, bunny, cat, dog, fox, frog; 6 = human).
-const PORTRAIT := [1, 5, 4, 2, 0, 2, 3, 5, 0, 0, 4, 4, 0, 5, 2, 6, 6, 6, 6, 6, 6, 6, 6]
+const PORTRAIT := [1, 5, 4, 2, 0, 2, 3]
 const HAT_NAMES := ["NONE", "CAP", "CROWN", "TOP HAT", "PARTY HAT", "HORNS", "HALO", "HEADPHONES", "BOW", "ANTENNA", "MOHAWK",
 	"COWBOY", "WIZARD", "CHEF", "VIKING", "PROPELLER"]
 const BACK_NAMES := ["NONE", "CAPE", "BACKPACK", "WINGS", "BALLOON", "KATANA", "FLAG"]

@@ -29,7 +29,6 @@ var banner_t := 9.0
 var _timer := 1.5
 var _spawn_t := 0.0
 var _boss_due := false
-var _straggle := 0.0
 
 
 func prepare(parts: Array) -> Array:
@@ -82,18 +81,6 @@ func _physics_process(delta: float) -> void:
 					_spawn_one()
 			if to_spawn <= 0 and alive_count <= 0:
 				_wave_cleared()
-			# The last few zombies of a wave got stuck somewhere: bring them back.
-			if to_spawn <= 0 and alive_count > 0:
-				_straggle += delta
-				if _straggle > 18.0:
-					_straggle = 0.0
-					for a in game.actors:
-						if a.has_method("head_height") and not a.has_method("seat_count") and a.alive:
-							a.global_position = _spawn_point()
-							a.velocity = Vector3.ZERO
-							a.reset_physics_interpolation()
-			else:
-				_straggle = 0.0
 		"break":
 			var picking := false
 			for p in game.players:

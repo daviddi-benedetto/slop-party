@@ -50,6 +50,7 @@ const Front = preload("res://scripts/map_front.gd")
 const Models = preload("res://scripts/models.gd")
 const Prop = preload("res://scripts/prop.gd")
 const Glass = preload("res://scripts/glass.gd")
+const ZombieMap = preload("res://scripts/map_zombie.gd")
 
 signal nav_built
 
@@ -77,8 +78,10 @@ const MAPS := [
 	{"name": "SUBURB", "size": "LARGE", "theme": "suburb", "half": Vector2(40, 30), "wall": 1.6},
 	# Frontline mode only (not in the lobby's map list): 200 x 140 m.
 	{"name": "FRONTLINE", "size": "HUGE", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 20.0},
+	{"name": "QUARANTINE", "size": "HUGE", "theme": "suburb", "half": Vector2(72, 52), "wall": 3.0, "nav_step": 3.0, "nav_top": 16.0},
 ]
 const FRONTLINE := 6             # index of the Frontline map; the lobby lists maps below it
+const ZOMBIE := 7                # large Zombies-only indoor/outdoor map
 const TIMES := ["day", "sunset", "night"]
 
 const DAY := {
@@ -369,6 +372,7 @@ func build(index := 0, time_of_day := "night", weather_kind := "clear") -> void:
 		4: Places.stadium(self)
 		5: Places.suburb(self)
 		6: Front.frontline(self)
+		7: ZombieMap.build(self)
 		_: _layout_yard()
 	_build_floor()
 	_build_scenery()
@@ -441,7 +445,7 @@ func _build_environment() -> void:
 		"fog":
 			sky.clouds = 0.9
 			p.sun_energy *= 0.6
-			fog_density = maxf(fog_density * 6.0, 0.018)
+			fog_density = maxf(fog_density * 3.0, 0.009)
 			fog_col = fog_col.lerp(Color(0.6, 0.62, 0.66) * dim, 0.5)
 		"snow":
 			sky.clouds = 0.95
@@ -449,6 +453,11 @@ func _build_environment() -> void:
 			p.sun_energy *= 0.6
 			fog_density *= 2.0
 			fog_col = fog_col.lerp(Color(0.75, 0.8, 0.88) * dim, 0.4)
+	# Keep map silhouettes and player colours readable in every time/weather
+	# combination; the atmosphere comes from hue and lights rather than crushed
+	# shadows.
+	p.ambient = maxf(p.ambient, 0.78)
+	fog_density = minf(fog_density, 0.012)
 	light_scale = p.lights
 	neon_scale = p.neon
 
@@ -1439,10 +1448,11 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		if fl < flights:
 			var even := fl % 2 == 0
 			var sxp: float = stair_x[0] if even else stair_x[1]
-			var hz := c.z - run * 0.5 + 2.0 if even else c.z - run * 0.5 - 0.1
-			holes.append(Rect2(sxp - sw * 0.5 - 0.05, hz, sw + 0.1, run - 1.9))
+			# The stair mesh/ramp spans the full 6 m run along Z. Leave a generous
+			# matching opening so the upper floor cannot cap the stairwell.
+			holes.append(Rect2(sxp - sw * 0.5 - 0.18, c.z - run * 0.5 - 0.18, sw + 0.36, run + 0.36))
 			var rail_x := sxp + (sw * 0.5 + 0.1) * (1.0 if even else -1.0)
-			_box(Vector3(rail_x, y + 0.5, hz + (run - 1.9) * 0.5), Vector3(0.08, 1.0, run - 1.9), rail_mat, mirror)
+			_box(Vector3(rail_x, y + 0.5, c.z), Vector3(0.08, 1.0, run), rail_mat, mirror)
 		var is_roof := f == floors
 		if is_roof and pitched:
 			_slab(Rect2(x0, z0, sx, sz), y, roof_mat, [], mirror)

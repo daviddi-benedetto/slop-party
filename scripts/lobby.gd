@@ -28,7 +28,7 @@ const Map = preload("res://scripts/map.gd")
 const MAX_PLAYERS := 6
 const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
-const CATEGORIES := ["HERO", "COLOR", "HAT", "BACK"]
+const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK"]
 const KEYS := ["kind", "color", "hat", "back"]
 const TIME_OPTS := ["random", "day", "sunset", "night"]
 const MODES := ["rounds", "zombies", "frontline"]
@@ -428,7 +428,7 @@ func _draw() -> void:
 	var by := h - 162 * s
 	var pad: bool = not Input.get_connected_joypads().is_empty()
 	var mode: String = MODES[mode_i]
-	var map_info: Dictionary = Map.MAPS[Map.FRONTLINE if mode == "frontline" else map_i]
+	var map_info: Dictionary = Map.MAPS[Map.FRONTLINE if mode == "frontline" else (Map.ZOMBIE if mode == "zombies" else map_i)]
 	var bot_chip := ["Y" if pad else "B", "BOTS", str(bots), 200.0]
 	var goal_chip := ["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i], 230.0]
 	if mode == "frontline":

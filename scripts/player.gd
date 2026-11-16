@@ -887,6 +887,14 @@ func _physics_process(delta: float) -> void:
 	velocity.x = horiz.x
 	velocity.z = horiz.z
 	move_and_slide()
+	# Frontline parachutes also work after any high fall, including a roof or
+	# tower jump. Give the player time to press Jump before the auto-open zone.
+	if not is_on_floor() and velocity.y < -2.0 and not skydive:
+		var height_ray := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3(0, -32.0, 0), WORLD_MASK)
+		var ground_hit := get_world_3d().direct_space_state.intersect_ray(height_ray)
+		if not ground_hit.is_empty() and global_position.y - ground_hit.position.y >= 7.0:
+			skydive = true
+			chute_open = false
 	if _slamming and is_on_floor():
 		_slamming = false
 		land_dip = 1.0
@@ -1129,6 +1137,10 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 		hurt_flash = 1.0
 		shake = maxf(shake, clampf(amount / 60.0, 0.25, 0.9))
 		character.hit_flash()
+		var blood_dir := Vector3.UP
+		if has_attacker:
+			blood_dir = (global_position - attacker.global_position + Vector3(0, 0.5, 0)).normalized()
+		Fx.blood_spray(game.world, chest_position(), blood_dir, 16)
 		Sfx.play_at("hurt", global_position, -8.0)
 		if not is_bot and brain.device >= 0 and Settings.v("rumble"):
 			Input.start_joy_vibration(brain.device, 0.4, 0.7, 0.18)
@@ -1173,6 +1185,8 @@ func apply_slow(amount: float) -> void:
 func _die(attacker) -> void:
 	alive = false
 	deaths += 1
+	Fx.blood_spray(game.world, chest_position(), Vector3.UP, 52)
+	Fx.blood_splat(game.world, global_position, 1.25)
 	health = 0.0
 	burst_left = 0
 	_set_alive_visuals(false)
