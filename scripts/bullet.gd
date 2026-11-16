@@ -41,6 +41,17 @@ var poison := 0.0
 var frost := 0.0
 var knockback := 0.0
 var giant_slayer := 0.0
+var chain := 0
+var cluster := 0
+var vortex := 0.0
+var sticky := false
+var range_bonus := 0.0
+var frag := 0
+var _src                        # the stats this bullet was made from (for bomblets)
+var _travel := 0.0
+var _stuck := false
+var _stuck_to = null
+var _stuck_off := Vector3.ZERO
 var radius := 0.07
 var life := 4.0
 var age := 0.0
@@ -79,6 +90,13 @@ func setup_stats(p, s, dir: Vector3, damage_mult := 1.0, ignore: Array = []) -> 
 	frost = s.frost
 	knockback = s.knockback
 	giant_slayer = s.giant_slayer
+	chain = s.chain
+	cluster = s.cluster
+	vortex = s.vortex
+	sticky = s.sticky
+	range_bonus = s.range_bonus
+	frag = s.frag
+	_src = s
 	radius = 0.07 * s.bullet_size
 	life = s.fuse if s.fuse > 0.0 else s.bullet_life
 	color = p.color
@@ -143,10 +161,24 @@ func _physics_process(delta: float) -> void:
 			queue_free()
 		return
 
+	if _stuck:
+		# Sticky bomb waiting for its fuse (handled above via life / fuse).
+		if _stuck_to != null and is_instance_valid(_stuck_to) and _stuck_to.alive:
+			global_position = _stuck_to.global_position + _stuck_off
+		return
 	if flame:
 		_core.scale = Vector3.ONE * radius * (0.6 + age * 5.0)
 	if homing > 0.0:
 		_steer(delta)
+	if vortex > 0.0:
+		# Drag enemies towards the orb.
+		for d in game.hostiles(shooter):
+			var to_me: Vector3 = global_position - d.chest_position()
+			var dist := to_me.length()
+			if dist < 8.0 and dist > 0.6 and not d.has_method("seat_count"):
+				d.velocity += to_me / dist * vortex * (1.0 - dist / 8.0) * delta * 3.0
+		_core.rotation.z += delta * 9.0
+	_travel += vel.length() * delta
 	vel.y -= gravity * delta
 	if smoke:
 		_smoke_t -= delta
@@ -202,12 +234,18 @@ func _physics_process(delta: float) -> void:
 		if victim.is_blocking():
 			_reflect(victim)
 			return
+		if sticky and victim != shooter:
+			_stick(end, victim)
+			return
 		if _hit_player(victim, end):
 			return
 		# Pierced: carry on along the same path this tick.
 		global_position = to
 		return
 	if hit:
+		if sticky:
+			_stick(hit.position + hit.normal * 0.08, null)
+			return
 		if bounces > 0 or fuse > 0.0:
 			if fuse <= 0.0:
 				bounces -= 1
@@ -280,7 +318,11 @@ func _hit_player(p, pos: Vector3) -> bool:
 		dmg *= 1.5
 	if giant_slayer > 0.0 and p == game.leader() and p.kills > 0:
 		dmg *= 1.0 + giant_slayer
+	if range_bonus > 0.0:
+		dmg *= 1.0 + range_bonus * clampf(_travel / 40.0, 0.0, 1.0)
 	var dealt: float = p.take_damage(dmg, shooter, false, headshot)
+	if chain > 0 and dealt > 0.0:
+		_chain_from(p, dmg * 0.5)
 	if dealt > 0.0 and p.alive:
 		if poison > 0.0:
 			p.apply_poison(dealt * poison, shooter)
@@ -302,6 +344,15 @@ func _hit_player(p, pos: Vector3) -> bool:
 
 ## `normal` is the surface normal (or the direction sparks should fly), or null.
 func _impact(pos: Vector3, normal) -> void:
+	if cluster > 0:
+		# Bomblets scatter up and outwards, then explode on their own.
+		for i in cluster:
+			var a := TAU * i / cluster + randf() * 0.5
+			_spawn_child(pos + Vector3(0, 0.3, 0), Vector3(cos(a) * 5.0, randf_range(6.0, 9.0), sin(a) * 5.0), 0.6, {"explosive": explosive * 0.75, "gravity": 18.0, "fuse": randf_range(0.7, 1.1), "radius": radius * 0.6})
+	elif frag > 0 and normal is Vector3 and _direct == null:
+		for i in frag:
+			var dir: Vector3 = ((normal as Vector3) + Vector3(randf_range(-1, 1), randf_range(-0.6, 1), randf_range(-1, 1)) * 0.9).normalized()
+			_spawn_child(pos + (normal as Vector3) * 0.1, dir * maxf(vel.length() * 0.6, 25.0), 0.4, {"life": 0.45, "explosive": 0.0, "radius": radius * 0.7})
 	if explosive > 0.0:
 		game.explode(pos, explosive, damage * 0.8, shooter, _direct)
 	elif not flame:
@@ -309,3 +360,91 @@ func _impact(pos: Vector3, normal) -> void:
 		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.14, 0.1)
 		Fx.sparks(game.world, pos, color.lerp(Color.WHITE, 0.4), 7, 7.0, n)
 	queue_free()
+
+
+## Sticky bomb: stop here (or ride along on `victim`) and blow up in a second.
+func _stick(pos: Vector3, victim) -> void:
+	_stuck = true
+	_stuck_to = victim
+	global_position = pos
+	if victim != null:
+		_stuck_off = pos - victim.global_position
+		_direct = null
+	vel = Vector3.ZERO
+	fuse = 1.0
+	life = 1.0
+	if _trail != null:
+		_trail.visible = false
+	Sfx.play_at("tick", pos, -4.0, 0.7)
+	create_tween().set_loops(5).tween_property(_core, "scale", _core.scale * 1.5, 0.1).set_trans(Tween.TRANS_SINE)
+
+
+## A secondary projectile (bomblet / fragment) flying off with `velocity`.
+func _spawn_child(pos: Vector3, velocity: Vector3, dmg_mult: float, over: Dictionary) -> void:
+	if not is_instance_valid(shooter):
+		return
+	var b = get_script().new()
+	b.setup_stats(shooter, _src, velocity.normalized(), 1.0, _ignore)
+	b.vel = velocity
+	b.damage = damage * dmg_mult
+	b.cluster = 0
+	b.frag = 0
+	b.chain = 0
+	b.vortex = 0.0
+	b.sticky = false
+	b.bounces = 0
+	b.homing = 0.0
+	b.can_hit_owner = false
+	for k in over:
+		b.set(k, over[k])
+	if over.has("fuse"):
+		b.life = over.fuse
+	game.world.add_child(b)
+	b.global_position = pos
+	b.orient()
+	b.reset_physics_interpolation()
+
+
+## Lightning arcs from `from_target` to nearby enemies of the shooter.
+func _chain_from(from_target, dmg: float) -> void:
+	var left := chain
+	var src: Vector3 = from_target.chest_position()
+	for d in game.hostiles(shooter):
+		if left <= 0:
+			break
+		if d == from_target or not d.alive:
+			continue
+		var p: Vector3 = d.chest_position()
+		if p.distance_to(src) > 9.0:
+			continue
+		left -= 1
+		d.take_damage(dmg, shooter, false, false)
+		_bolt(src, p)
+	if left < chain:
+		Sfx.play_at("zap", src, -5.0)
+
+
+func _bolt(a: Vector3, b: Vector3) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.albedo_color = Color(color.lerp(Color(0.7, 0.9, 1.0), 0.6) * 2.0, 1.0)
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.04
+	mesh.bottom_radius = 0.04
+	mesh.height = 1.0
+	mesh.radial_segments = 5
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var d := b - a
+	var y := d.normalized()
+	var x := y.cross(Vector3.UP if absf(y.y) < 0.95 else Vector3.RIGHT).normalized()
+	mi.transform = Transform3D(Basis(x, y * d.length(), x.cross(y)), (a + b) * 0.5)
+	game.world.add_child(mi)
+	var tw := mi.create_tween()
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.18)
+	tw.tween_callback(mi.queue_free)
+	Fx.sparks(game.world, b, Color(0.7, 0.9, 1.0), 6, 5.0, Vector3.UP, 180.0, 0.3)

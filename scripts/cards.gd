@@ -127,6 +127,57 @@ static func deck() -> Array:
 				"apply": func(s): s.rampage += 0.15},
 			{"name": "Lucky Draw", "icon": "star", "rarity": EPIC, "desc": "Every death offers you\none more card",
 				"apply": func(s): s.card_draw = mini(5, s.card_draw + 1)},
+			# ---------------- block perks: the block as a weapon ----------------
+			{"name": "Long Guard", "icon": "shield", "rarity": COMMON, "desc": "Your block lasts\ntwice as long",
+				"apply": func(s): s.block_time *= 2.0},
+			{"name": "Reload Guard", "icon": "ammo", "rarity": COMMON, "desc": "Blocking instantly\nreloads your weapon",
+				"apply": func(s): s.block_reload = true},
+			{"name": "Empower", "icon": "star", "rarity": RARE, "desc": "After you block, your next\nshot deals +120% damage",
+				"apply": func(s): s.block_empower += 1.2},
+			{"name": "Blink Guard", "icon": "speed", "rarity": RARE, "desc": "Blocking teleports you\n8 m the way you are moving",
+				"apply": func(s): s.block_blink += 8.0},
+			{"name": "Frost Guard", "icon": "drop", "rarity": RARE, "desc": "Blocking freezes every\nenemy within 7 m",
+				"apply": func(s): s.block_frost = maxf(s.block_frost, 6.0) + 1.0},
+			{"name": "Vacuum Guard", "icon": "target", "rarity": RARE, "desc": "Blocking yanks nearby\nenemies towards you",
+				"apply": func(s): s.block_pull = maxf(s.block_pull, 9.0) + 2.0},
+			{"name": "Radiant Guard", "icon": "boom", "rarity": EPIC, "desc": "Blocking fires a ring\nof 12 of your bullets",
+				"apply": func(s): s.block_burst += 12},
+			{"name": "Echo Guard", "icon": "shield", "rarity": EPIC, "desc": "Every block repeats itself\na moment later, for free",
+				"apply": func(s): s.block_echo = true},
+			# ---------------- more fun ----------------
+			{"name": "Chain Lightning", "icon": "bolt", "rarity": RARE, "desc": "Hits arc to 2 nearby\nenemies for half damage",
+				"apply": func(s): s.chain += 2},
+			{"name": "Shrapnel", "icon": "boom", "rarity": RARE, "desc": "Bullets that hit a wall\nburst into 4 fragments",
+				"apply": func(s): s.frag += 4},
+			{"name": "Tiny", "icon": "speed", "rarity": RARE, "desc": "Shrink to 65% size: harder to hit\n+12% speed, -20% max health",
+				"apply": func(s):
+					s.size *= 0.65
+					s.move_speed *= 1.12
+					s.max_health *= 0.8},
+			{"name": "Giant", "icon": "shield", "rarity": RARE, "desc": "Grow to 140% size\n+90 max health, +20% damage",
+				"apply": func(s):
+					s.size *= 1.4
+					s.max_health += 90.0
+					s.damage *= 1.2},
+			{"name": "Goomba Stomp", "icon": "jump", "rarity": RARE, "desc": "Land on someone's head:\n70 damage and a big bounce",
+				"apply": func(s): s.stomp += 70.0},
+			{"name": "Ground Slam", "icon": "boom", "rarity": RARE, "desc": "Crouch in the air to dive:\nshockwave where you land",
+				"apply": func(s): s.slam += 45.0},
+			{"name": "Speed Demon", "icon": "speed", "rarity": RARE, "desc": "Up to +60% damage\nthe faster you move",
+				"apply": func(s): s.speed_dmg += 0.6},
+			{"name": "Sky Hunter", "icon": "jump", "rarity": RARE, "desc": "+50% damage while\nyou are in the air",
+				"apply": func(s): s.air_dmg += 0.5},
+			{"name": "Buddy Drone", "icon": "target", "rarity": EPIC, "desc": "A little drone follows you\nand shoots nearby enemies",
+				"apply": func(s): s.drone += 1},
+			{"name": "Martyr", "icon": "skull", "rarity": EPIC, "desc": "When you are KO'd you\nexplode, hurting your killer",
+				"apply": func(s): s.martyr = maxf(s.martyr, 4.5) + 1.0},
+			{"name": "Chain Reaction", "icon": "skull", "rarity": EPIC, "desc": "Enemies you KO explode\nand hurt their friends",
+				"apply": func(s): s.corpse_bomb = maxf(s.corpse_bomb, 4.0) + 1.0},
+			{"name": "Sticky Rounds", "icon": "boom", "rarity": EPIC, "desc": "Bullets stick, then explode\n-35% fire rate",
+				"apply": func(s):
+					s.sticky = true
+					s.explosive = maxf(s.explosive, 2.2)
+					s.fire_interval /= 0.65},
 		]
 		# One card per weapon (the starting Blaster included, to switch back).
 		for id in Weapons.LIST.size():

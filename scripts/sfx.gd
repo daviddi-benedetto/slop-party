@@ -196,6 +196,10 @@ func _build_effects() -> void:
 	_streams["shot_spinner"] = _make(0.07, 0.5, func(t, _d): return ((1.0 if fmod(t * 150.0, 1.0) < 0.5 else -1.0) * 0.4 + _noise() * 0.5) * exp(-t * 40.0))
 	_streams["shot_pinball"] = _make(0.2, 0.9, func(t, _d): return sin(TAU * (600.0 * t + 1500.0 * t * t) + sin(t * 90.0) * 2.0) * 0.4 * exp(-t * 12.0))
 	_streams["shot_flamer"] = _make(0.14, 0.2, func(t, d): return _noise() * 0.8 * sin(PI * t / d))
+	for pair in [["twins", "burst"], ["tesla", "zapper"], ["cluster", "lobber"], ["vortex", "bubbler"], ["ripper", "pinball"],
+			["sticky", "lobber"], ["longshot", "rail"], ["frost", "flamer"]]:
+		_streams["shot_" + pair[0]] = _streams["shot_" + pair[1]]
+	_streams["zap"] = _make(0.22, 1.0, func(t, _d): return ((1.0 if fmod(t * (900.0 + 2400.0 * t), 1.0) < 0.5 else -1.0) * 0.3 + _noise() * 0.3) * exp(-t * 16.0))
 	# Extra layers for bullet effects.
 	_streams["mod_boom"] = _make(0.3, 0.2, func(t, _d): return _sweep(t, 90.0, 40.0, 10.0) * 0.9 * exp(-t * 10.0))
 	_streams["mod_ice"] = _make(0.3, 1.0, func(t, _d): return (_bell(t, 2637.0, 12.0) + _bell(t - 0.04, 3520.0, 14.0)) * 0.25)

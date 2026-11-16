@@ -30,6 +30,18 @@ const GLB := {
 	"rail": ["toon/Weapon/Sniper", "-x", 1.2, 0.0],
 	"boomer": ["toon/Weapon/Rocket_Launcher", "-x", 0.95, 0.0],
 	"lobber": ["toon/Weapon/Grenade_Launcher", "-x", 0.78, 0.0],
+	# Toy blasters (Kenney Blaster Kit) for the sci-fi and newer weapons.
+	"bubbler": ["blaster/Blaster_N", "+z", 0.62, 0.0],
+	"pinball": ["blaster/Blaster_R", "+z", 0.66, 0.0],
+	"flamer": ["blaster/Blaster_P", "+z", 0.84, 0.0],
+	"twins": ["toon/Weapon/Pistol", "-x", 0.42, 0.0],
+	"tesla": ["blaster/Blaster_F", "+z", 1.0, 0.0],
+	"cluster": ["blaster/Blaster_L", "+z", 0.62, 0.0],
+	"vortex": ["blaster/Blaster_O", "+z", 0.58, 0.0],
+	"ripper": ["blaster/Blaster_G", "+z", 0.78, 0.0],
+	"sticky": ["blaster/Blaster_D", "+z", 0.86, 0.0],
+	"longshot": ["toon/Weapon/Sniper_2", "-x", 1.15, 0.0],
+	"frost": ["blaster/Blaster_Q", "+z", 0.7, 0.0],
 }
 
 const HIP := Vector3(0.27, -0.25, -0.58)
@@ -167,7 +179,7 @@ func muzzle_z() -> float:
 ## the receiver / furniture, glowing strips mark the sci-fi parts.
 ## _sight_y = height of the iron-sight line (aiming lines it up with the eye).
 func _build_gun(style: String) -> void:
-	var key := style if GLB.has(style) else ("_" if not style in ["spinner", "bubbler", "pinball", "flamer"] else "")
+	var key := style if GLB.has(style) else ("_" if style != "spinner" else "")
 	if key != "":
 		_build_glb(style, GLB[key])
 		return
@@ -473,7 +485,8 @@ func _build_glb(style: String, spec: Array) -> void:
 	_sight_y = top + 0.012
 	# A band of the player's colour on the stock, so guns stay recognisable.
 	var w: float = rb.size.x * k
-	_box(_accent, Vector3(w + 0.006, 0.03, 0.07), Vector3(0, top - 0.04, rear - 0.12))
+	if not path.begins_with("blaster/"):
+		_box(_accent, Vector3(w + 0.004, 0.022, 0.05), Vector3(0, top - 0.04, rear - 0.12))
 	# Sci-fi touches for the energy weapons.
 	if style == "rail":
 		for z in [-0.18, -0.26, -0.34]:
@@ -494,7 +507,10 @@ static func _gunmetal(src: Material) -> Material:
 		return _metal_cache[src]
 	var m: StandardMaterial3D = src.duplicate()
 	var c: Color = m.albedo_color
-	if m.albedo_texture == null and c.s < 0.2:
+	if m.albedo_texture != null:
+		# Textured toy blasters keep their colours.
+		m.roughness = 0.45
+	elif c.s < 0.2:
 		m.albedo_color = Color(c.r * 0.42, c.g * 0.42, c.b * 0.46)
 		m.metallic = 0.55
 		m.roughness = 0.38

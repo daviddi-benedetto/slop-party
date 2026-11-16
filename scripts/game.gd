@@ -59,6 +59,7 @@ const Pickup = preload("res://scripts/pickup.gd")
 const Cards = preload("res://scripts/cards.gd")
 const Zombies = preload("res://scripts/zombies.gd")
 const Frontline = preload("res://scripts/frontline.gd")
+const Pet = preload("res://scripts/pet.gd")
 
 const MODES := ["rounds", "zombies", "frontline"]
 const MODE_NAMES := {"rounds": "ROUNDS", "zombies": "ZOMBIES", "frontline": "FRONTLINE"}
@@ -81,6 +82,7 @@ var mode := "rounds"
 var rules = null              # zombies.gd / frontline.gd node (null in Rounds)
 var actors: Array = []        # other damageable things: zombies, vehicles
 var vehicles: Array = []
+var pets: Array = []
 var _dmg_cache: Array = []
 var _dmg_frame := -1
 
@@ -195,6 +197,7 @@ func _ready() -> void:
 		for i in players.size():
 			var pos: Vector3 = spots[i % spots.size()]
 			players[i].spawn(pos, _yaw_to_centre(pos))
+	map.nav_built.connect(_spawn_pets)
 	map.build_nav()
 	for spot in map.pickup_spots:
 		var pk = Pickup.new()
@@ -442,7 +445,7 @@ func _update_cameras(delta: float) -> void:
 			var hip: float = 1.0 - p.aim_amount
 			var amt: float = p.bob_amount * bob_scale * (0.25 + 0.75 * hip)
 			var ph: float = p.bob_phase
-			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT - 0.6 * p.crouch_amount - p.land_dip * 0.16 + sin(ph * 2.0) * 0.024 * amt, 0)
+			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.eye_height() - 0.6 * p.crouch_amount * p.stats.size - p.land_dip * 0.16 + sin(ph * 2.0) * 0.024 * amt, 0)
 			eye += Basis(Vector3.UP, p.yaw) * Vector3(cos(ph) * 0.02 * amt, 0, 0)
 			var sh: float = p.shake * p.shake * 0.035 * shake_amount
 			var kick: float = p.recoil * clampf(p.stats.recoil_kick, 0.4, 3.0) * 0.011
@@ -707,7 +710,7 @@ func on_player_died(victim, attacker) -> void:
 		attacker.kills += 1
 		attacker.kill_flash = 1.0
 		attacker.kill_name = victim.pname
-		attacker.on_kill()
+		attacker.on_kill(victim)
 		attacker.shake = maxf(attacker.shake, 0.4)
 		if not attacker.is_bot and attacker.brain.device >= 0 and Settings.v("rumble"):
 			Input.start_joy_vibration(attacker.brain.device, 0.2, 0.9, 0.25)
@@ -740,7 +743,7 @@ func _credit(attacker, victim) -> void:
 	attacker.kills += 1
 	attacker.kill_flash = 1.0
 	attacker.kill_name = victim.pname
-	attacker.on_kill()
+	attacker.on_kill(victim)
 	attacker.shake = maxf(attacker.shake, 0.4)
 	if not attacker.is_bot and attacker.brain.device >= 0 and Settings.v("rumble"):
 		Input.start_joy_vibration(attacker.brain.device, 0.2, 0.9, 0.25)
@@ -900,6 +903,44 @@ func hostiles(who) -> Array:
 func bot_goal(p):
 	if rules != null:
 		return rules.bot_goal(p)
+	return null
+
+
+## A few dogs and cats wander every map (pet.gd); more on bigger maps.
+func _spawn_pets() -> void:
+	if "--pets-demo" in OS.get_cmdline_user_args():
+		# Dev flag: one of each kind lined up in front of player 1.
+		var p0 = players[0]
+		for i in Pet.KINDS.size():
+			var demo = Pet.new()
+			demo.game = self
+			demo.setup(i)
+			world.add_child(demo)
+			demo.global_position = p0.global_position + Basis(Vector3.UP, p0.yaw) * Vector3((i - 3.5) * 1.3, 0, -4.5)
+			demo.rotation.y = p0.yaw
+			pets.append(demo)
+			if i % 2 == 0:
+				demo.pet(p0)
+		return
+	var n := clampi(int(map.half_x * map.half_z / 300.0) + 2, 3, 9)
+	for i in n:
+		var pos: Vector3 = map.random_nav_point()
+		if pos.y < -1.0:
+			continue
+		var pet = Pet.new()
+		pet.game = self
+		pet.setup(randi() % Pet.KINDS.size())
+		world.add_child(pet)
+		pet.global_position = pos
+		pet.rotation.y = randf() * TAU
+		pets.append(pet)
+
+
+## The nearest pet within arm's reach of `p`, or null.
+func pet_near(p):
+	for pet in pets:
+		if is_instance_valid(pet) and pet.global_position.distance_to(p.global_position) < 1.9:
+			return pet
 	return null
 
 

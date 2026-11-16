@@ -133,6 +133,11 @@ var picking := false              # choosing a card while alive (zombies intermi
 var skydive := false              # dropped from the sky (Frontline spawn)
 var chute_open := false
 var _chute: Node3D
+var _empower := 0.0               # seconds left of the Empower block perk
+var _echo_t := 0.0                # Echo Guard: time until the free repeat block
+var _slamming := false            # diving for a Ground Slam
+var _drone_t := 1.0
+var _drone: MeshInstance3D
 
 # Card selection while dead
 var card_choices: Array = []
@@ -277,6 +282,21 @@ func _ready() -> void:
 	add_child(_aura)
 
 	_build_chute()
+	# Buddy drone (card): a little glowing ball that hovers over the shoulder.
+	var orb := SphereMesh.new()
+	orb.radius = 0.13
+	orb.height = 0.26
+	var om := StandardMaterial3D.new()
+	om.albedo_color = Color(0.1, 0.1, 0.12)
+	om.emission_enabled = true
+	om.emission = color.lerp(Color.WHITE, 0.3)
+	om.emission_energy_multiplier = 2.5
+	_drone = MeshInstance3D.new()
+	_drone.mesh = orb
+	_drone.material_override = om
+	_drone.visible = false
+	_drone.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_drone)
 	_set_alive_visuals(false)
 
 
@@ -356,6 +376,14 @@ func rebuild_stats() -> void:
 	character.set_weapon(weapon)
 	character.set_jetpack(stats.jetpack > 0.0)
 	jet_fuel = minf(jet_fuel, stats.jetpack)
+	# Body size (Tiny / Giant): model, hit capsule, eye and tag heights.
+	character.scale = Vector3.ONE * stats.size
+	var cap: CapsuleShape3D = _shape.shape
+	cap.radius = 0.4 * stats.size
+	cap.height = (1.15 if crouching else 1.8) * stats.size
+	_shape.position.y = cap.height * 0.5
+	name_label.position.y = 2.62 * stats.size
+	health_bar.position.y = 2.34 * stats.size
 	# Bullets, trails and muzzle flashes take on the colour of their effect.
 	attr_color = color
 	if stats.frost > 0.0:
@@ -409,7 +437,7 @@ func _set_crouch(on: bool) -> void:
 		return
 	crouching = on
 	var cap: CapsuleShape3D = _shape.shape
-	cap.height = 1.15 if on else 1.8
+	cap.height = (1.15 if on else 1.8) * stats.size
 	_shape.position.y = cap.height * 0.5
 
 
@@ -481,8 +509,14 @@ func _attribute_sound(style: String) -> String:
 
 
 ## Called by game.gd for every credited KO.
-func on_kill() -> void:
+func on_kill(victim = null) -> void:
 	kills_life += 1
+	if stats.corpse_bomb > 0.0 and victim != null and is_instance_valid(victim):
+		# Chain Reaction (card): whoever we KO goes off like a bomb.
+		var at: Vector3 = victim.chest_position()
+		get_tree().create_timer(0.12, false).timeout.connect(func():
+			if is_instance_valid(self):
+				game.explode(at, stats.corpse_bomb, 55.0, self, self))
 	if stats.kill_heal > 0.0:
 		heal(stats.kill_heal)
 	if stats.kill_reload and alive:
@@ -553,11 +587,19 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 
 
 func eye_position() -> Vector3:
-	return global_position + Vector3(0, EYE_HEIGHT - 0.6 * crouch_amount, 0)
+	return global_position + Vector3(0, eye_height() - 0.6 * crouch_amount * stats.size, 0)
+
+
+func eye_height() -> float:
+	return EYE_HEIGHT * stats.size
+
+
+func head_height() -> float:
+	return 1.12 * stats.size
 
 
 func chest_position() -> Vector3:
-	return global_position + Vector3(0, 1.0, 0)
+	return global_position + Vector3(0, 1.0 * stats.size, 0)
 
 
 func aim_basis() -> Basis:
@@ -679,14 +721,24 @@ func _physics_process(delta: float) -> void:
 			if brain.interact:
 				car.enter(self)
 				return
+		elif not is_bot:
+			var pet = game.pet_near(self)
+			if pet != null:
+				pickup_prompt = "PET THE " + pet.label
+				if brain.interact:
+					pet.pet(self)
 	near_pickup = null
 
 	# --- block ---
 	if brain.block and block_cd <= 0.0:
-		block_left = BLOCK_TIME
 		block_cd = stats.block_cooldown
-		Sfx.play_at("block", global_position, -3.0)
-		Fx.ring(game.world, chest_position(), Color(color.lerp(Color.WHITE, 0.4), 0.9), 0.5, 1.6, 0.25)
+		_start_block(true)
+	if _echo_t > 0.0:
+		_echo_t -= delta
+		if _echo_t <= 0.0:
+			_start_block(false)
+	_empower = maxf(0.0, _empower - delta)
+	_drone_tick(delta)
 
 	# --- movement ---
 	var input: Vector2 = brain.move
@@ -821,9 +873,36 @@ func _physics_process(delta: float) -> void:
 	if dash_left > 0.0:
 		dash_left -= delta
 		horiz = dash_dir * maxf(22.0, speed * 2.4)
+	# Ground Slam (card): crouch in the air to dive; shockwave on landing.
+	if stats.slam > 0.0:
+		if not on_floor and want_crouch and not _slamming and velocity.y < 9.0 and _fall_speed > -20.0 and not is_on_floor():
+			var below := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3(0, -2.2, 0), WORLD_MASK)
+			if get_world_3d().direct_space_state.intersect_ray(below).is_empty():
+				_slamming = true
+				Sfx.play_at("dash", global_position, -4.0, 0.6)
+		if _slamming:
+			velocity.y = -36.0
+			horiz *= 0.3
 	velocity.x = horiz.x
 	velocity.z = horiz.z
 	move_and_slide()
+	if _slamming and is_on_floor():
+		_slamming = false
+		land_dip = 1.0
+		shake = maxf(shake, 0.7)
+		game.explode(global_position + Vector3(0, 0.3, 0), 5.0, stats.slam, self, self)
+	# Goomba Stomp (card): landing on an enemy hurts them and bounces us.
+	if stats.stomp > 0.0 and _fall_speed > 2.5:
+		for i in get_slide_collision_count():
+			var col := get_slide_collision(i)
+			var other = col.get_collider()
+			if col.get_normal().y > 0.55 and other != null and other.has_method("take_damage") and other != self and game.is_enemy(self, other):
+				other.take_damage(stats.stomp, self)
+				velocity.y = stats.jump_velocity * 1.25
+				air_jumps = stats.max_jumps - 1
+				Fx.ring(game.world, global_position, Color(1, 1, 1, 0.9), 0.3, 1.6, 0.3)
+				Sfx.play_at("bounce", global_position, -2.0, 0.7)
+				break
 	rotation.y = yaw
 	character.crouch = crouch_amount
 	character.jetting = jetting
@@ -937,6 +1016,14 @@ func _weapon_tick(delta: float, rush: float) -> void:
 func _fire_round() -> void:
 	# Per-shot damage bonuses.
 	var mult: float = 1.0 + minf(kills_life, 5) * stats.rampage
+	if _empower > 0.0:
+		mult *= 1.0 + stats.block_empower
+		_empower = 0.0
+		Fx.ring(game.world, chest_position(), Color(1.0, 0.85, 0.3, 0.9), 0.2, 1.2, 0.2)
+	if stats.speed_dmg > 0.0:
+		mult *= 1.0 + stats.speed_dmg * clampf(Vector2(velocity.x, velocity.z).length() / (stats.move_speed * 1.5), 0.0, 1.0)
+	if stats.air_dmg > 0.0 and not is_on_floor():
+		mult *= 1.0 + stats.air_dmg
 	if ammo == 1 and stats.overcharge > 0.0 and stats.mag_size > 1:
 		mult *= 1.0 + stats.overcharge
 	ammo -= 1
@@ -1090,6 +1177,11 @@ func _die(attacker) -> void:
 	_set_alive_visuals(false)
 	velocity = Vector3.ZERO
 	killer = attacker if (attacker != null and is_instance_valid(attacker) and attacker != self) else null
+	if stats.martyr > 0.0 and not game.match_over:
+		game.explode(chest_position(), stats.martyr, 70.0, self, self)
+	_slamming = false
+	_echo_t = 0.0
+	_drone.visible = false
 	card_choices = Cards.draw(stats.card_draw, weapon) if (game.rules == null or game.rules.cards_on_death()) else []
 	skydive = false
 	chute_open = false
@@ -1168,3 +1260,98 @@ func offer_cards() -> void:
 	respawn_pending = false
 	burst_left = 0
 	aim_amount = 0.0
+
+
+# --------------------------------------------------------------------------
+# Block perks and the buddy drone
+# --------------------------------------------------------------------------
+
+## The block goes up. `first` is false for the free Echo Guard repeat.
+## Every block card hooks in here, so the block doubles as a weapon.
+func _start_block(first: bool) -> void:
+	block_left = BLOCK_TIME * stats.block_time
+	Sfx.play_at("block", global_position, -3.0, 1.0 if first else 1.25)
+	Fx.ring(game.world, chest_position(), Color(color.lerp(Color.WHITE, 0.4), 0.9), 0.5, 1.6, 0.25)
+	if stats.block_reload and ammo < stats.mag_size:
+		ammo = stats.mag_size
+		reload_left = 0.0
+	if stats.block_empower > 0.0:
+		_empower = 3.5
+	if stats.block_echo and first:
+		_echo_t = 0.8
+	var flat := Basis(Vector3.UP, yaw)
+	if stats.block_blink > 0.0:
+		# Teleport the way we are moving (or forwards), stopping short of walls.
+		var dir: Vector3 = flat * Vector3(brain.move.x, 0.0, -brain.move.y)
+		dir = dir.normalized() if dir.length() > 0.2 else flat * Vector3.FORWARD
+		var from := chest_position()
+		var q := PhysicsRayQueryParameters3D.create(from, from + dir * stats.block_blink, WORLD_MASK)
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		var dist: float = (from.distance_to(hit.position) - 0.6) if hit else stats.block_blink
+		if dist > 0.5:
+			Fx.puff(game.world, from, Color(color.lerp(Color.WHITE, 0.5), 0.7), 10, 0.6)
+			global_position += dir * dist
+			reset_physics_interpolation()
+			Fx.ring(game.world, chest_position(), Color(color.lerp(Color.WHITE, 0.5), 0.9), 0.2, 1.8, 0.3)
+			Sfx.play_at("dash", global_position, -3.0, 1.4)
+	var me := chest_position()
+	if stats.block_frost > 0.0:
+		Fx.ring(game.world, me, Color(0.6, 0.9, 1.0, 0.9), 0.5, stats.block_frost, 0.4)
+		Sfx.play_at("mod_ice", global_position, -2.0)
+		for d in game.hostiles(self):
+			if d.chest_position().distance_to(me) < stats.block_frost:
+				d.apply_slow(0.8)
+				d.take_damage(10.0, self, true)
+	if stats.block_pull > 0.0:
+		Fx.ring(game.world, me, Color(0.8, 0.6, 1.0, 0.9), stats.block_pull, 0.5, 0.35)
+		for d in game.hostiles(self):
+			var to_me: Vector3 = me - d.chest_position()
+			if to_me.length() < stats.block_pull and to_me.length() > 1.5 and not d.has_method("seat_count"):
+				d.velocity += to_me.normalized() * 15.0 + Vector3(0, 4.0, 0)
+	if stats.block_burst > 0:
+		for i in stats.block_burst:
+			var a: float = TAU * i / float(stats.block_burst)
+			var b = Bullet.new()
+			b.setup(self, (flat * Vector3(sin(a), 0.04, cos(a))).normalized(), 0.6)
+			game.world.add_child(b)
+			b.global_position = me
+			b.orient()
+			b.reset_physics_interpolation()
+		Sfx.play_at("shot_scatter", global_position, -3.0, 1.2)
+
+
+## Buddy Drone (card): hovers by the shoulder and plinks at the nearest
+## enemy it can see, once a second per drone.
+func _drone_tick(delta: float) -> void:
+	_drone.visible = stats.drone > 0 and vehicle == null
+	if stats.drone <= 0:
+		return
+	var t: float = game.time * 2.0
+	_drone.position = Vector3(cos(t) * 0.7, 2.1 * stats.size + sin(t * 1.7) * 0.12, sin(t) * 0.7)
+	_drone_t -= delta
+	if _drone_t > 0.0:
+		return
+	_drone_t = 1.0 / stats.drone
+	var from: Vector3 = _drone.global_position
+	var best = null
+	var best_d := 26.0
+	for d in game.hostiles(self):
+		var dist: float = d.chest_position().distance_to(from)
+		if dist < best_d:
+			var q := PhysicsRayQueryParameters3D.create(from, d.chest_position(), WORLD_MASK)
+			if get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+				best_d = dist
+				best = d
+	if best == null:
+		return
+	var s = Stats.new()
+	s.damage = 9.0
+	s.bullet_speed = 90.0
+	s.bullet_gravity = 0.0
+	var b = Bullet.new()
+	b.setup_stats(self, s, (best.chest_position() + best.velocity * (best_d / 90.0) - from).normalized())
+	game.world.add_child(b)
+	b.global_position = from
+	b.orient()
+	b.reset_physics_interpolation()
+	Sfx.play_at("shot_zapper", from, -12.0, 1.6)

@@ -65,5 +65,33 @@ var rampage := 0.0          # bonus damage fraction per KO this life (max 5 stac
 var kill_heal := 0.0
 var kill_reload := false
 
+# --- special bullets (new weapons / cards; see bullet.gd) ---
+var chain := 0              # hits arc lightning to this many nearby enemies (50% damage)
+var cluster := 0            # explodes into this many bomblets
+var vortex := 0.0           # pull strength: drags enemies towards the projectile
+var sticky := false         # sticks to what it hits, explodes after a second
+var range_bonus := 0.0      # extra damage fraction at 40 m and beyond
+var frag := 0               # splits into this many fragments on hitting a wall
+
+# --- body / movement perks ---
+var size := 1.0             # body scale (Giant / Tiny)
+var stomp := 0.0            # damage for landing on someone's head
+var slam := 0.0             # crouch in the air: dive, shockwave of this damage on landing
+var martyr := 0.0           # blast radius of the explosion you leave when KO'd
+var corpse_bomb := 0.0      # blast radius of enemies you KO
+var drone := 0              # buddy drones that shoot at nearby enemies
+var speed_dmg := 0.0        # bonus damage fraction at full sprint
+var air_dmg := 0.0          # bonus damage fraction while airborne
+
+# --- block perks (triggered when the block starts; see player._on_block) ---
+var block_time := 1.0       # block duration multiplier
+var block_empower := 0.0    # next shot after a block: bonus damage fraction
+var block_blink := 0.0      # teleport this many metres on block
+var block_frost := 0.0      # freeze radius on block
+var block_burst := 0        # bullets fired in a ring on block
+var block_pull := 0.0       # radius: drag enemies towards you on block
+var block_echo := false     # block triggers a second time shortly after
+var block_reload := false   # blocking reloads your weapon
+
 # --- meta ---
 var card_draw := 3          # cards offered on death

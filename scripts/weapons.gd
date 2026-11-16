@@ -38,6 +38,30 @@ const LIST := [
 		"style": "pinball", "tp": [0.11, 0.5]},
 	{"name": "Flamer", "icon": "drop", "desc": "Short-range burning stream",
 		"style": "flamer", "tp": [0.1, 0.6]},
+	{"name": "Twins", "icon": "ammo", "desc": "Rapid akimbo pistols
+fast reload",
+		"style": "twins", "tp": [0.07, 0.4]},
+	{"name": "Tesla", "icon": "bolt", "desc": "Bolts arc to two
+more enemies nearby",
+		"style": "tesla", "tp": [0.09, 0.8]},
+	{"name": "Cluster", "icon": "boom", "desc": "A bomb that bursts
+into six bomblets",
+		"style": "cluster", "tp": [0.13, 0.5]},
+	{"name": "Vortex", "icon": "target", "desc": "A slow orb that drags
+enemies in, then pops",
+		"style": "vortex", "tp": [0.13, 0.5]},
+	{"name": "Ripper", "icon": "bounce", "desc": "Saw discs bounce off walls
+and cut through enemies",
+		"style": "ripper", "tp": [0.1, 0.6]},
+	{"name": "Sticky", "icon": "boom", "desc": "Bombs stick to walls
+and enemies, then blow",
+		"style": "sticky", "tp": [0.1, 0.7]},
+	{"name": "Longshot", "icon": "target", "desc": "Hits harder the further
+the bolt flies (up to x2.5)",
+		"style": "longshot", "tp": [0.05, 0.9]},
+	{"name": "Frostbite", "icon": "drop", "desc": "Freezing stream:
+slows enemies to a crawl",
+		"style": "frost", "tp": [0.09, 0.6]},
 ]
 
 
@@ -161,6 +185,103 @@ static func apply(id: int, s) -> void:
 			s.bullet_life = 5.0
 			s.recoil_kick = 1.2
 			s.shoot_pitch = 1.6
+		12:  # Twins
+			s.damage = 13.0
+			s.fire_interval = 0.105
+			s.mag_size = 24
+			s.reload_time = 1.1
+			s.spread = 0.018
+			s.bullet_speed = 80.0
+			s.recoil_kick = 0.7
+			s.shoot_pitch = 1.35
+		13:  # Tesla
+			s.damage = 22.0
+			s.chain = 2
+			s.fire_interval = 0.36
+			s.mag_size = 10
+			s.reload_time = 1.7
+			s.bullet_speed = 95.0
+			s.bullet_gravity = 0.0
+			s.bullet_size = 1.4
+			s.recoil_kick = 1.0
+			s.shoot_pitch = 1.7
+		14:  # Cluster
+			s.damage = 34.0
+			s.explosive = 2.6
+			s.cluster = 6
+			s.fire_interval = 1.1
+			s.mag_size = 3
+			s.reload_time = 2.2
+			s.bullet_speed = 26.0
+			s.bullet_gravity = 14.0
+			s.bullet_size = 2.6
+			s.recoil_kick = 2.2
+			s.shoot_pitch = 0.55
+		15:  # Vortex
+			s.damage = 45.0
+			s.explosive = 4.0
+			s.vortex = 30.0
+			s.fuse = 0.0
+			s.fire_interval = 1.4
+			s.mag_size = 2
+			s.reload_time = 2.4
+			s.bullet_speed = 11.0
+			s.bullet_gravity = 0.0
+			s.bullet_size = 4.0
+			s.bullet_life = 2.2
+			s.recoil_kick = 2.0
+			s.shoot_pitch = 0.4
+		16:  # Ripper
+			s.damage = 26.0
+			s.bounces = 3
+			s.pierce = 3
+			s.fire_interval = 0.55
+			s.mag_size = 6
+			s.reload_time = 1.8
+			s.bullet_speed = 42.0
+			s.bullet_gravity = 0.0
+			s.bullet_size = 3.0
+			s.bullet_life = 5.0
+			s.recoil_kick = 1.4
+			s.shoot_pitch = 0.9
+		17:  # Sticky
+			s.damage = 55.0
+			s.explosive = 3.4
+			s.sticky = true
+			s.fire_interval = 0.6
+			s.mag_size = 5
+			s.reload_time = 2.0
+			s.bullet_speed = 34.0
+			s.bullet_gravity = 10.0
+			s.bullet_size = 2.0
+			s.recoil_kick = 1.5
+			s.shoot_pitch = 0.75
+		18:  # Longshot
+			s.damage = 34.0
+			s.range_bonus = 1.5
+			s.fire_interval = 0.9
+			s.mag_size = 5
+			s.reload_time = 1.9
+			s.bullet_speed = 150.0
+			s.bullet_gravity = 1.5
+			s.spread = 0.0
+			s.recoil_kick = 2.0
+			s.shoot_pitch = 1.5
+			s.zoom = 0.5
+		19:  # Frostbite
+			s.damage = 5.0
+			s.frost = 0.6
+			s.fire_interval = 0.06
+			s.mag_size = 60
+			s.reload_time = 2.0
+			s.spread = 0.03
+			s.bullet_speed = 48.0
+			s.bullet_gravity = 0.0
+			s.bullet_size = 1.6
+			s.bullet_life = 0.7
+			s.recoil_kick = 0.3
+			s.shoot_pitch = 1.9
+			s.zoom = 0.85
 		11:  # Flamer
 			s.damage = 4.5
 			s.poison = 0.8
