@@ -15,6 +15,7 @@ extends CharacterBody3D
 ## wave. zombies.gd scales health and speed with the wave number.
 
 const Fx = preload("res://scripts/fx.gd")
+const Models = preload("res://scripts/models.gd")
 
 const GRAVITY := 22.0
 const TYPES := {
@@ -24,7 +25,15 @@ const TYPES := {
 	"boss": {"name": "ABOMINATION", "hp": 1600.0, "speed": 2.9, "damage": 40.0, "scale": 2.3, "color": Color(0.75, 0.2, 0.22), "kind": 3, "points": 10},
 }
 
-static var _meshes := {}         # type -> [body ArrayMesh, leg Mesh]
+## type -> [model path, model height in its own units, height factor]
+const MODELS := {
+	"walker": ["zombie/Character/Zombie_Basic", 1.36, 1.0],
+	"runner": ["zombie/Character/Zombie_Ribcage", 1.06, 0.92],
+	"brute": ["zombie/Character/Zombie_Chubby", 1.64, 1.0],
+	"boss": ["zombie/Character/Zombie_Arm", 1.57, 1.0],
+}
+
+static var _flash_mat: StandardMaterial3D
 
 var game
 var type := "walker"
@@ -59,8 +68,10 @@ var _stuck := 0.0
 var _walk := 0.0
 var _groan := 0.0
 var _body: Node3D
-var _legs: Array = []
-var _mat: StandardMaterial3D
+var _anim: AnimationPlayer
+var _meshes_inst: Array = []
+var _flashing := false
+var _action_t := 0.0             # > 0 while a one-shot animation (punch, hit) plays
 var _bar: MeshInstance3D
 
 
@@ -100,36 +111,34 @@ func _exit_tree() -> void:
 		game.actors.erase(self)
 
 
-## Shared meshes per type; one material per zombie (hit flash).
+## The animated model for this type (Zombie Apocalypse kit, see models.gd),
+## turned to face -Z and scaled to the type's height, plus the health bar.
+## Animations used: Walk / Run (by speed), Punch (or Idle_Attack) on a swing,
+## HitReact when hurt, Death. The hit flash is a white overlay material.
 func _build_model() -> void:
-	if not _meshes.has(type):
-		_meshes[type] = _make_meshes()
-	_mat = StandardMaterial3D.new()
-	_mat.albedo_color = color
-	_mat.roughness = 0.9
-	_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	_mat.rim_enabled = true
-	_mat.rim = 0.4
-	_mat.emission_enabled = true
-	_mat.emission = Color.BLACK
+	var spec: Array = MODELS[type]
 	_body = Node3D.new()
-	_body.scale = Vector3.ONE * _scale
 	add_child(_body)
-	var mi := MeshInstance3D.new()
-	mi.mesh = _meshes[type][0]
-	mi.material_override = null
-	mi.set_surface_override_material(0, _mat)
-	_body.add_child(mi)
-	for sx in [-0.17, 0.17]:
-		var hip := Node3D.new()
-		hip.position = Vector3(sx, 0.8, 0)
-		_body.add_child(hip)
-		var leg := MeshInstance3D.new()
-		leg.mesh = _meshes[type][1]
-		leg.material_override = _mat
-		leg.position.y = -0.4
-		hip.add_child(leg)
-		_legs.append(hip)
+	var inst: Node3D = Models.scene(spec[0]).instantiate()
+	var k: float = 1.8 * _scale * float(spec[2]) / float(spec[1])
+	inst.scale = Vector3.ONE * k
+	inst.rotation.y = PI
+	_body.add_child(inst)
+	_meshes_inst = Models.mesh_instances(inst)
+	if _flash_mat == null:
+		_flash_mat = StandardMaterial3D.new()
+		_flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_flash_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_flash_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_flash_mat.albedo_color = Color(1.0, 0.9, 0.8, 0.55)
+	for c in inst.find_children("*", "AnimationPlayer", true, false):
+		_anim = c
+	if _anim != null:
+		for a in ["Walk", "Run", "Idle", "Crawl"]:
+			if _anim.has_animation(a):
+				_anim.get_animation(a).loop_mode = Animation.LOOP_LINEAR
+		_anim.playback_default_blend_time = 0.15
+		_play("Idle")
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.8, 0.1)
 	_bar = MeshInstance3D.new()
@@ -138,7 +147,6 @@ func _build_model() -> void:
 	bm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	bm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	bm.albedo_color = Color(1.0, 0.3, 0.25)
-	bm.no_depth_test = false
 	_bar.material_override = bm
 	_bar.position.y = 2.15 * _scale
 	_bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -146,55 +154,14 @@ func _build_model() -> void:
 	add_child(_bar)
 
 
-## Torso, head, arms reaching forward and glowing eyes in one mesh
-## (surface 0 = skin/clothes, surface 1 = eyes); legs separately (animated).
-func _make_meshes() -> Array:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var cap := CapsuleMesh.new()
-	cap.radius = 0.27
-	cap.height = 0.95
-	cap.radial_segments = 12
-	cap.rings = 4
-	st.append_from(cap, 0, Transform3D(Basis(Vector3.RIGHT, 0.22), Vector3(0, 1.2, -0.05)))
-	var head := SphereMesh.new()
-	head.radius = 0.24
-	head.height = 0.46
-	head.radial_segments = 12
-	head.rings = 6
-	st.append_from(head, 0, Transform3D(Basis(Vector3.FORWARD, 0.25), Vector3(0.03, 1.78, -0.2)))
-	var arm := CapsuleMesh.new()
-	arm.radius = 0.08
-	arm.height = 0.75
-	arm.radial_segments = 8
-	arm.rings = 2
-	for sx in [-0.3, 0.3]:
-		var b := Basis(Vector3.RIGHT, PI * 0.5 - 0.15).rotated(Vector3.UP, -sx * 0.25)
-		st.append_from(arm, 0, Transform3D(b, Vector3(sx, 1.42, -0.42)))
-	var jaw := BoxMesh.new()
-	jaw.size = Vector3(0.22, 0.08, 0.14)
-	st.append_from(jaw, 0, Transform3D(Basis(Vector3.RIGHT, 0.4), Vector3(0.03, 1.6, -0.36)))
-	var body := st.commit()
-	var est := SurfaceTool.new()
-	est.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var eye := SphereMesh.new()
-	eye.radius = 0.045
-	eye.height = 0.09
-	eye.radial_segments = 8
-	eye.rings = 4
-	for sx in [-0.08, 0.1]:
-		est.append_from(eye, 0, Transform3D(Basis(), Vector3(sx, 1.82, -0.41)))
-	est.commit(body)
-	var glow := StandardMaterial3D.new()
-	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glow.albedo_color = Color(1.6, 1.2, 0.2) if type != "boss" else Color(2.0, 0.3, 0.2)
-	body.surface_set_material(1, glow)
-	var leg := CapsuleMesh.new()
-	leg.radius = 0.1
-	leg.height = 0.85
-	leg.radial_segments = 8
-	leg.rings = 2
-	return [body, leg]
+func _play(anim: String, speed := 1.0) -> void:
+	if _anim == null:
+		return
+	if not _anim.has_animation(anim):
+		anim = "Walk" if _anim.has_animation("Walk") else "Idle"
+	if _anim.current_animation != anim:
+		_anim.play(anim)
+	_anim.speed_scale = speed
 
 
 func chest_position() -> Vector3:
@@ -235,6 +202,9 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 	_bar.visible = true
 	if not silent:
 		_stagger = maxf(_stagger, 0.12 if type != "boss" else 0.0)
+		if amount > max_health * 0.12 and _action_t <= 0.0 and health > amount:
+			_play("HitReact", 1.5)
+			_action_t = 0.35
 	if game.is_player(attacker):
 		if not silent:
 			attacker.hit_marker = 1.0
@@ -264,10 +234,13 @@ func _die(attacker) -> void:
 	game.on_actor_killed(self, attacker)
 	if game.rules != null:
 		game.rules.on_zombie_died(self, attacker)
-	# Sink into the ground, then go.
+	# Fall over (Death animation), sink into the ground, then go.
+	_set_flash(false)
+	_bar.visible = false
+	_play("Death")
 	var tw := create_tween()
-	tw.tween_property(_body, "rotation:x", -1.4, 0.35)
-	tw.parallel().tween_property(_body, "position:y", -0.4, 0.6)
+	tw.tween_interval(1.3)
+	tw.tween_property(_body, "position:y", -1.6 * _scale, 0.7)
 	tw.tween_callback(queue_free)
 
 
@@ -275,7 +248,7 @@ func _physics_process(delta: float) -> void:
 	if not alive:
 		return
 	hurt_flash = maxf(0.0, hurt_flash - delta * 5.0)
-	_mat.emission = Color(1.0, 0.9, 0.8) * hurt_flash * 0.8
+	_set_flash(hurt_flash > 0.45)
 	if _bar.visible:
 		_bar.scale.x = clampf(health / max_health, 0.02, 1.0)
 	if game.frozen:
@@ -357,13 +330,15 @@ func _physics_process(delta: float) -> void:
 
 	# Shamble: legs swing, body sways, a lunge when attacking.
 	var hs := Vector2(velocity.x, velocity.z).length()
-	_walk += delta * (2.0 + hs * 2.2)
-	var swing := sin(_walk) * clampf(hs / 3.0, 0.0, 1.0) * 0.6
-	_legs[0].rotation.x = swing
-	_legs[1].rotation.x = -swing
-	_body.rotation.z = sin(_walk * 0.5) * 0.08
-	_body.rotation.x = -_lunge * 0.5
-	_body.position.y = absf(sin(_walk)) * 0.04
+	_action_t = maxf(0.0, _action_t - delta)
+	if _action_t <= 0.0:
+		if hs < 0.3:
+			_play("Idle")
+		elif hs > 4.0:
+			_play("Run", clampf(hs / 5.0, 0.8, 1.6))
+		else:
+			_play("Walk", clampf(hs / (1.6 * _scale), 0.7, 1.8))
+	_body.rotation.x = -_lunge * 0.25
 	_groan -= delta
 	if _groan <= 0.0:
 		_groan = randf_range(4.0, 10.0)
@@ -389,6 +364,10 @@ func _clear(t) -> bool:
 func _attack(t) -> void:
 	_attack_cd = 1.1 if type != "runner" else 0.8
 	_lunge = 1.0
+	_play("Punch" if _anim != null and _anim.has_animation("Punch") else "Idle_Attack", 1.6)
+	if _anim != null:
+		_anim.seek(0.0)
+	_action_t = 0.55
 	if t.is_blocking():
 		# Shoved back by the guard.
 		t.take_damage(damage, self)
@@ -403,3 +382,12 @@ func _attack(t) -> void:
 		var push: Vector3 = t.global_position - global_position
 		push.y = 0.0
 		t.velocity += push.normalized() * 8.0 + Vector3(0, 4.0, 0)
+
+
+
+func _set_flash(on: bool) -> void:
+	if on == _flashing:
+		return
+	_flashing = on
+	for mi in _meshes_inst:
+		mi.material_overlay = _flash_mat if on else null

@@ -19,10 +19,11 @@ extends CharacterBody3D
 const Fx = preload("res://scripts/fx.gd")
 const Bullet = preload("res://scripts/bullet.gd")
 const Stats = preload("res://scripts/stats.gd")
+const Models = preload("res://scripts/models.gd")
 
 const GRAVITY := 22.0
 const SPECS := {
-	"buggy": {"label": "BUGGY", "hp": 450.0, "speed": 24.0, "accel": 18.0, "turn": 2.2, "size": Vector3(2.2, 1.1, 3.8),
+	"buggy": {"label": "BUGGY", "hp": 450.0, "speed": 24.0, "accel": 18.0, "turn": 2.2, "size": Vector3(2.0, 1.3, 4.0),
 		"cam_h": 2.4, "cam_d": 7.5, "enter": 2.4},
 	"tank": {"label": "TANK", "hp": 1600.0, "speed": 10.0, "accel": 6.0, "turn": 1.0, "size": Vector3(3.4, 1.6, 5.6),
 		"cam_h": 3.6, "cam_d": 11.0, "enter": 3.2},
@@ -266,7 +267,7 @@ func _drive(delta: float, b) -> void:
 		_visual.rotation.x = lerpf(_visual.rotation.x, atan2(-local.z, local.y), clampf(delta * 8.0, 0.0, 1.0))
 		_visual.rotation.z = lerpf(_visual.rotation.z, atan2(local.x, local.y), clampf(delta * 8.0, 0.0, 1.0))
 	for w in _wheels:
-		w.rotation.x -= _speed * delta / 0.45
+		w.rotation.x -= _speed * delta / 0.42 * float(w.get_meta("dir", 1.0))
 	if type == "buggy" and _wheels.size() >= 2:
 		for i in 2:
 			_wheels[i].get_parent().rotation.y = move.x * -0.45
@@ -477,13 +478,14 @@ func _merge_tree(n: Node3D) -> void:
 	var groups := {}
 	var order: Array = []
 	for c in n.get_children():
-		if c is MeshInstance3D:
+		# Imported meshes (no override; several surfaces) stay as they are.
+		if c is MeshInstance3D and c.material_override != null:
 			var m: Material = c.material_override
 			if not groups.has(m):
 				groups[m] = []
 				order.append(m)
 			groups[m].append(c)
-	if order.size() == 0 or n.get_child_count() <= 1:
+	if order.size() == 0:
 		return
 	var am := ArrayMesh.new()
 	for m in order:
@@ -560,35 +562,54 @@ func _wheel(pos: Vector3, r: float, w: float, tyre: Material, hub: Material, ste
 		_wheels.append(spin)
 
 
+## The buggy is the armoured pickup from the Zombie Apocalypse kit: body as
+## imported, its wheel meshes re-hung on pivots so they spin and steer, a
+## team-colour flag and roof stripe, and our machine gun on the load bed.
 func _build_buggy() -> void:
 	var paint := _mat(color, 0.4, 0.4)
 	var dark := _mat(Color(0.08, 0.08, 0.1), 0.6, 0.4)
 	var metal := _mat(Color(0.5, 0.52, 0.55), 0.3, 0.9)
-	var tyre := _mat(Color(0.05, 0.05, 0.06), 0.9, 0.0)
-	_bx(_visual, Vector3(1.6, 0.35, 3.4), dark, Vector3(0, 0.6, 0))
-	_bx(_visual, Vector3(1.7, 0.3, 1.3), paint, Vector3(0, 0.85, -1.15), Vector3(0.12, 0, 0))
-	_bx(_visual, Vector3(1.7, 0.4, 0.9), paint, Vector3(0, 0.9, 1.3))
-	_bx(_visual, Vector3(0.5, 0.3, 0.5), metal, Vector3(0, 0.85, 1.0))
-	for sx in [-0.55, 0.55]:
-		_bx(_visual, Vector3(0.5, 0.15, 0.6), dark, Vector3(sx, 0.85, 0.2))
-		_bx(_visual, Vector3(0.45, 0.6, 0.12), dark, Vector3(sx, 1.1, 0.5))
-	# Roll cage.
-	for sx in [-0.75, 0.75]:
-		_cy(_visual, 0.05, 1.3, metal, Vector3(sx, 1.4, -0.5), Vector3(0.35, 0, 0))
-		_cy(_visual, 0.05, 1.1, metal, Vector3(sx, 1.35, 0.95), Vector3(-0.3, 0, 0))
-		_cy(_visual, 0.05, 1.5, metal, Vector3(sx, 1.95, 0.25), Vector3(PI * 0.5, 0, 0))
-	_cy(_visual, 0.05, 1.5, metal, Vector3(0, 1.95, 0.95), Vector3(0, 0, PI * 0.5))
-	_cy(_visual, 0.05, 1.5, metal, Vector3(0, 1.95, -0.45), Vector3(0, 0, PI * 0.5))
-	_bx(_visual, Vector3(1.5, 0.12, 0.12), _mat(Color(1.0, 0.9, 0.6) * 2.0), Vector3(0, 0.8, -1.82))
-	for sx in [-0.95, 0.95]:
-		_wheel(Vector3(sx, 0.45, -1.2), 0.45, 0.35, tyre, metal, true)
-	for sx in [-0.95, 0.95]:
-		_wheel(Vector3(sx, 0.45, 1.25), 0.48, 0.4, tyre, metal)
-	# Mounted machine gun on a pintle behind the seats.
+	var k := 0.74
+	var base := Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * k), Vector3(0, 0.02, 0))
+	var inst: Node3D = Models.scene("zombie/Vehicle/Vehicle_Pickup_Armored").instantiate()
+	var front: Array = []
+	var back: Array = []
+	for mi in Models.mesh_instances(inst):
+		var m: MeshInstance3D = mi
+		var local: Transform3D = m.transform
+		m.owner = null
+		m.get_parent().remove_child(m)
+		if not m.name.contains("Wheel"):
+			m.transform = base * local
+			_visual.add_child(m)
+			continue
+		# Pivot at the wheel's centre: holder (placed) > steer > spin > mesh.
+		var c: Vector3 = local * m.mesh.get_aabb().get_center()
+		var holder := Node3D.new()
+		holder.transform = base * Transform3D(Basis(), c)
+		_visual.add_child(holder)
+		var steer := Node3D.new()
+		holder.add_child(steer)
+		var spin := Node3D.new()
+		spin.set_meta("dir", -1.0)       # the model faces +Z, we drive towards -Z
+		steer.add_child(spin)
+		m.transform = Transform3D(local.basis, local.origin - c)
+		spin.add_child(m)
+		if m.name.contains("Front"):
+			front.append(spin)
+		else:
+			back.append(spin)
+	inst.free()
+	_wheels = front + back
+	# Team colours: roof stripe and a pennant on a whip aerial.
+	_bx(_visual, Vector3(0.5, 0.03, 1.2), paint, Vector3(0, 1.5, -0.35))
+	_cy(_visual, 0.02, 1.6, metal, Vector3(0.75, 2.0, 0.4))
+	_bx(_visual, Vector3(0.03, 0.3, 0.55), paint, Vector3(0.75, 2.62, 0.68))
+	# Mounted machine gun on a pintle on the load bed.
 	_turret = Node3D.new()
-	_turret.position = Vector3(0, 2.05, 0.95)
+	_turret.position = Vector3(0, 1.75, 1.15)
 	_visual.add_child(_turret)
-	_cy(_turret, 0.06, 0.3, dark, Vector3(0, -0.1, 0))
+	_cy(_turret, 0.06, 0.9, dark, Vector3(0, -0.45, 0))
 	_gun = Node3D.new()
 	_turret.add_child(_gun)
 	_bx(_gun, Vector3(0.18, 0.2, 0.55), dark, Vector3(0, 0.05, -0.1))

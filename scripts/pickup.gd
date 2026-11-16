@@ -15,6 +15,7 @@ extends Area3D
 ## collision, only this Area3D (mask = players).
 
 const Viewmodel = preload("res://scripts/viewmodel.gd")
+const Models = preload("res://scripts/models.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Fx = preload("res://scripts/fx.gd")
 
@@ -96,24 +97,11 @@ func _fill() -> void:
 		model.position = Vector3(0, 0.05, 0.1)
 		model.scale = Vector3.ONE * 2.2
 	else:
-		var red := StandardMaterial3D.new()
-		red.albedo_color = Color(1.0, 0.25, 0.4)
-		red.roughness = 0.35
-		red.rim_enabled = true
-		red.emission_enabled = true
-		red.emission = Color(1.0, 0.2, 0.35)
-		red.emission_energy_multiplier = 1.2
-		var ball := SphereMesh.new()
-		ball.radius = 0.2
-		ball.height = 0.4
-		_mesh(_holder, ball, red, Vector3(-0.15, 0.1, 0))
-		_mesh(_holder, ball, red, Vector3(0.15, 0.1, 0))
-		var tip := CylinderMesh.new()
-		tip.top_radius = 0.33
-		tip.bottom_radius = 0.0
-		tip.height = 0.42
-		tip.radial_segments = 20
-		_mesh(_holder, tip, red, Vector3(0, -0.14, 0)).scale = Vector3(1.0, 1.0, 0.6)
+		# First-aid kit model from the Toon Shooter kit.
+		var kit: Node3D = Models.scene("toon/Collectable/Health").instantiate()
+		kit.scale = Vector3.ONE * 0.75
+		kit.position = Vector3(0, -0.2, 0)
+		_holder.add_child(kit)
 	_holder.visible = true
 	_active = true
 	_ring_mat.emission_energy_multiplier = 1.8

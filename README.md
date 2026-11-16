@@ -43,9 +43,11 @@ inspired by ROUNDS).
   remembered between sessions.
 
 Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript.
-The maps, characters, textures, icons, sounds and music are all generated in code; the
-only bundled asset is the Fredoka UI font (SIL Open Font License, see
-`fonts/OFL.txt`).
+The map layouts, plush characters, textures, icons, sounds and music are
+generated in code. Guns, zombies, cars, trees, rocks and props are free
+public-domain (CC0) 3D models by [Quaternius](https://quaternius.com) in
+`assets/models/` (see `assets/models/LICENSE.txt`); the UI font is Fredoka
+(SIL Open Font License, see `fonts/OFL.txt`).
 
 ## Play
 

@@ -29,9 +29,11 @@ has not been verified.
   heavy bloom, after ROUNDS. Plush animal characters (animal, colour, hat and
   face chosen per player). Chunky UI with the Fredoka font on near-black
   panels.
-- Engine: Godot 4.7.2, Forward+ renderer, GDScript only. The only imported
-  asset is `fonts/Fredoka.ttf` (SIL OFL, licence beside it). Everything else –
-  meshes, textures, sounds, music, icons – is generated in code.
+- Engine: Godot 4.7.2, Forward+ renderer, GDScript only. Imported assets:
+  `fonts/Fredoka.ttf` (SIL OFL) and the CC0 models in `assets/models/`
+  (Quaternius: Toon Shooter, Zombie Apocalypse, Stylized Nature; licence note
+  beside them). Map layouts, plush characters, textures, sounds, music and
+  icons are generated in code.
 
 ## 2. Running, testing, building
 
@@ -99,6 +101,8 @@ parse error in one script.
 | `scripts/lobby.gd` | Join screen: 3D stage with podiums, per-player character customisation, map / bots / kill-target selection. Emits `start(config)`. |
 | `scripts/stage.gd` | Small sunny 3D "showroom" (sky, hills, podiums, camera) behind the lobby and results. |
 | `scripts/game.gd` | One match: world, splitscreen viewports, cameras (incl. the vehicle chase camera), countdown, Rounds scoring, the mode hooks, teams (`is_enemy`, `damageables`, `hostiles`), respawn, explosions, pause menu, aim assist, hand-over to results. |
+| `scripts/models.gd` | Imported models: cached `scene()`, `parts()` (mesh + transform list) and `bounds()` by path relative to `assets/models/`. |
+| `tools/inspect_models.gd` | Dev tool: prints every model's size, node tree and animations. |
 | `scripts/zombies.gd` | Zombies mode rules: endless waves, spawning, intermission card picks, revival, game over. |
 | `scripts/zombie.gd` | One zombie (walker / runner / brute / boss): model, nav pathing, melee, damage interface. |
 | `scripts/frontline.gd` | Frontline mode rules: teams and CPU fill, flags, tickets, parachute spawns, vehicle respawns, bot goals, flag HUD. |
@@ -200,6 +204,33 @@ and floods the log with rendering errors.
 1 = world static geometry, 2 = players, zombies and vehicles. Bullets are not
 physics bodies; they ray-cast against `1 | 2`. A player inside a vehicle has
 collision off (the vehicle takes the hits).
+
+### Imported models (`models.gd`, `assets/models/`)
+
+- The user allows free, clearly licensed models; these are all CC0. Add more
+  as `.glb` under `assets/models/<pack>/`, run `--import`, and note the
+  source in `assets/models/LICENSE.txt`. `tools/inspect_models.gd` shows a
+  model's size, facing and animation names before you place it.
+- **Static props:** `map._model(path, pos, yaw, scale, mirror, collide)` adds
+  every surface of the model to the normal material batches (so props cost
+  no extra draw calls) and a box collider from its bounds. `_tree`, `_pine`,
+  `_bush`, `_rock`, `_plant`, `_container`, `_barrel`, `_lamp_post`, cube
+  crates in `_box`, `map_places._car` and `map_front._sandbags` use it.
+  Out-of-bounds scenery uses the light toon trees (the nature-pack trees
+  have ~10k vertices each).
+- **Guns:** `viewmodel.GLB` maps eight weapon styles to gun models
+  (`_build_glb`: turned to face -Z, scaled to a length, rear end behind the
+  grip). Grey surfaces are re-coloured to gun-metal (`_gunmetal`), a band in
+  the player's colour is added. They are one-piece meshes, so the pump /
+  cylinder animations only exist on the hand-built guns (Spinner, Bubbler,
+  Pinball, Flamer keep those).
+- **Zombies:** `zombie.MODELS` maps each type to a rigged model with an
+  AnimationPlayer (Walk, Run, Punch / Idle_Attack, HitReact, Death). The hit
+  flash is a `material_overlay`.
+- **Buggy:** the armoured pickup; its wheel meshes are re-parented onto
+  pivots at their centres so they spin and steer. Tank and helicopter are
+  still hand-built (no free model with a separate turret / rotor was found).
+- **Health pad:** the first-aid kit model.
 
 ### Game modes and teams (`game.gd`, `zombies.gd`, `frontline.gd`)
 
@@ -633,6 +664,9 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
   vehicle HUD, a match ending with "BLUE WINS!". Six views about 86 FPS
   uncapped (four views about 100).
 - Gun models render in first and third person for all 12 weapons.
+- With the imported models: every map and mode runs without script errors;
+  six views uncapped: 165-205 FPS on the arena maps, 129 Suburb, 100
+  Frontline. Zombies walk, run, punch, flinch and fall with their animations.
 - Lobby, Options screen, matches on all six maps in day, sunset and night,
   rain/fog/snow, card picker, pause menu and victory podium render with no
   script errors. The live scope lens shows a correct magnified view.

@@ -1974,9 +1974,10 @@ func _scenery_spires(count: int, col: Color, glow: Color, crystal: bool) -> void
 
 
 func _scenery_trees(count: int, near: float, far: float) -> void:
+	# Out-of-bounds trees use the light toon models (a tenth of the triangles).
 	for i in count:
 		var p := _ring_spot(i, count, near, far)
-		_tree(p, _rng.randf_range(1.2, 1.9), false)
+		_model("toon/Plant/Tree_%d" % (1 + _rng.randi() % 4), p, _rng.randf() * TAU, _rng.randf_range(1.3, 2.0), false, "none")
 
 
 ## Rows of houses and trees beyond the fences.
