@@ -9,3 +9,13 @@ https://creativecommons.org/publicdomain/zero/1.0/
 Downloaded as .glb files from the GDevelop asset store mirror of these packs
 (asset-resources.gdevelop.io), which lists them as CC0 (public domain).
 No attribution is required; this file is kept as a courtesy and for provenance.
+
+Added later, from the same mirror, all CC0 1.0 (public domain):
+  chars/      Ultimate Animated Character Pack - Quaternius
+  pets/       Animated animals (Husky, Shiba Inu, Fox), Zombie Apocalypse Kit dogs - Quaternius;
+              Cube Pets (Cat, Bunny) - Kenney (https://kenney.nl)
+  furniture/  Furniture Kit - Kenney
+  blaster/    Blaster Kit - Kenney
+  tanks/      Tanks pack - Kenney
+  houses/     City Kit (Suburban) - Kenney
+  survival/   Survival Kit - Kenney
