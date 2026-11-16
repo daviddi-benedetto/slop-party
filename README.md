@@ -7,17 +7,21 @@ the match, so whoever is losing keeps getting stronger.
 You play as a customisable plush animal in dark, neon-lit arenas (the look is
 inspired by ROUNDS).
 
-- **12 weapons:** Blaster, Scatter, Zapper, Boomer, Rail, Lobber, Bubbler,
-  Tripler (burst), Magnum, Spinner (minigun), Pinball (ricochet) and Flamer.
-  Get them from weapon cards or by pressing the pick-up button on a purple
-  weapon pad; your powerups carry over.
-- **43 powerup cards** in three rarities.
-- **Abilities:** dash, block (a short guard that negates damage and bats
-  bullets back at the shooter) and aim down sights.
-- **3 maps, each with its own look and song:** Neon Yard (medium night
-  container yard with cranes and neon signs), Ember Pit (small sandstone
-  foundry with a forge and burning lava channels) and Frost Line (large polar
-  outpost with ice walls, lab modules and pines).
+- **12 weapons**, each with its own sound and firing animation: Blaster,
+  Scatter, Zapper, Boomer, Rail, Lobber, Bubbler, Tripler, Magnum, Spinner,
+  Pinball and Flamer. Get them from weapon cards or by pressing the pick-up
+  button on a purple weapon pad; your powerups carry over.
+- **49 powerup cards** in three rarities, including live-magnifying 2x/4x
+  scopes, a red-dot sight and a jetpack.
+- **Movement inspired by Titanfall:** wall running, wall jumps, sliding,
+  mantling onto ledges, plus dash, block and aim down sights.
+- **6 maps:** Neon Yard, Ember Pit, Frost Line, and three based on real
+  places: a **Museum** (indoor, balconies, vaults), a **Stadium** (pitch,
+  bleachers, floodlights, locker rooms) and a **Suburb** (houses with stairs,
+  yards, pools, a treehouse, a storm drain). Two-storey buildings, tunnels and
+  basements on every outdoor map.
+- **Time of day and weather:** each match is day, sunset or night (or pick
+  one in the lobby), with random clear / rain / fog / snow weather.
 - **Character customisation:** animal, colour, hat and face per player,
   remembered between sessions.
 
@@ -42,6 +46,7 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Bots | Y | B |
 | Kill target | X | K |
 | Next map | RB | M |
+| Time of day | LB | T |
 | Options | Back / Select | O |
 | Start | Start | Enter |
 
@@ -51,11 +56,14 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Look | Right stick (with aim assist) | Mouse |
 | Fire | RT | Left click |
 | Aim down sights | LT (hold) | Right click (hold) |
-| Jump | A | Space |
+| Jump (hold with jetpack) | A | Space |
 | Dash | B or left-stick click | Shift |
+| Crouch / slide (while running) | Right-stick click | C or Ctrl |
 | Block | LB or RB | Q |
 | Reload | X | R |
 | Pick up weapon | Y | E |
+| Wall run | Jump at a wall and keep moving forward | same |
+| Mantle | Move forward into a ledge in the air | same |
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |
 | Pause / options / quit to lobby | Start | Esc |
 | Toggle fullscreen (lobby) | – | F11 |

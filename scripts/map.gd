@@ -1,48 +1,81 @@
 extends Node3D
 ## An arena. Everything is generated in code: geometry, materials, textures,
-## lighting, sky, scenery, spawn points, pickup spots, jump pads, hazards and
-## the bot nav graph.
+## lighting, sky, weather, foliage, spawn points, pickup spots, jump pads,
+## hazards and the bot nav graph.
 ##
-## MAPS lists the arenas; build(index) makes one. Each map is a layout
-## function (geometry) plus a THEMES entry (materials, sky, light, scenery):
-##   0  NEON YARD   medium  64 x 48   night container yard: concrete, steel,
-##                                    red brick, coloured shipping containers,
-##                                    gantry cranes, neon signs
-##   1  EMBER PIT   small   36 x 28   foundry: sandstone, basalt, iron, a round
-##                                    forge with a chimney, stone arches, and
-##                                    lava channels that burn
-##   2  FROST LINE  large   88 x 64   polar outpost: snow, ice blocks, white
-##                                    lab panels, orange supply crates, pines
+## build(index, time, weather) makes one. MAPS lists the arenas; each is a
+## layout function plus a THEMES entry:
+##   0  NEON YARD   medium  container yard, two-storey warehouses, tunnels
+##   1  EMBER PIT   small   foundry: forge, smelter houses, lava, a tunnel
+##   2  FROST LINE  large   polar outpost: lab tower, comms buildings, bunkers
+##   3  MUSEUM      medium  indoor: atrium, balcony ring, galleries, vaults
+##   4  STADIUM     large   football pitch, bleachers, floodlights, lockers
+##   5  SUBURB      large   houses with yards, a street, pools, storm drain
+## Layouts 0-2 live in this file, 3-5 in map_places.gd (same helpers).
 ##
-## Materials: a theme's "mats" maps a material key to
+## TIME OF DAY: "day", "sunset" or "night". Night uses the theme's own
+## lighting; day and sunset start from the DAY / SUNSET presets and apply the
+## theme's optional "day" / "sunset" overrides. The preset also scales neon
+## emission (neon_scale) and point lights (light_scale) so each map reads well.
+## WEATHER: "clear", "rain", "fog", "snow" (theme "weathers" lists what is
+## allowed). Weather changes the sky, fog and wetness here; the falling rain
+## or snow is spawned per camera by game.gd.
+##
+## MATERIALS: a theme's "mats" maps a key to
 ## [colour, texture kind, tiles per metre, roughness, metallic]. Texture kinds
-## are generated in _tex() (albedo + normal map, some with emission): concrete,
-## plates, corrugated, planks, bricks, tiles, rock, lava, snow, ice, stripes.
-## Every theme also gets accent_a / accent_b (emissive neon), rail, pad, dark.
+## are generated in _tex() (albedo + normal map, emission for lava). Every map
+## also gets accent_a / accent_b (neon), rail, pad, dark, beacon, lamp, glass,
+## window, water, leaf0 / leaf1, stripes, lava, trunk.
 ##
-## Layout conventions (metres, Y up): the floor is centred on the origin with
-## half-extents half_x / half_z. Almost every piece is added with mirror=true,
-## which also places a copy rotated 180 deg about Y ((x, z) -> (-x, -z)), so
-## maps are point-symmetric and only half has to be described.
+## PERFORMANCE: static meshes are not separate nodes. _add() appends each one
+## into a per-material SurfaceTool and _flush() commits one MeshInstance per
+## material at the end, so even a detailed map is a few dozen draw calls.
+##
+## CONVENTIONS (metres, Y up): the floor is centred on the origin with
+## half-extents half_x / half_z. Most pieces take mirror=true, which also
+## places a copy rotated 180 deg about Y ((x, z) -> (-x, -z)), so maps are
+## point-symmetric. Anything centred on the origin must pass mirror=false.
+## Underground floors are at y = -DEPTH; the ground is a 1 m slab (-1..0)
+## with holes cut wherever _hole() was called (the floor is built after the
+## layout, so layouts can add holes freely).
 ##
 ## Collision layers: 1 = world (this file), 2 = players.
 ##
-## Nav graph: build_nav() samples a 2 m grid with downward ray-casts (several
-## height layers, so space under decks counts too), links neighbours that are
-## actually walkable, and keeps the largest connected component in an AStar3D.
-## It needs no per-map data. Lava channels sit behind a kerb the link test
-## rejects, so bots stay out of them.
-##
-## To add a map: write a _layout_xxx() function, add a THEMES entry, and
-## append to MAPS (and a "mapN" track in sfx.gd if it should have its own song).
+## To add a map: write a layout function (here or in map_places.gd), add a
+## THEMES entry, append to MAPS, and add a "mapN" song in sfx.gd.
 
 const SkyKit = preload("res://scripts/sky.gd")
+const Places = preload("res://scripts/map_places.gd")
+
+const DEPTH := 3.6
+const FLOOR_H := 3.4
+const NAV_STEP := 2.0
+const LAVA_DPS := 26.0
 
 const MAPS := [
 	{"name": "NEON YARD", "size": "MEDIUM", "theme": "neon", "half": Vector2(32, 24), "wall": 4.5},
-	{"name": "EMBER PIT", "size": "SMALL", "theme": "ember", "half": Vector2(18, 14), "wall": 4.0},
+	{"name": "EMBER PIT", "size": "SMALL", "theme": "ember", "half": Vector2(19, 15), "wall": 4.0},
 	{"name": "FROST LINE", "size": "LARGE", "theme": "frost", "half": Vector2(44, 32), "wall": 5.0},
+	{"name": "MUSEUM", "size": "MEDIUM", "theme": "museum", "half": Vector2(26, 20), "wall": 11.0},
+	{"name": "STADIUM", "size": "LARGE", "theme": "stadium", "half": Vector2(46, 30), "wall": 3.0},
+	{"name": "SUBURB", "size": "LARGE", "theme": "suburb", "half": Vector2(40, 30), "wall": 1.6},
 ]
+const TIMES := ["day", "sunset", "night"]
+
+const DAY := {
+	"sky": {"top": Color(0.2, 0.45, 0.92), "horizon": Color(0.7, 0.82, 0.95), "ground": Color(0.28, 0.28, 0.3),
+		"sun": Color(1.0, 0.95, 0.85), "cloud_color": Color(0.94, 0.95, 1.0), "clouds": 0.55, "stars": 0.0, "aurora": 0.0},
+	"sun_color": Color(1.0, 0.96, 0.9), "sun_energy": 2.2, "sun_pitch": -52.0,
+	"ambient": 1.0, "exposure": 0.95, "glow": 1.4, "neon": 0.45, "lights": 0.3,
+	"fog": Color(0.66, 0.76, 0.88), "fog_mult": 0.5,
+}
+const SUNSET := {
+	"sky": {"top": Color(0.14, 0.17, 0.38), "horizon": Color(1.0, 0.46, 0.2), "ground": Color(0.16, 0.08, 0.07),
+		"sun": Color(1.0, 0.62, 0.3), "cloud_color": Color(0.6, 0.3, 0.27), "clouds": 0.75, "stars": 0.12, "aurora": 0.0},
+	"sun_color": Color(1.0, 0.6, 0.36), "sun_energy": 1.9, "sun_pitch": -13.0,
+	"ambient": 1.5, "exposure": 1.15, "glow": 1.2, "neon": 0.8, "lights": 0.75,
+	"fog": Color(0.6, 0.32, 0.22), "fog_mult": 0.8,
+}
 
 const THEMES := {
 	"neon": {
@@ -59,13 +92,15 @@ const THEMES := {
 			"c_blue": [Color(0.17, 0.4, 0.72), "corrugated", 0.55, 0.5, 0.3],
 			"c_yellow": [Color(0.84, 0.65, 0.13), "corrugated", 0.55, 0.5, 0.3],
 			"c_teal": [Color(0.1, 0.58, 0.52), "corrugated", 0.55, 0.5, 0.3],
+			"soil": [Color(0.22, 0.17, 0.13), "soft", 0.3, 0.9, 0.0],
 		},
-		"accent_a": Color(1.0, 0.42, 0.16), "accent_b": Color(0.15, 0.75, 1.0),
-		"sky": {"top": Color(0.01, 0.015, 0.05), "horizon": Color(0.1, 0.1, 0.26), "ground": Color(0.02, 0.02, 0.05),
+		"accent_a": Color(1.0, 0.42, 0.16), "accent_b": Color(0.15, 0.75, 1.0), "neon": true, "paths": true,
+		"night": {"sky": {"top": Color(0.01, 0.015, 0.05), "horizon": Color(0.1, 0.1, 0.26), "ground": Color(0.02, 0.02, 0.05),
 			"sun": Color(0.75, 0.82, 1.0), "cloud_color": Color(0.13, 0.13, 0.26), "clouds": 0.55, "stars": 1.0, "aurora": 0.0},
-		"sun_color": Color(0.62, 0.72, 1.0), "sun_energy": 0.8, "sun_dir": Vector3(-50, 38, 0),
-		"ambient": 0.6, "fog": Color(0.05, 0.06, 0.14), "fog_density": 0.006,
-		"grass": [], "scenery": "city", "motes": [Color(0.4, 0.9, 1.0), Color(1.0, 0.6, 0.3)], "mote_rise": 0.05,
+			"sun_color": Color(0.62, 0.72, 1.0), "sun_energy": 0.8, "ambient": 0.6, "fog": Color(0.05, 0.06, 0.14), "fog_density": 0.006},
+		"sun_yaw": 38.0, "weathers": ["clear", "clear", "rain", "fog"],
+		"leaf": [Color(0.16, 0.42, 0.2), Color(0.22, 0.5, 0.18)], "grass": [Color(0.1, 0.25, 0.1), Color(0.3, 0.55, 0.22)],
+		"scenery": "city", "motes": [Color(0.4, 0.9, 1.0), Color(1.0, 0.6, 0.3)], "mote_rise": 0.05,
 	},
 	"ember": {
 		"mats": {
@@ -78,17 +113,21 @@ const THEMES := {
 			"deck": [Color(0.5, 0.33, 0.2), "planks", 0.5, 0.7, 0.0],
 			"crate": [Color(0.6, 0.37, 0.17), "planks", 0.6, 0.7, 0.0],
 			"lava": [Color(0.32, 0.11, 0.05), "lava", 0.18, 0.6, 0.0],
+			"house": [Color(0.55, 0.38, 0.26), "bricks", 0.4, 0.8, 0.0],
 		},
-		"accent_a": Color(1.0, 0.5, 0.1), "accent_b": Color(1.0, 0.85, 0.3),
-		"sky": {"top": Color(0.03, 0.01, 0.02), "horizon": Color(0.42, 0.12, 0.05), "ground": Color(0.12, 0.03, 0.01),
+		"accent_a": Color(1.0, 0.5, 0.1), "accent_b": Color(1.0, 0.85, 0.3), "neon": true, "paths": true,
+		"night": {"sky": {"top": Color(0.03, 0.01, 0.02), "horizon": Color(0.42, 0.12, 0.05), "ground": Color(0.12, 0.03, 0.01),
 			"sun": Color(1.0, 0.55, 0.25), "cloud_color": Color(0.2, 0.07, 0.05), "clouds": 0.8, "stars": 0.3, "aurora": 0.0},
-		"sun_color": Color(1.0, 0.66, 0.45), "sun_energy": 0.85, "sun_dir": Vector3(-38, -60, 0),
-		"ambient": 0.62, "fog": Color(0.2, 0.06, 0.03), "fog_density": 0.009,
-		"grass": [], "scenery": "rocks", "motes": [Color(1.0, 0.6, 0.15), Color(1.0, 0.3, 0.1)], "mote_rise": 0.7,
+			"sun_color": Color(1.0, 0.66, 0.45), "sun_energy": 0.85, "ambient": 0.62, "fog": Color(0.2, 0.06, 0.03), "fog_density": 0.009},
+		"day": {"sky": {"top": Color(0.32, 0.22, 0.2), "horizon": Color(0.86, 0.52, 0.32), "cloud_color": Color(0.55, 0.38, 0.32)},
+			"fog": Color(0.55, 0.36, 0.26), "sun_color": Color(1.0, 0.85, 0.7)},
+		"sun_yaw": -60.0, "weathers": ["clear", "clear", "fog"],
+		"leaf": [Color(0.2, 0.18, 0.1), Color(0.3, 0.22, 0.1)], "grass": [],
+		"scenery": "rocks", "motes": [Color(1.0, 0.6, 0.15), Color(1.0, 0.3, 0.1)], "mote_rise": 0.7,
 	},
 	"frost": {
 		"mats": {
-			"ground": [Color(0.56, 0.64, 0.76), "snow", 0.08, 0.85, 0.0],
+			"ground": [Color(0.5, 0.57, 0.68), "snow", 0.08, 0.85, 0.0],
 			"path": [Color(0.27, 0.5, 0.64), "ice", 0.12, 0.12, 0.2],
 			"wall": [Color(0.4, 0.5, 0.62), "plates", 0.25, 0.5, 0.3],
 			"block_a": [Color(0.72, 0.76, 0.82), "plates", 0.3, 0.45, 0.2],
@@ -96,53 +135,148 @@ const THEMES := {
 			"block_c": [Color(0.22, 0.28, 0.38), "corrugated", 0.5, 0.4, 0.5],
 			"deck": [Color(0.36, 0.42, 0.5), "tiles", 0.5, 0.4, 0.5],
 			"crate": [Color(0.88, 0.45, 0.12), "plates", 0.5, 0.5, 0.2],
-			"pine": [Color(0.09, 0.3, 0.24), "", 1.0, 0.9, 0.0],
-			"trunk": [Color(0.3, 0.2, 0.14), "", 1.0, 0.9, 0.0],
-			"snowcap": [Color(0.8, 0.86, 0.95), "", 1.0, 0.9, 0.0],
+			"pine": [Color(0.09, 0.3, 0.24), "leaves", 1.2, 0.9, 0.0],
+			"trunk": [Color(0.3, 0.2, 0.14), "rock", 0.8, 0.9, 0.0],
+			"snowcap": [Color(0.8, 0.86, 0.95), "snow", 0.5, 0.9, 0.0],
 		},
-		"accent_a": Color(0.3, 1.0, 0.95), "accent_b": Color(0.45, 0.6, 1.0),
-		"sky": {"top": Color(0.01, 0.03, 0.07), "horizon": Color(0.06, 0.2, 0.26), "ground": Color(0.02, 0.05, 0.07),
+		"accent_a": Color(0.3, 1.0, 0.95), "accent_b": Color(0.45, 0.6, 1.0), "neon": true, "paths": true,
+		"night": {"sky": {"top": Color(0.01, 0.03, 0.07), "horizon": Color(0.06, 0.2, 0.26), "ground": Color(0.02, 0.05, 0.07),
 			"sun": Color(0.8, 0.95, 1.0), "cloud_color": Color(0.1, 0.18, 0.24), "clouds": 0.35, "stars": 1.0, "aurora": 1.0},
-		"sun_color": Color(0.7, 0.86, 1.0), "sun_energy": 0.7, "sun_dir": Vector3(-46, 130, 0),
-		"ambient": 0.42, "fog": Color(0.05, 0.12, 0.16), "fog_density": 0.005,
-		"grass": [], "scenery": "ice", "motes": [Color(0.9, 0.97, 1.0), Color(0.7, 0.9, 1.0)], "mote_rise": -0.6,
+			"sun_color": Color(0.7, 0.86, 1.0), "sun_energy": 0.7, "ambient": 0.42, "fog": Color(0.05, 0.12, 0.16), "fog_density": 0.005},
+		"day": {"sky": {"top": Color(0.3, 0.55, 0.9), "horizon": Color(0.8, 0.9, 0.97)}, "fog": Color(0.75, 0.85, 0.95), "sun_energy": 1.7, "exposure": 0.85},
+		"sun_yaw": 130.0, "weathers": ["clear", "snow", "snow", "fog"],
+		"leaf": [Color(0.09, 0.3, 0.24), Color(0.12, 0.34, 0.26)], "grass": [],
+		"scenery": "ice", "motes": [Color(0.9, 0.97, 1.0), Color(0.7, 0.9, 1.0)], "mote_rise": -0.6,
+	},
+	"museum": {
+		"mats": {
+			"ground": [Color(0.8, 0.77, 0.72), "marble", 0.1, 0.12, 0.0],
+			"path": [Color(0.4, 0.36, 0.34), "marble", 0.1, 0.12, 0.0],
+			"wall": [Color(0.84, 0.8, 0.72), "plaster", 0.15, 0.85, 0.0],
+			"block_a": [Color(0.92, 0.91, 0.9), "marble", 0.25, 0.15, 0.0],
+			"block_b": [Color(0.55, 0.14, 0.13), "plaster", 0.2, 0.8, 0.0],
+			"block_c": [Color(0.3, 0.19, 0.12), "planks", 0.5, 0.5, 0.0],
+			"deck": [Color(0.55, 0.36, 0.2), "planks", 0.5, 0.45, 0.0],
+			"crate": [Color(0.5, 0.36, 0.22), "planks", 0.6, 0.7, 0.0],
+			"gold": [Color(0.95, 0.72, 0.32), "", 1.0, 0.25, 1.0],
+			"bone": [Color(0.86, 0.8, 0.66), "rock", 0.8, 0.7, 0.0],
+			"ceiling": [Color(0.86, 0.84, 0.8), "plaster", 0.15, 0.9, 0.0],
+			"teal": [Color(0.12, 0.36, 0.38), "plaster", 0.2, 0.8, 0.0],
+			"soil": [Color(0.24, 0.17, 0.11), "soft", 0.3, 0.9, 0.0],
+		},
+		"accent_a": Color(1.0, 0.72, 0.4), "accent_b": Color(0.6, 0.82, 1.0), "neon": false, "paths": false, "indoor": true,
+		"night": {"sky": {"top": Color(0.01, 0.02, 0.06), "horizon": Color(0.08, 0.1, 0.22), "ground": Color(0.02, 0.02, 0.05),
+			"sun": Color(0.8, 0.85, 1.0), "cloud_color": Color(0.1, 0.11, 0.2), "clouds": 0.4, "stars": 1.0, "aurora": 0.0},
+			"sun_color": Color(0.6, 0.7, 1.0), "sun_energy": 0.7, "ambient": 0.35, "fog": Color(0.05, 0.05, 0.1), "fog_density": 0.002},
+		"day": {"ambient": 0.55, "sun_energy": 2.6}, "sunset": {"ambient": 0.75},
+		"sun_yaw": 25.0, "weathers": ["clear"], "leaf": [Color(0.15, 0.4, 0.2), Color(0.2, 0.48, 0.18)], "grass": [Color(0.1, 0.28, 0.1), Color(0.3, 0.55, 0.2)],
+		"scenery": "none", "motes": [Color(1.0, 0.95, 0.85), Color(0.9, 0.9, 1.0)], "mote_rise": 0.02,
+	},
+	"stadium": {
+		"mats": {
+			"ground": [Color(0.24, 0.46, 0.18), "turf", 0.125, 0.9, 0.0],
+			"path": [Color(0.6, 0.2, 0.15), "rubber", 0.2, 0.85, 0.0],
+			"wall": [Color(0.55, 0.56, 0.6), "concrete", 0.2, 0.7, 0.0],
+			"block_a": [Color(0.62, 0.63, 0.66), "concrete", 0.2, 0.7, 0.0],
+			"block_b": [Color(0.16, 0.32, 0.65), "plates", 0.4, 0.5, 0.1],
+			"block_c": [Color(0.22, 0.24, 0.28), "corrugated", 0.5, 0.45, 0.5],
+			"deck": [Color(0.45, 0.47, 0.5), "tiles", 0.5, 0.5, 0.2],
+			"crate": [Color(0.85, 0.62, 0.12), "plates", 0.5, 0.5, 0.2],
+			"seat_red": [Color(0.72, 0.15, 0.14), "plates", 0.4, 0.5, 0.1],
+			"line": [Color(0.94, 0.94, 0.92), "", 1.0, 0.9, 0.0],
+			"metal": [Color(0.86, 0.87, 0.9), "", 1.0, 0.3, 0.8],
+			"soil": [Color(0.24, 0.18, 0.13), "soft", 0.3, 0.9, 0.0],
+		},
+		"accent_a": Color(1.0, 0.55, 0.15), "accent_b": Color(0.2, 0.72, 1.0), "neon": true, "paths": false,
+		"night": {"sky": {"top": Color(0.01, 0.02, 0.05), "horizon": Color(0.12, 0.12, 0.22), "ground": Color(0.02, 0.02, 0.04),
+			"sun": Color(0.8, 0.85, 1.0), "cloud_color": Color(0.12, 0.12, 0.2), "clouds": 0.5, "stars": 0.8, "aurora": 0.0},
+			"sun_color": Color(0.62, 0.7, 1.0), "sun_energy": 0.6, "ambient": 0.5, "fog": Color(0.05, 0.06, 0.12), "fog_density": 0.004},
+		"sun_yaw": 70.0, "weathers": ["clear", "clear", "rain", "fog"],
+		"leaf": [Color(0.15, 0.4, 0.17), Color(0.22, 0.48, 0.16)], "grass": [Color(0.12, 0.32, 0.1), Color(0.32, 0.6, 0.22)],
+		"scenery": "stadium", "motes": [Color(1.0, 1.0, 0.9), Color(0.9, 0.95, 1.0)], "mote_rise": 0.05,
+	},
+	"suburb": {
+		"mats": {
+			"ground": [Color(0.26, 0.42, 0.17), "lawn", 0.1, 0.9, 0.0],
+			"path": [Color(0.62, 0.6, 0.56), "concrete", 0.25, 0.7, 0.0],
+			"road": [Color(0.2, 0.2, 0.22), "asphalt", 0.12, 0.8, 0.0],
+			"wall": [Color(0.55, 0.4, 0.27), "planks", 0.5, 0.8, 0.0],
+			"block_a": [Color(0.6, 0.58, 0.55), "concrete", 0.25, 0.7, 0.0],
+			"block_b": [Color(0.55, 0.25, 0.18), "bricks", 0.4, 0.8, 0.0],
+			"block_c": [Color(0.27, 0.24, 0.26), "shingles", 0.4, 0.8, 0.0],
+			"roof_red": [Color(0.45, 0.2, 0.16), "shingles", 0.4, 0.8, 0.0],
+			"deck": [Color(0.5, 0.34, 0.2), "planks", 0.5, 0.7, 0.0],
+			"crate": [Color(0.5, 0.36, 0.22), "planks", 0.6, 0.7, 0.0],
+			"siding0": [Color(0.86, 0.83, 0.72), "siding", 0.45, 0.8, 0.0],
+			"siding1": [Color(0.5, 0.62, 0.74), "siding", 0.45, 0.8, 0.0],
+			"siding2": [Color(0.6, 0.7, 0.54), "siding", 0.45, 0.8, 0.0],
+			"siding3": [Color(0.84, 0.68, 0.55), "siding", 0.45, 0.8, 0.0],
+			"trim": [Color(0.92, 0.92, 0.9), "", 1.0, 0.7, 0.0],
+			"line": [Color(0.95, 0.8, 0.2), "", 1.0, 0.8, 0.0],
+			"tile_blue": [Color(0.4, 0.7, 0.85), "tiles", 0.8, 0.2, 0.0],
+			"car_red": [Color(0.7, 0.08, 0.08), "", 1.0, 0.25, 0.6],
+			"car_blue": [Color(0.1, 0.25, 0.6), "", 1.0, 0.25, 0.6],
+			"car_white": [Color(0.88, 0.88, 0.9), "", 1.0, 0.25, 0.6],
+			"car_black": [Color(0.06, 0.06, 0.07), "", 1.0, 0.25, 0.6],
+			"tyre": [Color(0.04, 0.04, 0.05), "", 1.0, 0.9, 0.0],
+			"metal": [Color(0.6, 0.62, 0.66), "", 1.0, 0.35, 0.8],
+			"soil": [Color(0.24, 0.17, 0.11), "soft", 0.3, 0.9, 0.0],
+		},
+		"accent_a": Color(1.0, 0.78, 0.45), "accent_b": Color(0.55, 0.8, 1.0), "neon": false, "paths": false,
+		"night": {"sky": {"top": Color(0.01, 0.02, 0.06), "horizon": Color(0.1, 0.12, 0.24), "ground": Color(0.02, 0.02, 0.05),
+			"sun": Color(0.85, 0.9, 1.0), "cloud_color": Color(0.12, 0.13, 0.22), "clouds": 0.5, "stars": 1.0, "aurora": 0.0},
+			"sun_color": Color(0.6, 0.72, 1.0), "sun_energy": 0.75, "ambient": 0.5, "fog": Color(0.05, 0.06, 0.12), "fog_density": 0.004},
+		"sun_yaw": 50.0, "weathers": ["clear", "clear", "rain", "fog", "snow"],
+		"leaf": [Color(0.16, 0.4, 0.15), Color(0.28, 0.5, 0.14)], "grass": [Color(0.12, 0.3, 0.08), Color(0.36, 0.6, 0.2)],
+		"scenery": "suburb", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
 	},
 }
 
-const NAV_STEP := 2.0
-const LAVA_DPS := 26.0
-
 static var _tex_cache := {}       # texture kind -> [albedo, normal, emission]
+static var _blob_cache: Array = []
 
 var map_index := 0
 var theme := {}
+var time := "night"
+var weather := "clear"
 var half_x := 32.0
 var half_z := 24.0
 var wall_h := 4.5
+var light_scale := 1.0            # point-light multiplier for the time of day
+var neon_scale := 1.0             # emission multiplier for the time of day
+var night_amount := 1.0           # 0 day, 0.45 sunset, 1 night (windows, street lamps)
+var indoor := false
 
 var spawn_points: Array = []      # Array of Vector3
 var pickup_spots: Array = []      # [["weapon" | "health", Vector3], ...] read by game.gd
+var lawns: Array = []             # Rect2 (XZ) where grass grows
+var no_grass: Array = []          # Rect2 (XZ) kept clear of grass (drives, paths)
 var nav := AStar3D.new()
 var nav_ready := false
 var _nav_ids := PackedInt64Array()
 var _body: StaticBody3D
 var _mats := {}
+var _holes: Array = []            # Rect2 (XZ) cut out of the ground slab
 var _box_cache := {}
+var _stairs_cache := {}
+var _batches := {}
 var _unit_sphere: SphereMesh
+var _unit_cyl: CylinderMesh
 var _rng := RandomNumberGenerator.new()
 var _env: Environment
 var _sun: DirectionalLight3D
-var _hazards: Array = []          # Area3D volumes that burn whoever stands in them
-
-# Animated decorations.
-var _pad_rings: Array = []        # [mesh_instance, material, phase]
+var _hazards: Array = []
+var _pad_rings: Array = []
 var _time := 0.0
 
 
-func build(index := 0) -> void:
+func build(index := 0, time_of_day := "night", weather_kind := "clear") -> void:
 	map_index = clampi(index, 0, MAPS.size() - 1)
 	var info: Dictionary = MAPS[map_index]
 	theme = THEMES[info.theme]
+	time = time_of_day if time_of_day in TIMES else "night"
+	weather = weather_kind if weather_kind in theme.weathers else "clear"
+	indoor = theme.get("indoor", false)
 	half_x = info.half.x
 	half_z = info.half.y
 	wall_h = info.wall
@@ -154,16 +288,27 @@ func build(index := 0) -> void:
 	_unit_sphere = SphereMesh.new()
 	_unit_sphere.radius = 1.0
 	_unit_sphere.height = 2.0
-	_unit_sphere.radial_segments = 20
-	_unit_sphere.rings = 10
-	_make_materials()
+	_unit_sphere.radial_segments = 16
+	_unit_sphere.rings = 8
+	_unit_cyl = CylinderMesh.new()
+	_unit_cyl.top_radius = 1.0
+	_unit_cyl.bottom_radius = 1.0
+	_unit_cyl.height = 1.0
+	_unit_cyl.radial_segments = 16
+	_unit_cyl.rings = 1
 	_build_environment()
-	_build_shell()
+	_make_materials()
+	_build_walls()
 	match map_index:
 		1: _layout_pit()
 		2: _layout_frost()
+		3: Places.museum(self)
+		4: Places.stadium(self)
+		5: Places.suburb(self)
 		_: _layout_yard()
+	_build_floor()
 	_build_scenery()
+	_flush()
 
 
 func _process(delta: float) -> void:
@@ -183,24 +328,183 @@ func _physics_process(delta: float) -> void:
 				body.hurt_flash = maxf(body.hurt_flash, 0.6)
 
 
+func label() -> String:
+	return "%s  -  %s%s" % [MAPS[map_index].name, time.to_upper(), "" if weather == "clear" else "  -  " + weather.to_upper()]
+
+
 # --------------------------------------------------------------------------
-# Materials / procedural textures
+# Lighting, time of day, weather
+# --------------------------------------------------------------------------
+
+func _build_environment() -> void:
+	var night: Dictionary = theme.night
+	var p := {}
+	var sky: Dictionary = night.sky.duplicate()
+	if time == "night":
+		p = {"sun_color": night.sun_color, "sun_energy": night.sun_energy * 1.7, "sun_pitch": -48.0,
+			"ambient": night.ambient * 7.2, "exposure": 1.55, "glow": 1.15, "neon": 1.0, "lights": 1.0,
+			"fog": night.fog, "fog_mult": 1.0}
+		night_amount = 1.0
+	else:
+		var preset: Dictionary = DAY if time == "day" else SUNSET
+		p = preset.duplicate()
+		sky = preset.sky.duplicate()
+		night_amount = 0.0 if time == "day" else 0.45
+		var over: Dictionary = theme.get(time, {})
+		for k in over:
+			if k == "sky":
+				for sk in over.sky:
+					sky[sk] = over.sky[sk]
+			else:
+				p[k] = over[k]
+	var fog_density: float = night.fog_density * p.fog_mult
+	var fog_col: Color = p.fog
+	var dim := 0.2 if time == "night" else 1.0
+	match weather:
+		"rain":
+			sky.clouds = 1.0
+			sky.cloud_color = sky.cloud_color * 0.6
+			sky.stars = 0.0
+			p.sun_energy *= 0.45
+			p.ambient *= 0.8
+			fog_density *= 2.5
+			fog_col = fog_col.lerp(Color(0.35, 0.38, 0.42) * dim, 0.5)
+		"fog":
+			sky.clouds = 0.9
+			p.sun_energy *= 0.6
+			fog_density = maxf(fog_density * 6.0, 0.018)
+			fog_col = fog_col.lerp(Color(0.6, 0.62, 0.66) * dim, 0.5)
+		"snow":
+			sky.clouds = 0.95
+			sky.stars *= 0.3
+			p.sun_energy *= 0.6
+			fog_density *= 2.0
+			fog_col = fog_col.lerp(Color(0.75, 0.8, 0.88) * dim, 0.4)
+	light_scale = p.lights
+	neon_scale = p.neon
+
+	var env := Environment.new()
+	env.background_mode = Environment.BG_SKY
+	env.sky = SkyKit.make(sky)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_energy = p.ambient
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = p.exposure
+	env.tonemap_white = 4.0
+	env.ssao_enabled = true
+	env.ssao_radius = 1.4
+	env.ssao_intensity = 1.6
+	env.glow_enabled = true
+	env.glow_intensity = 0.5
+	env.glow_strength = 1.0
+	env.glow_bloom = 0.0
+	env.glow_hdr_threshold = p.glow
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	env.set_glow_level(2, 1.0)
+	env.set_glow_level(4, 0.7)
+	env.set_glow_level(6, 0.25)
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.12
+	env.adjustment_contrast = 1.06
+	env.fog_enabled = true
+	env.fog_light_color = fog_col
+	env.fog_density = fog_density
+	env.fog_sky_affect = 0.35 if weather == "fog" else 0.0
+	var we := WorldEnvironment.new()
+	we.environment = env
+	add_child(we)
+
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(p.sun_pitch, theme.sun_yaw, 0)
+	sun.light_color = p.sun_color
+	sun.light_energy = p.sun_energy
+	sun.shadow_enabled = true
+	sun.shadow_blur = 1.6
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_max_distance = 90.0
+	sun.shadow_bias = 0.06
+	add_child(sun)
+	_env = env
+	_sun = sun
+	_on_settings()
+	Settings.changed.connect(_on_settings)
+
+
+func _on_settings() -> void:
+	Settings.apply_environment(_env, _sun)
+
+
+## Lightning during rain: a brief flash of the ambient light.
+func flash_lightning() -> void:
+	var base := _env.ambient_light_energy
+	var tw := create_tween()
+	tw.tween_property(_env, "ambient_light_energy", base * 4.0, 0.05)
+	tw.tween_property(_env, "ambient_light_energy", base, 0.35)
+
+
+## A coloured point light with no shadows, scaled for the time of day.
+func _glow(pos: Vector3, col: Color, radius := 8.0, energy := 1.6, mirror := true) -> void:
+	if light_scale * energy < 0.05:
+		return
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		var l := OmniLight3D.new()
+		l.position = s
+		l.light_color = col
+		l.light_energy = energy * 0.8 * light_scale
+		l.omni_range = radius
+		l.omni_attenuation = 1.6
+		add_child(l)
+
+
+# --------------------------------------------------------------------------
+# Materials and textures
 # --------------------------------------------------------------------------
 
 func _make_materials() -> void:
+	var wet: bool = weather == "rain" and not indoor
 	for key in theme.mats:
 		var d: Array = theme.mats[key]
-		_mats[key] = _mat(d[0], d[1], d[2], d[3], d[4])
-		# Rotated props keep their pattern aligned to themselves.
-		if key.begins_with("c_") or key == "crate":
-			_mats[key].uv1_world_triplanar = false
+		var m := _mat(d[0], d[1], d[2], d[3], d[4])
+		if wet:
+			m.roughness *= 0.45
+		if key.begins_with("c_") or key == "crate" or key.begins_with("car_"):
+			m.uv1_world_triplanar = false
+		_mats[key] = m
+	if not _mats.has("lava"):
+		_mats["lava"] = _mat(Color(0.32, 0.11, 0.05), "lava", 0.18, 0.6, 0.0)
+	if not _mats.has("trunk"):
+		_mats["trunk"] = _mat(Color(0.3, 0.21, 0.14), "rock", 0.8, 0.9, 0.0)
 	_mats["dark"] = _mat(Color(0.06, 0.06, 0.09), "", 1.0, 0.5, 0.3)
-	_mats["accent_a"] = _neon(theme.accent_a, 1.7)
-	_mats["accent_b"] = _neon(theme.accent_b, 1.7)
-	_mats["rail"] = _neon(theme.accent_b, 0.9)
-	_mats["pad"] = _neon(Color(0.3, 1.0, 0.85), 2.0)
+	_mats["accent_a"] = _neon(theme.accent_a, 1.7 * neon_scale)
+	_mats["accent_b"] = _neon(theme.accent_b, 1.7 * neon_scale)
+	_mats["rail"] = _neon(theme.accent_b, 0.9 * neon_scale)
+	_mats["pad"] = _neon(Color(0.3, 1.0, 0.85), 2.0 * maxf(neon_scale, 0.6))
 	_mats["beacon"] = _neon(Color(1.0, 0.2, 0.2), 3.0)
-	# Hazard stripes: dark with glowing bands in the theme's accent colour.
+	_mats["lamp"] = _neon(Color(1.0, 0.86, 0.6), 0.4 + 3.2 * night_amount)
+	var glass := StandardMaterial3D.new()
+	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	glass.albedo_color = Color(0.6, 0.8, 0.9, 0.18)
+	glass.roughness = 0.05
+	glass.metallic = 0.4
+	glass.rim_enabled = true
+	_mats["glass"] = glass
+	var window := StandardMaterial3D.new()
+	window.albedo_color = Color(0.12, 0.16, 0.22)
+	window.roughness = 0.1
+	window.metallic = 0.5
+	window.emission_enabled = night_amount > 0.0
+	window.emission = Color(1.0, 0.78, 0.45)
+	window.emission_energy_multiplier = 1.6 * night_amount
+	_mats["window"] = window
+	var water := StandardMaterial3D.new()
+	water.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	water.albedo_color = Color(0.15, 0.5, 0.65, 0.55)
+	water.roughness = 0.03
+	water.metallic = 0.3
+	_mats["water"] = water
+	for i in 2:
+		_mats["leaf%d" % i] = _leaf_mat(theme.leaf[i])
 	var st: Array = _tex("stripes")
 	var stripes := StandardMaterial3D.new()
 	stripes.albedo_color = theme.accent_a.lerp(Color.WHITE, 0.15)
@@ -213,7 +517,7 @@ func _make_materials() -> void:
 	stripes.emission = theme.accent_a
 	stripes.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
 	stripes.emission_texture = st[0]
-	stripes.emission_energy_multiplier = 0.7
+	stripes.emission_energy_multiplier = 0.7 * neon_scale
 	_mats["stripes"] = stripes
 
 
@@ -241,6 +545,25 @@ func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float
 	return m
 
 
+func _leaf_mat(col: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.roughness = 0.85
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	m.rim_enabled = true
+	m.rim = 0.35
+	m.backlight_enabled = true
+	m.backlight = col.lightened(0.2) * 0.6
+	var t: Array = _tex("leaves")
+	m.albedo_texture = t[0]
+	m.normal_enabled = true
+	m.normal_texture = t[1]
+	m.normal_scale = 1.4
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3.ONE * 1.4
+	return m
+
+
 ## Emissive strip material: this is what the bloom picks up.
 func _neon(col: Color, energy: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -254,7 +577,7 @@ func _neon(col: Color, energy: float) -> StandardMaterial3D:
 
 ## Tileable 256x256 detail textures. Returns [albedo, normal, emission]; the
 ## albedo is greyscale and gets multiplied by the material colour. Cached for
-## the whole session, so only the first match on a theme pays for them.
+## the whole session, so only the first match using a kind pays for it.
 static func _tex(kind: String) -> Array:
 	if _tex_cache.has(kind):
 		return _tex_cache[kind]
@@ -281,8 +604,7 @@ static func _tex(kind: String) -> Array:
 		var c := lattice[((y0 + 1) % freq) * P + (x0 % freq)]
 		var d := lattice[((y0 + 1) % freq) * P + ((x0 + 1) % freq)]
 		return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fy)
-	# Cell centres for Voronoi patterns (rock, lava, ice cracks).
-	var cellular := kind == "rock" or kind == "lava" or kind == "ice"
+	var cellular := kind in ["rock", "lava", "ice", "leaves"]
 	var seeds := PackedVector2Array()
 	for i in G * G:
 		seeds.append(Vector2(rng.randf(), rng.randf()))
@@ -386,6 +708,50 @@ static func _tex(kind: String) -> Array:
 					if edge < 0.03:
 						val = 1.0
 						hgt = 0.0
+				"marble":
+					var vein := absf(sin((u * 3.0 + v * 1.5 + n * 2.2) * PI))
+					val = 0.9 + 0.1 * n
+					if vein < 0.05:
+						val *= 0.72
+					hgt = 0.9
+					if px % 128 < 2 or py % 128 < 2:
+						val *= 0.7
+						hgt = 0.0
+				"plaster":
+					val = 0.9 + 0.1 * n - 0.04 * noise.call(u, v, 16)
+					hgt = n
+				"asphalt":
+					val = 0.55 + 0.25 * n + rng.randf_range(-0.12, 0.12)
+					hgt = 0.5 + 0.5 * rng.randf()
+				"rubber":
+					val = 0.8 + 0.12 * n + rng.randf_range(-0.08, 0.08)
+					hgt = 0.6 + 0.4 * rng.randf()
+				"turf":
+					val = 0.82 + 0.12 * float((px / 64) % 2) + n * 0.08
+					hgt = 0.5 + 0.3 * rng.randf()
+				"lawn":
+					val = 0.72 + 0.28 * n + rng.randf_range(-0.06, 0.06)
+					hgt = n
+				"soft":
+					val = 0.7 + 0.3 * n
+					hgt = n
+				"shingles":
+					var srow := py / 32
+					var sx := (px + (srow % 2) * 24) % 48
+					val = 0.7 + 0.25 * lattice[(srow * 3 + (px + (srow % 2) * 24) / 48) % (P * P)] + float(py % 32) / 32.0 * 0.1
+					hgt = float(py % 32) / 32.0
+					if sx < 2 or py % 32 < 3:
+						val *= 0.55
+						hgt = 0.0
+				"siding":
+					var t := float(py % 24) / 24.0
+					val = 0.8 + 0.12 * t + n * 0.06
+					hgt = t
+					if py % 24 < 2:
+						val *= 0.6
+				"leaves":
+					val = 0.65 + 0.35 * lattice[cell_id % (P * P)]
+					hgt = clampf(edge * 4.0, 0.0, 1.0)
 				"stripes":
 					val = 1.0 if ((px + py) % 128) < 52 else 0.05
 			val = clampf(val, 0.0, 1.0)
@@ -394,7 +760,7 @@ static func _tex(kind: String) -> Array:
 	img.generate_mipmaps()
 	var normal: ImageTexture = null
 	if kind != "stripes":
-		himg.bump_map_to_normal_map(2.5 if kind == "snow" or kind == "concrete" else 5.0)
+		himg.bump_map_to_normal_map(2.5 if kind in ["snow", "concrete", "plaster", "lawn", "turf"] else 5.0)
 		himg.generate_mipmaps(true)
 		normal = ImageTexture.create_from_image(himg)
 	var emission: ImageTexture = null
@@ -407,105 +773,41 @@ static func _tex(kind: String) -> Array:
 
 
 # --------------------------------------------------------------------------
-# Lighting
+# Static mesh batching
 # --------------------------------------------------------------------------
 
-func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = SkyKit.make(theme.sky)
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = theme.ambient * 7.2
-	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.55
-	env.tonemap_white = 4.0
-	env.ssao_enabled = true
-	env.ssao_radius = 1.4
-	env.ssao_intensity = 1.6
-	env.glow_enabled = true
-	env.glow_intensity = 0.5
-	env.glow_strength = 1.0
-	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = 1.15
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
-	env.set_glow_level(2, 1.0)
-	env.set_glow_level(4, 0.7)
-	env.set_glow_level(6, 0.25)
-	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.15
-	env.adjustment_contrast = 1.06
-	env.fog_enabled = true
-	env.fog_light_color = theme.fog
-	env.fog_density = theme.fog_density
-	env.fog_sky_affect = 0.0
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-
-	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = theme.sun_dir
-	sun.light_color = theme.sun_color
-	sun.light_energy = theme.sun_energy * 1.7
-	sun.shadow_enabled = true
-	sun.shadow_blur = 1.6
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-	sun.directional_shadow_max_distance = 90.0
-	sun.shadow_bias = 0.06
-	add_child(sun)
-	_env = env
-	_sun = sun
-	_on_settings()
-	Settings.changed.connect(_on_settings)
+## Queue a static mesh. Meshes sharing a material are merged at _flush().
+## Primitive meshes and our own ArrayMeshes have different vertex formats, so
+## they go into separate batches.
+func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true) -> void:
+	var kind := "p" if mesh is PrimitiveMesh else "c"
+	var key := "%d_%s_%s" % [mat.get_instance_id(), kind, shadow]
+	if not _batches.has(key):
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		_batches[key] = [mat, shadow, st]
+	_batches[key][2].append_from(mesh, 0, xf)
 
 
-func _on_settings() -> void:
-	Settings.apply_environment(_env, _sun)
+func _flush() -> void:
+	for key in _batches:
+		var b: Array = _batches[key]
+		var mi := MeshInstance3D.new()
+		mi.mesh = b[2].commit()
+		mi.material_override = b[0]
+		if not b[1]:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(mi)
+	_batches.clear()
 
 
-## A coloured point light with no shadows: cheap, and it is what sells the
-## neon. Mirrored like geometry.
-func _glow(pos: Vector3, col: Color, radius := 8.0, energy := 1.6, mirror := true) -> void:
-	var spots := [pos]
-	if mirror:
-		spots.append(Vector3(-pos.x, pos.y, -pos.z))
-	for s in spots:
-		var l := OmniLight3D.new()
-		l.position = s
-		l.light_color = col
-		l.light_energy = energy * 0.8
-		l.omni_range = radius
-		l.omni_attenuation = 1.6
-		add_child(l)
+func _glows(mat: String) -> bool:
+	return mat.begins_with("accent") or mat in ["rail", "pad", "lamp", "beacon", "lava", "window", "glass", "water", "line"]
 
 
 # --------------------------------------------------------------------------
 # Building blocks
 # --------------------------------------------------------------------------
-
-## Floor, paths and perimeter. The visible wall is low; its collider is tall
-## so nobody can jump out.
-func _build_shell() -> void:
-	var w := half_x * 2.0
-	var d := half_z * 2.0
-	_collider(Vector3(0, -0.5, 0), Vector3(w + 2, 1, d + 2))
-	_visual(Vector3(0, -0.5, 0), Vector3(w + 2, 1, d + 2), "ground")
-	_visual(Vector3(0, 0.006, 0), Vector3(w, 0.012, 7), "path")
-	_visual(Vector3(0, 0.008, 0), Vector3(7, 0.012, d), "path")
-	for sgn in [1.0, -1.0]:
-		_collider(Vector3(0, 8, sgn * (half_z + 0.5)), Vector3(w + 2, 16, 1))
-		_collider(Vector3(sgn * (half_x + 0.5), 8, 0), Vector3(1, 16, d + 2))
-	_box(Vector3(0, wall_h * 0.5, half_z + 0.5), Vector3(w + 2, wall_h, 1), "wall", true, 0.0, false)
-	_box(Vector3(half_x + 0.5, wall_h * 0.5, 0), Vector3(1, wall_h, d + 2), "wall", true, 0.0, false)
-	_box(Vector3(0, wall_h + 0.04, half_z + 0.08), Vector3(w + 0.3, 0.1, 0.16), "accent_a", true, 0.0, false)
-	_box(Vector3(half_x + 0.08, wall_h + 0.04, 0), Vector3(0.16, 0.1, d + 0.3), "accent_a", true, 0.0, false)
-	_box(Vector3(0, 0.12, half_z + 0.02), Vector3(w, 0.16, 0.14), "accent_b", true, 0.0, false)
-	_box(Vector3(half_x + 0.02, 0.12, 0), Vector3(0.14, 0.16, d), "accent_b", true, 0.0, false)
-	# Path edge lines.
-	for off in [3.5, -3.5]:
-		_visual(Vector3(0, 0.02, off), Vector3(w, 0.03, 0.08), "rail")
-		_visual(Vector3(off, 0.02, 0), Vector3(0.08, 0.03, d), "rail")
-
 
 func _collider(pos: Vector3, size: Vector3, yaw := 0.0) -> void:
 	var shape := BoxShape3D.new()
@@ -516,15 +818,8 @@ func _collider(pos: Vector3, size: Vector3, yaw := 0.0) -> void:
 	_body.add_child(cs)
 
 
-func _visual(pos: Vector3, size: Vector3, mat: String, yaw := 0.0) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.mesh = _rounded_box(size)
-	mi.material_override = _mats[mat]
-	mi.transform = Transform3D(Basis(Vector3.UP, yaw), pos)
-	if mat.begins_with("accent") or mat == "rail" or mat == "pad":
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-	return mi
+func _visual(pos: Vector3, size: Vector3, mat: String, yaw := 0.0) -> void:
+	_add(_rounded_box(size), _mats[mat], Transform3D(Basis(Vector3.UP, yaw), pos), not _glows(mat))
 
 
 func _box(pos: Vector3, size: Vector3, mat: String, mirror := true, yaw := 0.0, collide := true) -> void:
@@ -536,21 +831,21 @@ func _box(pos: Vector3, size: Vector3, mat: String, mirror := true, yaw := 0.0, 
 			_collider(c[0], size, c[1])
 		_visual(c[0], size, mat, c[1])
 		if mat == "crate":
-			# A glowing band around each crate.
 			_visual(c[0], Vector3(size.x + 0.04, 0.1, size.z + 0.04), "accent_a", c[1])
 
 
-## An upright cylinder standing on `base`.
-func _cyl(base: Vector3, radius: float, height: float, mat: String, mirror := true, collide := true) -> void:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = height
-	mesh.radial_segments = 32
-	var spots := [base]
-	if mirror:
-		spots.append(Vector3(-base.x, base.y, -base.z))
-	for s in spots:
+## An upright cylinder (or cone, with top_radius) standing on `base`.
+func _cyl(base: Vector3, radius: float, height: float, mat: String, mirror := true, collide := true, top_radius := -1.0) -> void:
+	var mesh: Mesh = _unit_cyl
+	if top_radius >= 0.0:
+		var cm := CylinderMesh.new()
+		cm.top_radius = top_radius / radius
+		cm.bottom_radius = 1.0
+		cm.height = 1.0
+		cm.radial_segments = 16
+		cm.rings = 1
+		mesh = cm
+	for s in ([base, Vector3(-base.x, base.y, -base.z)] if mirror else [base]):
 		if collide:
 			var shape := CylinderShape3D.new()
 			shape.radius = radius
@@ -559,26 +854,32 @@ func _cyl(base: Vector3, radius: float, height: float, mat: String, mirror := tr
 			cs.shape = shape
 			cs.position = s + Vector3(0, height * 0.5, 0)
 			_body.add_child(cs)
-		var mi := _prop(mesh, mat, s + Vector3(0, height * 0.5, 0))
-		if mat.begins_with("accent") or mat == "lava":
-			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_add(mesh, _mats[mat], Transform3D(Basis.from_scale(Vector3(radius, height, radius)), s + Vector3(0, height * 0.5, 0)), not _glows(mat))
 
 
-## A shipping container resting on `base` (its floor centre), with dark end frames.
-func _container(base: Vector3, yaw: float, mat: String, length := 6.0, mirror := true) -> void:
-	var c := base + Vector3(0, 1.3, 0)
-	_box(c, Vector3(length, 2.6, 2.5), mat, mirror, yaw)
-	for sgn in [1.0, -1.0]:
-		var off := Basis(Vector3.UP, yaw) * Vector3(sgn * (length * 0.5 - 0.06), 0, 0)
-		_box(c + off, Vector3(0.18, 2.66, 2.56), "dark", mirror, yaw, false)
+## A sphere (visual only) with the given radii.
+func _ball(pos: Vector3, radii: Vector3, mat, mirror := true) -> void:
+	var m: Material = _mats[mat] if mat is String else mat
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		_add(_unit_sphere, m, Transform3D(Basis.from_scale(radii), s))
 
 
-## A glowing wall sign (visual only) with a matching light.
-func _sign(pos: Vector3, size: Vector3, mat: String, mirror := true) -> void:
-	_box(pos, size + Vector3(0.3, 0.3, 0.3) * Vector3(1.0 if size.x > 0.2 else 0.0, 1.0, 1.0 if size.z > 0.2 else 0.0), "dark", mirror, 0.0, false)
-	var inward := Vector3(-signf(pos.x) if size.x <= 0.2 else 0.0, 0, -signf(pos.z) if size.z <= 0.2 else 0.0)
-	_box(pos + inward * 0.06, size, mat, mirror, 0.0, false)
-	_glow(pos + inward * 1.5, theme.accent_a if mat == "accent_a" else theme.accent_b, 9.0, 1.4, mirror)
+## A round rod between two points (visual only): bones, branches, poles.
+func _rod(a: Vector3, b: Vector3, radius: float, mat: String, mirror := true) -> void:
+	var pairs := [[a, b]]
+	if mirror:
+		pairs.append([Vector3(-a.x, a.y, -a.z), Vector3(-b.x, b.y, -b.z)])
+	for pair in pairs:
+		var aa: Vector3 = pair[0]
+		var bb: Vector3 = pair[1]
+		var d := bb - aa
+		var length := d.length()
+		if length < 0.01:
+			continue
+		var y := d / length
+		var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+		var z := x.cross(y)
+		_add(_unit_cyl, _mats[mat], Transform3D(Basis(x * radius, y * length, z * radius), (aa + bb) * 0.5))
 
 
 ## Box mesh with slightly rounded edges, built at its real size so the bevel
@@ -589,7 +890,7 @@ func _rounded_box(size: Vector3) -> ArrayMesh:
 		return _box_cache[key]
 	const SEG := 2
 	var h := size * 0.5
-	var r := minf(0.07, minf(size.x, minf(size.y, size.z)) * 0.3)
+	var r := minf(0.06, minf(size.x, minf(size.y, size.z)) * 0.3)
 	var faces := [
 		[Vector3.RIGHT, Vector3.UP, Vector3.BACK], [Vector3.LEFT, Vector3.BACK, Vector3.UP],
 		[Vector3.UP, Vector3.BACK, Vector3.RIGHT], [Vector3.DOWN, Vector3.RIGHT, Vector3.BACK],
@@ -636,25 +937,8 @@ func _edge_coords(hh: float, r: float, seg: int) -> PackedFloat32Array:
 	return out
 
 
-## A solid ramp. `size` = (run, rise, width); it rises toward local +X, then is
-## rotated by `yaw` about Y. `base` is the centre of its footprint.
-func _wedge(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := true) -> void:
-	var r := size.x * 0.5
-	var h := size.y
-	var w := size.z * 0.5
-	var a0 := Vector3(-r, 0, -w)
-	var a1 := Vector3(-r, 0, w)
-	var b0 := Vector3(r, 0, -w)
-	var b1 := Vector3(r, 0, w)
-	var c0 := Vector3(r, h, -w)
-	var c1 := Vector3(r, h, w)
-	var tris := [
-		[a0, a1, c1], [a0, c1, c0],      # slope
-		[b0, c0, c1], [b0, c1, b1],      # back
-		[a0, c0, b0], [a1, b1, c1],      # sides
-		[a0, b0, b1], [a0, b1, a1],      # bottom
-	]
-	var centroid := Vector3(r / 3.0, h / 3.0, 0)
+## Convex mesh from triangles (any winding); normals face away from `centroid`.
+func _convex_mesh(tris: Array, centroid: Vector3) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for t in tris:
@@ -664,7 +948,6 @@ func _wedge(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := tru
 		var n := (p1 - p0).cross(p2 - p0).normalized()
 		var outward := ((p0 + p1 + p2) / 3.0 - centroid)
 		if n.dot(outward) > 0.0:
-			# Counter-clockwise seen from outside; Godot wants clockwise.
 			var tmp := p1
 			p1 = p2
 			p2 = tmp
@@ -673,84 +956,382 @@ func _wedge(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := tru
 		for p in [p0, p1, p2]:
 			st.set_normal(n)
 			st.add_vertex(p)
-	var mesh := st.commit()
+	return st.commit()
+
+
+func _wedge_points(size: Vector3) -> Array:
+	var r := size.x * 0.5
+	var h := size.y
+	var w := size.z * 0.5
+	return [Vector3(-r, 0, -w), Vector3(-r, 0, w), Vector3(r, 0, -w), Vector3(r, 0, w), Vector3(r, h, -w), Vector3(r, h, w)]
+
+
+func _ramp_collider(xf: Transform3D, size: Vector3) -> void:
 	var shape := ConvexPolygonShape3D.new()
-	shape.points = PackedVector3Array([a0, a1, b0, b1, c0, c1])
+	shape.points = PackedVector3Array(_wedge_points(size))
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	cs.transform = xf
+	_body.add_child(cs)
+
+
+## A solid ramp. `size` = (run, rise, width); it rises toward local +X, then is
+## rotated by `yaw` about Y. `base` is the centre of its footprint.
+func _wedge(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := true, rails := true) -> void:
+	var p: Array = _wedge_points(size)
+	var tris := [[p[0], p[1], p[5]], [p[0], p[5], p[4]], [p[2], p[4], p[5]], [p[2], p[5], p[3]],
+		[p[0], p[4], p[2]], [p[1], p[3], p[5]], [p[0], p[2], p[3]], [p[0], p[3], p[1]]]
+	var mesh := _convex_mesh(tris, Vector3(size.x / 6.0, size.y / 3.0, 0))
 	var copies := [Transform3D(Basis(Vector3.UP, yaw), base)]
 	if mirror:
 		copies.append(Transform3D(Basis(Vector3.UP, yaw + PI), Vector3(-base.x, base.y, -base.z)))
 	for xf in copies:
+		_ramp_collider(xf, size)
+		_add(mesh, _mats[mat], xf)
+		if rails:
+			for side in [-1.0, 1.0]:
+				var length := sqrt(size.x * size.x + size.y * size.y)
+				_add(_rounded_box(Vector3(length, 0.12, 0.12)), _mats["accent_a" if theme.neon else "rail"],
+					xf * Transform3D(Basis(Vector3.BACK, atan2(size.y, size.x)), Vector3(0, size.y * 0.5 + 0.04, side * (size.z * 0.5 - 0.05))), false)
+
+
+## Stairs: a hidden ramp to walk on, drawn as steps. Same frame as _wedge.
+func _stairs(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := true) -> void:
+	var key := "%.2f,%.2f,%.2f" % [size.x, size.y, size.z]
+	if not _stairs_cache.has(key):
+		var n := maxi(2, int(ceil(size.y / 0.25)))
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var dx := size.x / n
+		for i in n:
+			var hh := size.y * (i + 1) / n
+			st.append_from(_rounded_box(Vector3(dx + 0.02, hh, size.z)), 0, Transform3D(Basis(), Vector3(-size.x * 0.5 + dx * (i + 0.5), hh * 0.5, 0)))
+		_stairs_cache[key] = st.commit()
+	var copies := [Transform3D(Basis(Vector3.UP, yaw), base)]
+	if mirror:
+		copies.append(Transform3D(Basis(Vector3.UP, yaw + PI), Vector3(-base.x, base.y, -base.z)))
+	for xf in copies:
+		_ramp_collider(xf, size)
+		_add(_stairs_cache[key], _mats[mat], xf)
+
+
+## A pitched roof: a prism with its ridge along X, sitting on y = base.y.
+func _gable(base: Vector3, sx: float, sz: float, h: float, mat: String, mirror := true) -> void:
+	var a := sx * 0.5
+	var b := sz * 0.5
+	var pts := [Vector3(-a, 0, -b), Vector3(a, 0, -b), Vector3(-a, 0, b), Vector3(a, 0, b), Vector3(-a, h, 0), Vector3(a, h, 0)]
+	var tris := [[pts[0], pts[1], pts[5]], [pts[0], pts[5], pts[4]], [pts[2], pts[3], pts[5]], [pts[2], pts[5], pts[4]],
+		[pts[0], pts[2], pts[4]], [pts[1], pts[3], pts[5]], [pts[0], pts[1], pts[3]], [pts[0], pts[3], pts[2]]]
+	var mesh := _convex_mesh(tris, Vector3(0, h / 3.0, 0))
+	for s in ([base, Vector3(-base.x, base.y, -base.z)] if mirror else [base]):
+		var xf := Transform3D(Basis(), s)
+		var shape := ConvexPolygonShape3D.new()
+		shape.points = PackedVector3Array(pts)
 		var cs := CollisionShape3D.new()
 		cs.shape = shape
 		cs.transform = xf
 		_body.add_child(cs)
-		var mi := MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.material_override = _mats[mat]
-		mi.transform = xf
-		add_child(mi)
-		# Glowing side rails.
-		for side in [-1.0, 1.0]:
-			var rail := MeshInstance3D.new()
-			var length := sqrt(size.x * size.x + size.y * size.y)
-			rail.mesh = _rounded_box(Vector3(length, 0.12, 0.12))
-			rail.material_override = _mats["accent_a"]
-			rail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			rail.transform = xf * Transform3D(Basis(Vector3.BACK, atan2(size.y, size.x)), Vector3(0, h * 0.5 + 0.04, side * (w - 0.05)))
-			add_child(rail)
+		_add(mesh, _mats[mat], xf)
+
+
+## Wall segments with openings. `openings` = [[centre, width, bottom, top], ...]
+## measured along the wall; bottom/top are heights above the wall's base.
+func _wall_segments(a: float, b: float, h: float, openings: Array) -> Array:
+	var out: Array = []
+	var cur := a
+	var ops := openings.duplicate()
+	ops.sort_custom(func(p, q): return p[0] < q[0])
+	for o in ops:
+		var oa: float = o[0] - o[1] * 0.5
+		var ob: float = o[0] + o[1] * 0.5
+		out.append([cur, oa, 0.0, h])
+		if o[2] > 0.0:
+			out.append([oa, ob, 0.0, o[2]])
+		if o[3] < h:
+			out.append([oa, ob, o[3], h])
+		cur = ob
+	out.append([cur, b, 0.0, h])
+	return out
+
+
+## A wall running along X at depth z, from x0 to x1.
+func _wall_x(z: float, x0: float, x1: float, y0: float, h: float, mat: String, openings := [], mirror := true, t := 0.3) -> void:
+	for s in _wall_segments(x0, x1, h, openings):
+		var length: float = s[1] - s[0]
+		var hh: float = s[3] - s[2]
+		if length > 0.02 and hh > 0.02:
+			_box(Vector3((s[0] + s[1]) * 0.5, y0 + (s[2] + s[3]) * 0.5, z), Vector3(length, hh, t), mat, mirror)
+
+
+## A wall running along Z at x, from z0 to z1.
+func _wall_z(x: float, z0: float, z1: float, y0: float, h: float, mat: String, openings := [], mirror := true, t := 0.3) -> void:
+	for s in _wall_segments(z0, z1, h, openings):
+		var length: float = s[1] - s[0]
+		var hh: float = s[3] - s[2]
+		if length > 0.02 and hh > 0.02:
+			_box(Vector3(x, y0 + (s[2] + s[3]) * 0.5, (s[0] + s[1]) * 0.5), Vector3(t, hh, length), mat, mirror)
+
+
+## Split `area` into rectangles that avoid every hole (XZ Rect2s).
+func _split(area: Rect2, holes: Array) -> Array:
+	var xs := [area.position.x, area.end.x]
+	var zs := [area.position.y, area.end.y]
+	for h in holes:
+		var r: Rect2 = h
+		if not r.intersects(area):
+			continue
+		for x in [r.position.x, r.end.x]:
+			if x > area.position.x and x < area.end.x:
+				xs.append(x)
+		for z in [r.position.y, r.end.y]:
+			if z > area.position.y and z < area.end.y:
+				zs.append(z)
+	xs.sort()
+	zs.sort()
+	var out: Array = []
+	for j in zs.size() - 1:
+		var z0: float = zs[j]
+		var z1: float = zs[j + 1]
+		if z1 - z0 < 0.001:
+			continue
+		var run_start := 0.0
+		var run_end := 0.0
+		var running := false
+		for i in xs.size() - 1:
+			var x0: float = xs[i]
+			var x1: float = xs[i + 1]
+			if x1 - x0 < 0.001:
+				continue
+			var centre := Vector2((x0 + x1) * 0.5, (z0 + z1) * 0.5)
+			var blocked := false
+			for h in holes:
+				if (h as Rect2).has_point(centre):
+					blocked = true
+					break
+			if blocked:
+				if running:
+					out.append(Rect2(run_start, z0, run_end - run_start, z1 - z0))
+				running = false
+			else:
+				if not running:
+					run_start = x0
+					running = true
+				run_end = x1
+		if running:
+			out.append(Rect2(run_start, z0, run_end - run_start, z1 - z0))
+	return out
+
+
+func _hole(r: Rect2, mirror := true) -> void:
+	_holes.append(r)
+	if mirror:
+		_holes.append(Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y))
+
+
+## A horizontal slab (top at y) over `r`, with holes.
+func _slab(r: Rect2, y: float, mat: String, holes := [], mirror := true, t := 0.3) -> void:
+	for p in _split(r, holes):
+		var pr: Rect2 = p
+		_box(Vector3(pr.get_center().x, y - t * 0.5, pr.get_center().y), Vector3(pr.size.x, t, pr.size.y), mat, mirror)
+
+
+## A flat surface decal (visual only) at height y, cut around ground holes.
+## Ground holes are already mirrored, so `mirror` only mirrors the rectangle.
+func _surface(r: Rect2, y: float, mat: String, mirror := true) -> void:
+	var rects := [r]
+	if mirror:
+		rects.append(Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y))
+	for rr in rects:
+		for p in _split(rr, _holes):
+			var pr: Rect2 = p
+			_visual(Vector3(pr.get_center().x, y, pr.get_center().y), Vector3(pr.size.x, 0.012, pr.size.y), mat)
+
+
+## Perimeter walls (the ground itself is made by _build_floor after the layout).
+func _build_walls() -> void:
+	var w := half_x * 2.0
+	var d := half_z * 2.0
+	for sgn in [1.0, -1.0]:
+		_collider(Vector3(0, 8, sgn * (half_z + 0.5)), Vector3(w + 2, 16, 1))
+		_collider(Vector3(sgn * (half_x + 0.5), 8, 0), Vector3(1, 16, d + 2))
+	_box(Vector3(0, wall_h * 0.5, half_z + 0.5), Vector3(w + 2, wall_h, 1), "wall", true, 0.0, false)
+	_box(Vector3(half_x + 0.5, wall_h * 0.5, 0), Vector3(1, wall_h, d + 2), "wall", true, 0.0, false)
+	if theme.neon:
+		_box(Vector3(0, wall_h + 0.04, half_z + 0.08), Vector3(w + 0.3, 0.1, 0.16), "accent_a", true, 0.0, false)
+		_box(Vector3(half_x + 0.08, wall_h + 0.04, 0), Vector3(0.16, 0.1, d + 0.3), "accent_a", true, 0.0, false)
+		_box(Vector3(0, 0.12, half_z + 0.02), Vector3(w, 0.16, 0.14), "accent_b", true, 0.0, false)
+		_box(Vector3(half_x + 0.02, 0.12, 0), Vector3(0.14, 0.16, d), "accent_b", true, 0.0, false)
+
+
+## The ground slab with every hole cut out, and the painted paths.
+func _build_floor() -> void:
+	var area := Rect2(-half_x - 1.0, -half_z - 1.0, half_x * 2.0 + 2.0, half_z * 2.0 + 2.0)
+	for p in _split(area, _holes):
+		var r: Rect2 = p
+		var pos := Vector3(r.get_center().x, -0.5, r.get_center().y)
+		_collider(pos, Vector3(r.size.x, 1.0, r.size.y))
+		_add(_rounded_box(Vector3(r.size.x, 1.0, r.size.y)), _mats["ground"], Transform3D(Basis(), pos))
+	if theme.paths:
+		_surface(Rect2(-half_x, -3.5, half_x * 2.0, 7.0), 0.006, "path", false)
+		_surface(Rect2(-3.5, -half_z, 7.0, half_z * 2.0), 0.008, "path", false)
+		for off in [3.5, -3.5]:
+			_surface(Rect2(-half_x, off - 0.04, half_x * 2.0, 0.08), 0.016, "rail", false)
+			_surface(Rect2(off - 0.04, -half_z, 0.08, half_z * 2.0), 0.016, "rail", false)
+
+
+# --------------------------------------------------------------------------
+# Composite pieces
+# --------------------------------------------------------------------------
+
+## A building with `floors` storeys, doors on the ground floor (+X and -Z
+## sides), windows above, stairs inside between storeys, and either a flat
+## roof with a parapet (reachable by stairs: a vantage point) or a pitched
+## roof (opts.pitched). Needs sz >= 8.5. c = footprint centre at ground level.
+## opts: mirror, pitched, roof, floor (materials), glass (bool: glazed windows).
+func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts := {}) -> void:
+	var mirror: bool = opts.get("mirror", true)
+	var pitched: bool = opts.get("pitched", false)
+	var roof_mat: String = opts.get("roof", "block_c")
+	var floor_mat: String = opts.get("floor", "deck")
+	var t := 0.3
+	var x0 := c.x - sx * 0.5
+	var x1 := c.x + sx * 0.5
+	var z0 := c.z - sz * 0.5
+	var z1 := c.z + sz * 0.5
+	var run := 6.0
+	var sw := 1.5
+	var flights := floors - 1 if pitched else floors
+	var stair_x := [x0 + t + sw * 0.5 + 0.05, x1 - t - sw * 0.5 - 0.05]
+	for f in floors:
+		var y0 := c.y + f * FLOOR_H
+		var win_x: Array = []
+		var win_z: Array = []
+		var nx := maxi(1, int((sx - 1.0) / 4.0))
+		var nz := maxi(1, int((sz - 1.0) / 4.0))
+		for i in nx:
+			win_x.append([x0 + sx * (i + 0.5) / nx, 1.4, 0.95, 2.3])
+		for i in nz:
+			win_z.append([z0 + sz * (i + 0.5) / nz, 1.4, 0.95, 2.3])
+		var south: Array = win_x.duplicate()
+		var east: Array = win_z.duplicate()
+		if f == 0:
+			south = [[c.x, 1.8, 0.0, 2.5]]
+			east = [[c.z, 1.8, 0.0, 2.5]]
+		_wall_x(z0 + t * 0.5, x0, x1, y0, FLOOR_H, mat, south, mirror, t)
+		_wall_x(z1 - t * 0.5, x0, x1, y0, FLOOR_H, mat, win_x, mirror, t)
+		_wall_z(x0 + t * 0.5, z0 + t, z1 - t, y0, FLOOR_H, mat, win_z, mirror, t)
+		_wall_z(x1 - t * 0.5, z0 + t, z1 - t, y0, FLOOR_H, mat, east, mirror, t)
+		_glow(Vector3(c.x, y0 + 2.7, c.z), Color(1.0, 0.82, 0.6), maxf(sx, sz), 1.3 / maxf(light_scale, 0.5), mirror)
+	for f in flights:
+		var y0 := c.y + f * FLOOR_H
+		var even := f % 2 == 0
+		var sxp: float = stair_x[0] if even else stair_x[1]
+		_stairs(Vector3(sxp, y0, c.z), Vector3(run, FLOOR_H, sw), -PI * 0.5 if even else PI * 0.5, floor_mat, mirror)
+	var rail_mat := "rail" if theme.neon else ("trim" if _mats.has("trim") else "block_c")
+	for f in range(1, floors + 1):
+		var y := c.y + f * FLOOR_H
+		var holes: Array = []
+		var fl := f - 1
+		if fl < flights:
+			var even := fl % 2 == 0
+			var sxp: float = stair_x[0] if even else stair_x[1]
+			var hz := c.z - run * 0.5 + 2.0 if even else c.z - run * 0.5 - 0.1
+			holes.append(Rect2(sxp - sw * 0.5 - 0.05, hz, sw + 0.1, run - 1.9))
+			var rail_x := sxp + (sw * 0.5 + 0.1) * (1.0 if even else -1.0)
+			_box(Vector3(rail_x, y + 0.5, hz + (run - 1.9) * 0.5), Vector3(0.08, 1.0, run - 1.9), rail_mat, mirror)
+		var is_roof := f == floors
+		if is_roof and pitched:
+			_slab(Rect2(x0, z0, sx, sz), y, roof_mat, [], mirror)
+			_gable(Vector3(c.x, y, c.z), sx + 0.8, sz + 0.8, minf(sz * 0.32, 3.0), roof_mat, mirror)
+		else:
+			_slab(Rect2(x0, z0, sx, sz), y, floor_mat if not is_roof else roof_mat, holes, mirror)
+	if not pitched:
+		var y := c.y + floors * FLOOR_H
+		_wall_x(z0 + 0.15, x0, x1, y, 1.0, mat, [], mirror, 0.3)
+		_wall_x(z1 - 0.15, x0, x1, y, 1.0, mat, [], mirror, 0.3)
+		_wall_z(x0 + 0.15, z0 + 0.3, z1 - 0.3, y, 1.0, mat, [], mirror, 0.3)
+		_wall_z(x1 - 0.15, z0 + 0.3, z1 - 0.3, y, 1.0, mat, [], mirror, 0.3)
+		if theme.neon:
+			_box(Vector3(c.x, y + 1.02, z0 + 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
+			_box(Vector3(c.x, y + 1.02, z1 - 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
+
+
+## An underground passage along X at `z` from x0 to x1, with ramps down at
+## both ends (open holes in the ground with guard rails).
+func _tunnel(z: float, x0: float, x1: float, mirror := true, w := 3.2) -> void:
+	var L := 6.5
+	var mid := (x0 + x1) * 0.5
+	_hole(Rect2(x0, z - w * 0.5, L, w), mirror)
+	_hole(Rect2(x1 - L, z - w * 0.5, L, w), mirror)
+	_wedge(Vector3(x0 + L * 0.5, -DEPTH, z), Vector3(L, DEPTH, w), PI, "deck", mirror)
+	_wedge(Vector3(x1 - L * 0.5, -DEPTH, z), Vector3(L, DEPTH, w), 0.0, "deck", mirror)
+	_box(Vector3(mid, -DEPTH - 0.5, z), Vector3(x1 - x0 + 0.6, 1.0, w + 0.6), "path" if theme.paths else "block_a", mirror)
+	var wh := DEPTH - 0.02
+	for sgn in [1.0, -1.0]:
+		_box(Vector3(mid, -DEPTH + wh * 0.5, z + sgn * (w * 0.5 + 0.15)), Vector3(x1 - x0 + 0.6, wh, 0.3), "wall", mirror)
+		_box(Vector3(x0 + L * 0.5, 0.5, z + sgn * (w * 0.5 + 0.08)), Vector3(L, 1.0, 0.1), "rail", mirror)
+		_box(Vector3(x1 - L * 0.5, 0.5, z + sgn * (w * 0.5 + 0.08)), Vector3(L, 1.0, 0.1), "rail", mirror)
+	_box(Vector3(x0 - 0.15, -DEPTH + wh * 0.5, z), Vector3(0.3, wh, w), "wall", mirror)
+	_box(Vector3(x1 + 0.15, -DEPTH + wh * 0.5, z), Vector3(0.3, wh, w), "wall", mirror)
+	_box(Vector3(x0 + L + 0.05, 0.5, z), Vector3(0.1, 1.0, w), "rail", mirror)
+	_box(Vector3(x1 - L - 0.05, 0.5, z), Vector3(0.1, 1.0, w), "rail", mirror)
+	_box(Vector3(mid, -1.05, z), Vector3(maxf(1.0, x1 - x0 - 2.0 * L), 0.06, 0.18), "accent_b", mirror, 0.0, false)
+	var n := maxi(2, int((x1 - x0) / 9.0))
+	for i in n:
+		_glow(Vector3(lerpf(x0 + L, x1 - L, (i + 0.5) / n), -1.6, z), theme.accent_b, 7.0, 1.4 / maxf(light_scale, 0.4), mirror)
+
+
+## A room below ground (rect r in XZ) entered by a ramp along its south edge.
+func _basement(r: Rect2, mirror := true) -> void:
+	var L := 6.5
+	var rw := 2.8
+	_hole(Rect2(r.position.x, r.position.y, L, rw), mirror)
+	_wedge(Vector3(r.position.x + L * 0.5, -DEPTH, r.position.y + rw * 0.5), Vector3(L, DEPTH, rw), PI, "deck", mirror)
+	var c := r.get_center()
+	_box(Vector3(c.x, -DEPTH - 0.5, c.y), Vector3(r.size.x + 0.6, 1.0, r.size.y + 0.6), "block_a", mirror)
+	var wh := DEPTH - 0.02
+	_box(Vector3(c.x, -DEPTH + wh * 0.5, r.position.y - 0.15), Vector3(r.size.x + 0.6, wh, 0.3), "wall", mirror)
+	_box(Vector3(c.x, -DEPTH + wh * 0.5, r.end.y + 0.15), Vector3(r.size.x + 0.6, wh, 0.3), "wall", mirror)
+	_box(Vector3(r.position.x - 0.15, -DEPTH + wh * 0.5, c.y), Vector3(0.3, wh, r.size.y), "wall", mirror)
+	_box(Vector3(r.end.x + 0.15, -DEPTH + wh * 0.5, c.y), Vector3(0.3, wh, r.size.y), "wall", mirror)
+	_box(Vector3(r.position.x + L * 0.5, 0.5, r.position.y + rw + 0.05), Vector3(L, 1.0, 0.1), "rail", mirror)
+	_box(Vector3(r.position.x + L + 0.05, 0.5, r.position.y + rw * 0.5), Vector3(0.1, 1.0, rw), "rail", mirror)
+	_box(Vector3(c.x + r.size.x * 0.2, -DEPTH + 0.6, c.y + r.size.y * 0.15), Vector3(1.2, 1.2, 1.2), "crate", mirror, 0.3)
+	_box(Vector3(c.x - r.size.x * 0.25, -DEPTH + 0.6, r.end.y - 1.0), Vector3(2.2, 1.2, 1.0), "block_c", mirror)
+	_box(Vector3(c.x, -1.05, c.y), Vector3(r.size.x * 0.6, 0.06, 0.18), "accent_a", mirror, 0.0, false)
+	_glow(Vector3(c.x, -1.6, c.y), theme.accent_a, maxf(r.size.x, r.size.y), 1.8 / maxf(light_scale, 0.4), mirror)
+
+
+## A shipping container resting on `base` (its floor centre), with dark end frames.
+func _container(base: Vector3, yaw: float, mat: String, length := 6.0, mirror := true) -> void:
+	var c := base + Vector3(0, 1.3, 0)
+	_box(c, Vector3(length, 2.6, 2.5), mat, mirror, yaw)
+	for sgn in [1.0, -1.0]:
+		var off := Basis(Vector3.UP, yaw) * Vector3(sgn * (length * 0.5 - 0.06), 0, 0)
+		_box(c + off, Vector3(0.18, 2.66, 2.56), "dark", mirror, yaw, false)
+
+
+## A glowing wall sign (visual only) with a matching light.
+func _sign(pos: Vector3, size: Vector3, mat: String, mirror := true) -> void:
+	_box(pos, size + Vector3(0.3, 0.3, 0.3) * Vector3(1.0 if size.x > 0.2 else 0.0, 1.0, 1.0 if size.z > 0.2 else 0.0), "dark", mirror, 0.0, false)
+	var inward := Vector3(-signf(pos.x) if size.x <= 0.2 else 0.0, 0, -signf(pos.z) if size.z <= 0.2 else 0.0)
+	_box(pos + inward * 0.06, size, mat, mirror, 0.0, false)
+	_glow(pos + inward * 1.5, theme.accent_a if mat == "accent_a" else theme.accent_b, 9.0, 1.4, mirror)
 
 
 func _barrel(pos: Vector3, mirror := true) -> void:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = 0.42
-	mesh.bottom_radius = 0.42
-	mesh.height = 1.2
-	mesh.radial_segments = 18
-	var band := CylinderMesh.new()
-	band.top_radius = 0.45
-	band.bottom_radius = 0.45
-	band.height = 0.08
-	band.radial_segments = 18
-	var shape := CylinderShape3D.new()
-	shape.radius = 0.45
-	shape.height = 1.2
-	var spots := [pos]
-	if mirror:
-		spots.append(Vector3(-pos.x, pos.y, -pos.z))
-	for s in spots:
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		cs.position = s + Vector3(0, 0.6, 0)
-		_body.add_child(cs)
-		_prop(mesh, "block_c", s + Vector3(0, 0.6, 0))
-		_prop(band, "accent_b", s + Vector3(0, 0.95, 0))
-		_prop(band, "accent_b", s + Vector3(0, 0.25, 0))
-
-
-func _prop(mesh: Mesh, mat, pos: Vector3, scl := Vector3.ONE, parent: Node3D = null) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	mi.mesh = mesh
-	mi.material_override = _mats[mat] if mat is String else mat
-	mi.position = pos
-	mi.scale = scl
-	(parent if parent != null else self).add_child(mi)
-	return mi
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		_cyl(s, 0.42, 1.2, "block_c", false)
+		_cyl(s + Vector3(0, 0.9, 0), 0.45, 0.08, "accent_b", false, false)
+		_cyl(s + Vector3(0, 0.22, 0), 0.45, 0.08, "accent_b", false, false)
 
 
 ## Launches any player that steps on it straight up.
-func _jump_pad(pos: Vector3, power: float) -> void:
-	for s in [pos, Vector3(-pos.x, pos.y, -pos.z)]:
-		var base := CylinderMesh.new()
-		base.top_radius = 1.15
-		base.bottom_radius = 1.3
-		base.height = 0.14
-		_prop(base, "dark", s + Vector3(0, 0.07, 0))
-		var top := CylinderMesh.new()
-		top.top_radius = 0.9
-		top.bottom_radius = 0.9
-		top.height = 0.06
-		_prop(top, "pad", s + Vector3(0, 0.16, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_glow(s + Vector3(0, 1.2, 0), Color(0.3, 1.0, 0.85), 6.0, 1.6, false)
+func _jump_pad(pos: Vector3, power: float, mirror := true) -> void:
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		_cyl(s, 1.25, 0.14, "dark", false, false, 1.15)
+		_cyl(s + Vector3(0, 0.13, 0), 0.9, 0.06, "pad", false, false)
+		_glow(s + Vector3(0, 1.2, 0), Color(0.3, 1.0, 0.85), 6.0, 1.6 / maxf(light_scale, 0.5), false)
 		var torus := TorusMesh.new()
 		torus.inner_radius = 0.78
 		torus.outer_radius = 0.9
@@ -765,9 +1346,12 @@ func _jump_pad(pos: Vector3, power: float) -> void:
 			var holder := Node3D.new()
 			holder.position = s
 			add_child(holder)
-			var ring := _prop(torus, m, Vector3.ZERO, Vector3.ONE, holder)
+			var ring := MeshInstance3D.new()
+			ring.mesh = torus
+			ring.material_override = m
 			ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			ring.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+			holder.add_child(ring)
 			_pad_rings.append([ring, m, i / 3.0])
 		var area := Area3D.new()
 		area.collision_layer = 0
@@ -787,11 +1371,11 @@ func _jump_pad(pos: Vector3, power: float) -> void:
 
 
 ## A glowing lava channel that burns anyone standing in it, behind a low kerb
-## (the kerb is `inner` metres toward the arena centre along Z).
+## on its arena-centre side (bots never path across the kerb).
 func _lava(center: Vector3, size: Vector3) -> void:
 	for sgn in [1.0, -1.0]:
 		var c := Vector3(center.x * sgn, center.y, center.z * sgn)
-		_visual(c + Vector3(0, 0.03, 0), Vector3(size.x, 0.06, size.z), "lava").cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_visual(c + Vector3(0, 0.03, 0), Vector3(size.x, 0.06, size.z), "lava")
 		var kerb := c + Vector3(0, 0.3, -sgn * (size.z * 0.5 + 0.15))
 		_collider(kerb, Vector3(size.x + 0.6, 0.6, 0.3))
 		_visual(kerb, Vector3(size.x + 0.6, 0.6, 0.3), "block_b")
@@ -807,12 +1391,124 @@ func _lava(center: Vector3, size: Vector3) -> void:
 		add_child(area)
 		_hazards.append(area)
 		for i in 3:
-			_glow(c + Vector3((i - 1) * size.x * 0.33, 1.0, -sgn * 0.5), Color(1.0, 0.4, 0.1), 8.0, 1.5, false)
+			_glow(c + Vector3((i - 1) * size.x * 0.33, 1.0, -sgn * 0.5), Color(1.0, 0.4, 0.1), 8.0, 1.5 / maxf(light_scale, 0.5), false)
 
 
-## A snowy pine: collidable trunk, visual branches.
-func _pine(pos: Vector3, scl := 1.0) -> void:
-	for s in [pos, Vector3(-pos.x, pos.y, -pos.z)]:
+func _spawns(points: Array, mirror := true) -> void:
+	for p in points:
+		spawn_points.append(p)
+		if mirror:
+			spawn_points.append(Vector3(-p.x, p.y, -p.z))
+
+
+func _pickups(spots: Array, mirror := true) -> void:
+	for spot in spots:
+		pickup_spots.append(spot)
+		if mirror:
+			pickup_spots.append([spot[0], Vector3(-spot[1].x, spot[1].y, -spot[1].z)])
+
+
+func _lawn(r: Rect2, mirror := true) -> void:
+	lawns.append(r)
+	if mirror:
+		lawns.append(Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y))
+
+
+## A street lamp: pole, glowing head and (scaled by time of day) a light.
+func _lamp_post(pos: Vector3, mirror := true, h := 4.6) -> void:
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		_cyl(s, 0.09, h, "dark", false)
+		_box(s + Vector3(0, h, 0), Vector3(0.5, 0.18, 0.5), "dark", false, 0.0, false)
+		_box(s + Vector3(0, h - 0.12, 0), Vector3(0.4, 0.06, 0.4), "lamp", false, 0.0, false)
+		if night_amount > 0.0:
+			var l := OmniLight3D.new()
+			l.position = s + Vector3(0, h - 0.4, 0)
+			l.light_color = Color(1.0, 0.82, 0.55)
+			l.light_energy = 2.4 * night_amount
+			l.omni_range = 11.0
+			add_child(l)
+
+
+# --------------------------------------------------------------------------
+# Foliage
+# --------------------------------------------------------------------------
+
+## Lumpy leaf-cluster meshes: spheres displaced by 3D noise. Cached.
+func _blob(i: int) -> ArrayMesh:
+	if _blob_cache.is_empty():
+		for v in 3:
+			var sm := SphereMesh.new()
+			sm.radius = 1.0
+			sm.height = 2.0
+			sm.radial_segments = 20
+			sm.rings = 10
+			var arr := sm.get_mesh_arrays()
+			var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var nz := FastNoiseLite.new()
+			nz.seed = 31 + v * 17
+			nz.frequency = 0.9
+			for k in verts.size():
+				var p := verts[k]
+				var d := 1.0 + nz.get_noise_3dv(p * 1.6) * 0.38
+				if p.y < -0.2:
+					p.y *= 0.7
+				verts[k] = p * d
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+			for k in idx:
+				st.add_vertex(verts[k])
+			st.generate_normals()
+			_blob_cache.append(st.commit())
+	return _blob_cache[i % _blob_cache.size()]
+
+
+## A broad-leaved tree: tapered trunk, branches and a canopy of leaf clusters.
+func _tree(pos: Vector3, scl := 1.0, mirror := true) -> void:
+	var leaf: String = "leaf%d" % (_rng.randi() % 2)
+	var h := 3.2 * scl
+	var top := pos + Vector3(_rng.randf_range(-0.4, 0.4) * scl, h, _rng.randf_range(-0.4, 0.4) * scl)
+	var clusters: Array = []
+	for i in 6:
+		var a := TAU * i / 6.0 + _rng.randf() * 0.5
+		var r := _rng.randf_range(0.9, 1.5) * scl
+		clusters.append([top + Vector3(cos(a) * r, _rng.randf_range(-0.3, 0.6) * scl, sin(a) * r), _rng.randf_range(0.9, 1.3) * scl, i])
+	clusters.append([top + Vector3(0, 1.0 * scl, 0), 1.4 * scl, 6])
+	for k in (2 if mirror else 1):
+		var sgn := Vector3(1, 1, 1) if k == 0 else Vector3(-1, 1, -1)
+		var s := pos * sgn
+		var t2 := top * sgn
+		var shape := CylinderShape3D.new()
+		shape.radius = 0.32 * scl
+		shape.height = h
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position = s + Vector3(0, h * 0.5, 0)
+		_body.add_child(cs)
+		_rod(s, t2, 0.24 * scl, "trunk", false)
+		for c in clusters:
+			var cp: Vector3 = c[0] * sgn
+			_rod(t2 - Vector3(0, 0.6 * scl, 0), cp.lerp(t2, 0.3), 0.07 * scl, "trunk", false)
+			_add(_blob(c[2]), _mats[leaf], Transform3D(Basis(Vector3.UP, c[2] * 1.3).scaled(Vector3.ONE * c[1]), cp))
+
+
+func _bush(pos: Vector3, scl := 1.0, mirror := true) -> void:
+	var leaf: String = "leaf%d" % (_rng.randi() % 2)
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		for i in 3:
+			var off := Vector3((i - 1) * 0.5, 0, _rng.randf_range(-0.3, 0.3)) * scl
+			_add(_blob(i), _mats[leaf], Transform3D(Basis().scaled(Vector3(0.75, 0.6, 0.7) * scl), s + off + Vector3(0, 0.45 * scl, 0)))
+
+
+## A pine: collidable trunk, layered cones (with snow caps if the theme has them).
+func _pine(pos: Vector3, scl := 1.0, mirror := true) -> void:
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = 1.0
+	cone.height = 1.0
+	cone.radial_segments = 12
+	cone.rings = 2
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
 		var shape := CylinderShape3D.new()
 		shape.radius = 0.35
 		shape.height = 4.0
@@ -820,57 +1516,100 @@ func _pine(pos: Vector3, scl := 1.0) -> void:
 		cs.shape = shape
 		cs.position = s + Vector3(0, 2.0, 0)
 		_body.add_child(cs)
-		var trunk := CylinderMesh.new()
-		trunk.top_radius = 0.18 * scl
-		trunk.bottom_radius = 0.3 * scl
-		trunk.height = 2.0 * scl
-		_prop(trunk, "trunk", s + Vector3(0, 1.0 * scl, 0))
-		for i in 3:
-			var cone := CylinderMesh.new()
-			cone.top_radius = 0.0
-			cone.bottom_radius = (1.9 - i * 0.45) * scl
-			cone.height = 2.2 * scl
-			cone.radial_segments = 10
-			var y := (2.3 + i * 1.25) * scl
-			_prop(cone, "pine", s + Vector3(0, y, 0))
-			var cap := CylinderMesh.new()
-			cap.top_radius = 0.0
-			cap.bottom_radius = (1.0 - i * 0.24) * scl
-			cap.height = 1.15 * scl
-			cap.radial_segments = 10
-			_prop(cap, "snowcap", s + Vector3(0, y + 0.56 * scl, 0))
+		_add(_unit_cyl, _mats["trunk"], Transform3D(Basis.from_scale(Vector3(0.26, 2.0, 0.26) * scl), s + Vector3(0, 1.0 * scl, 0)))
+		for i in 4:
+			var y := (2.0 + i * 1.05) * scl
+			var r := (2.0 - i * 0.42) * scl
+			_add(cone, _mats["pine"] if _mats.has("pine") else _mats["leaf0"], Transform3D(Basis(Vector3.UP, i * 0.7).scaled(Vector3(r, 2.0 * scl, r)), s + Vector3(0, y, 0)))
+			if _mats.has("snowcap"):
+				_add(cone, _mats["snowcap"], Transform3D(Basis(Vector3.UP, i * 0.7).scaled(Vector3(r * 0.55, 1.05 * scl, r * 0.55)), s + Vector3(0, y + 0.5 * scl, 0)))
 
 
-func _spawns(points: Array) -> void:
-	for p in points:
-		spawn_points.append(p)
-		spawn_points.append(Vector3(-p.x, p.y, -p.z))
+const GRASS_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, diffuse_lambert_wrap, specular_disabled;
+uniform vec3 base : source_color = vec3(0.1, 0.3, 0.1);
+uniform vec3 tip : source_color = vec3(0.3, 0.6, 0.2);
+void vertex() {
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float bend = 1.0 - UV.y;
+	float wave = sin(TIME * 1.6 + wp.x * 0.5 + wp.z * 0.7) + 0.5 * sin(TIME * 2.7 + wp.x * 1.3);
+	VERTEX.x += wave * 0.05 * bend;
+	VERTEX.z += wave * 0.035 * bend;
+	NORMAL = vec3(0.0, 1.0, 0.0);
+}
+void fragment() {
+	ALBEDO = mix(base, tip, (1.0 - UV.y) * 0.9) * COLOR.rgb;
+	ROUGHNESS = 1.0;
+}
+"""
 
 
-func _pickups(spots: Array) -> void:
-	for spot in spots:
-		pickup_spots.append(spot)
-		pickup_spots.append([spot[0], Vector3(-spot[1].x, spot[1].y, -spot[1].z)])
-
-
-## A small building: walls with door gaps and a flat roof. `c` is the centre of
-## its floor; doors face +X and -Z.
-func _hut(c: Vector3, mat: String) -> void:
-	_box(c + Vector3(-4.3, 1.6, 0), Vector3(0.4, 3.2, 9), mat)
-	_box(c + Vector3(0, 1.6, 4.3), Vector3(9, 3.2, 0.4), mat)
-	_box(c + Vector3(4.3, 1.6, -2.85), Vector3(0.4, 3.2, 3.3), mat)
-	_box(c + Vector3(4.3, 1.6, 2.85), Vector3(0.4, 3.2, 3.3), mat)
-	_box(c + Vector3(4.3, 2.8, 0), Vector3(0.4, 0.8, 2.4), mat)
-	_box(c + Vector3(-2.85, 1.6, -4.3), Vector3(3.3, 3.2, 0.4), mat)
-	_box(c + Vector3(2.85, 1.6, -4.3), Vector3(3.3, 3.2, 0.4), mat)
-	_box(c + Vector3(0, 2.8, -4.3), Vector3(2.4, 0.8, 0.4), mat)
-	_box(c + Vector3(0, 3.4, 0), Vector3(9.8, 0.4, 9.8), "block_c")
-	_box(c + Vector3(0, 3.4, 0), Vector3(9.9, 0.12, 9.9), "accent_b", true, 0.0, false)
-	_glow(c + Vector3(0, 2.6, 0), theme.accent_a, 8.0, 1.8)
+## Grass clumps (3 blades each) over every lawn rect, minus ground holes, in
+## one MultiMesh draw call.
+func _grass() -> void:
+	if lawns.is_empty() or theme.grass.is_empty():
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for b in 3:
+		var a := TAU * b / 3.0
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.03
+		var lean := Vector3(cos(a), 0, sin(a)) * 0.06
+		var root := Vector3(cos(a), 0, sin(a)) * 0.04
+		for vtx in [[root - side, Vector2(0, 1)], [root + side, Vector2(1, 1)], [root + Vector3(0, 0.26, 0) + lean, Vector2(0.5, 0)]]:
+			st.set_uv(vtx[1])
+			st.set_normal(Vector3.UP)
+			st.add_vertex(vtx[0])
+	var sh := Shader.new()
+	sh.code = GRASS_SHADER
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	mat.set_shader_parameter("base", theme.grass[0])
+	mat.set_shader_parameter("tip", theme.grass[1])
+	var area := 0.0
+	for r in lawns:
+		area += (r as Rect2).get_area()
+	var count := mini(int(area * 9.0), 60000)
+	var spots: Array = []
+	var tries := 0
+	while spots.size() < count and tries < count * 3:
+		tries += 1
+		var pick := _rng.randf() * area
+		var rr: Rect2 = lawns[0]
+		for r in lawns:
+			pick -= (r as Rect2).get_area()
+			if pick <= 0.0:
+				rr = r
+				break
+		var p := Vector2(_rng.randf_range(rr.position.x, rr.end.x), _rng.randf_range(rr.position.y, rr.end.y))
+		var blocked := false
+		for h in _holes + no_grass:
+			if (h as Rect2).grow(0.2).has_point(p):
+				blocked = true
+				break
+		if not blocked:
+			spots.append(Vector3(p.x, 0.0, p.y))
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = st.commit()
+	mm.instance_count = spots.size()
+	for i in spots.size():
+		var scl := _rng.randf_range(0.6, 1.4)
+		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(scl, scl * _rng.randf_range(0.7, 1.3), scl))
+		mm.set_instance_transform(i, Transform3D(basis, spots[i]))
+		var tone := _rng.randf_range(0.8, 1.15)
+		mm.set_instance_color(i, Color(tone, tone, tone))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
 
 
 # --------------------------------------------------------------------------
-# Layout 0: NEON YARD (medium) - a container yard at night
+# Layout 0: NEON YARD (medium) - a container yard
 # --------------------------------------------------------------------------
 
 func _layout_yard() -> void:
@@ -898,42 +1637,52 @@ func _layout_yard() -> void:
 	_jump_pad(Vector3(9.6, 0, 18), 14.5)
 	_glow(Vector3(0, 1.6, 18), theme.accent_a, 10.0, 1.6)
 
-	# Brick warehouse with a gantry crane standing over it.
-	_hut(Vector3(-23, 0, 13), "block_b")
-	_box(Vector3(-26.2, 0.6, 16.2), Vector3(1.2, 1.2, 1.2), "crate", true, 0.2)
-	_box(Vector3(-26.5, 4.5, 7.6), Vector3(0.9, 9, 0.9), "c_yellow")
-	_box(Vector3(-26.5, 4.5, 19.0), Vector3(0.9, 9, 0.9), "c_yellow")
-	_box(Vector3(-26.5, 9.2, 13.3), Vector3(1.1, 0.9, 12.6), "c_yellow", true, 0.0, false)
-	_box(Vector3(-26.5, 8.1, 13.3), Vector3(0.1, 1.4, 0.1), "dark", true, 0.0, false)
-	_box(Vector3(-26.5, 6.2, 13.3), Vector3(2.5, 2.4, 5.0), "c_teal", true, 0.0, false)
-	_box(Vector3(-26.5, 9.75, 13.3), Vector3(0.3, 0.2, 0.3), "beacon", true, 0.0, false)
+	# Two-storey brick warehouse with a roof terrace, and a gantry crane over it.
+	_building(Vector3(-23, 0, 13), 9.0, 9.0, 2, "block_b")
+	_box(Vector3(-26.5, 5.5, 7.4), Vector3(0.9, 11, 0.9), "c_yellow")
+	_box(Vector3(-26.5, 5.5, 18.6), Vector3(0.9, 11, 0.9), "c_yellow")
+	_box(Vector3(-26.5, 11.2, 13.0), Vector3(1.1, 0.9, 12.2), "c_yellow", true, 0.0, false)
+	_box(Vector3(-26.5, 10.3, 13.0), Vector3(0.1, 1.0, 0.1), "dark", true, 0.0, false)
+	_box(Vector3(-26.5, 9.3, 13.0), Vector3(2.5, 1.4, 4.0), "c_teal", true, 0.0, false)
+	_box(Vector3(-26.5, 11.75, 13.0), Vector3(0.3, 0.2, 0.3), "beacon", true, 0.0, false)
 
 	# Shipping containers: stacks to fight around and climb.
 	_container(Vector3(21, 0, 13), 0.1, "c_red")
 	_container(Vector3(21.4, 2.6, 13.2), 0.1, "c_blue", 4.5)
 	_box(Vector3(17.1, 0.65, 13.0), Vector3(1.3, 1.3, 1.3), "crate", true, 0.3)
-	_container(Vector3(25.6, 0, 17.6), PI / 2 + 0.08, "c_yellow")
-	_container(Vector3(-27.5, 0, -3), PI / 2, "c_teal")
+	_container(Vector3(25.6, 0, 18.6), PI / 2 + 0.08, "c_yellow")
+	_container(Vector3(-28.3, 0, -3), PI / 2, "c_teal")
 	_container(Vector3(12.5, 0, 21.2), 0.0, "c_blue", 4.5)
 
-	# Concrete blast wall, barriers, barrels.
+	# Drainage tunnels under the yard (one each side of the platform).
+	_tunnel(8.0, -14.0, 14.0)
+
+	# Blast wall, barriers, barrels, planters with trees.
 	_box(Vector3(16, 2, -5), Vector3(1, 4, 9), "block_a")
 	_box(Vector3(16, 4.1, -5), Vector3(1.2, 0.16, 9.2), "accent_a", true, 0.0, false)
-	_box(Vector3(9, 0.6, -9.5), Vector3(5, 1.2, 0.6), "stripes")
-	_box(Vector3(-12, 0.6, -11), Vector3(0.6, 1.2, 5), "stripes")
+	_box(Vector3(9, 0.6, -12.0), Vector3(5, 1.2, 0.6), "stripes")
+	_box(Vector3(-12, 0.6, -13.5), Vector3(0.6, 1.2, 5), "stripes")
 	_barrel(Vector3(20, 0, -20.5))
 	_barrel(Vector3(21.3, 0, -19.8))
 	_barrel(Vector3(-3, 0, 22.6))
 	_barrel(Vector3(30.5, 0, 9))
+	for p in [Vector3(29.5, 0, -16), Vector3(-20.5, 0, -22)]:
+		_box(p + Vector3(0, 0.35, 0), Vector3(3.2, 0.7, 3.2), "block_a")
+		_box(p + Vector3(0, 0.71, 0), Vector3(2.8, 0.04, 2.8), "soil", true, 0.0, false)
+		_tree(p + Vector3(0, 0.7, 0), 0.85)
+	_bush(Vector3(-30.5, 0, -22.5), 1.1)
+	_bush(Vector3(-9.0, 0, -22.6), 1.0)
+	_lawn(Rect2(-31.8, -23.8, 6.0, 3.2))
+	_lawn(Rect2(-14.0, -23.8, 6.0, 2.2))
 	# Neon signs on the perimeter.
 	_sign(Vector3(-10, 3.0, half_z - 0.08), Vector3(7, 1.6, 0.1), "accent_a")
 	_sign(Vector3(half_x - 0.08, 3.0, -12), Vector3(0.1, 1.4, 6), "accent_b")
 	_glow(Vector3(24, 3.5, -4), theme.accent_b, 12.0, 1.5)
 
 	_spawns([Vector3(28, 0.1, 21.5), Vector3(29.5, 0.1, -6), Vector3(-18, 0.1, 21.5),
-		Vector3(24, 0.1, -21.5), Vector3(-23, 0.1, 13)])
+		Vector3(24, 0.1, -21.5), Vector3(-21, 3.5, 11), Vector3(0, -DEPTH + 0.1, 8.0)])
 	_pickups([["weapon", Vector3(0, 3.0, 3.9)], ["weapon", Vector3(-5.0, 3.0, 19.6)],
-		["health", Vector3(-25.6, 0.0, 10.4)], ["health", Vector3(20.0, 0.0, 2.0)]])
+		["health", Vector3(-24.5, 6.8, 15.0)], ["health", Vector3(20.0, 0.0, 2.0)], ["weapon", Vector3(3.0, -DEPTH, -8.0)]])
 
 
 # --------------------------------------------------------------------------
@@ -951,35 +1700,35 @@ func _layout_pit() -> void:
 	_cyl(Vector3(0, 5.4, 0), 1.1, 0.3, "block_c", false, false)
 	_glow(Vector3(0, 6.2, 0), theme.accent_a, 13.0, 2.6, false)
 
-	# Raised sandstone ledges along the east and west walls, each with a ramp.
-	_box(Vector3(15.5, 1.25, -8), Vector3(5, 2.5, 8), "block_a")
-	_box(Vector3(15.5, 2.2, -8), Vector3(5.1, 0.14, 8.1), "accent_b", true, 0.0, false)
-	_wedge(Vector3(15.5, 0, -0.75), Vector3(6.5, 2.5, 5), PI / 2, "deck")
-	_box(Vector3(13.2, 3.0, -8), Vector3(0.3, 1.0, 5), "stripes")
+	# Two-storey smelter houses in two corners, with roof terraces.
+	_building(Vector3(-13.0, 0, 7.3), 8.0, 8.6, 2, "house", {"roof": "block_c"})
+	_box(Vector3(-8.2, 0.7, 4.2), Vector3(1.4, 1.4, 1.4), "crate", true, 0.3)
 
 	# Stone arches over the north and south lanes.
-	_box(Vector3(2.8, 1.8, 9.2), Vector3(1.0, 3.6, 1.0), "block_a")
-	_box(Vector3(-2.8, 1.8, 9.2), Vector3(1.0, 3.6, 1.0), "block_a")
-	_box(Vector3(0, 4.0, 9.2), Vector3(7.0, 0.8, 1.2), "block_a")
-	_box(Vector3(0, 3.56, 9.2), Vector3(4.4, 0.1, 1.24), "accent_a", true, 0.0, false)
+	_box(Vector3(2.8, 1.8, 9.6), Vector3(1.0, 3.6, 1.0), "block_a")
+	_box(Vector3(-2.8, 1.8, 9.6), Vector3(1.0, 3.6, 1.0), "block_a")
+	_box(Vector3(0, 4.0, 9.6), Vector3(7.0, 0.8, 1.2), "block_a")
+	_box(Vector3(0, 3.56, 9.6), Vector3(4.4, 0.1, 1.24), "accent_a", true, 0.0, false)
 
-	# Iron plates as corner cover, a round column, crates.
-	_box(Vector3(10, 1, 8), Vector3(4, 2, 0.6), "block_b")
-	_box(Vector3(11.7, 1, 6.3), Vector3(0.6, 2, 4), "block_b")
-	_box(Vector3(-8, 1, 8.5), Vector3(4, 2, 0.6), "block_b")
-	_box(Vector3(-9.7, 1, 6.8), Vector3(0.6, 2, 4), "block_b")
-	_cyl(Vector3(10.2, 0, -2.8), 0.65, 3.4, "block_a")
-	_box(Vector3(7.5, 0.6, -8), Vector3(0.6, 1.2, 4), "stripes")
-	_box(Vector3(-4.2, 0.75, 10.4), Vector3(1.5, 1.5, 1.5), "crate", true, 0.3)
-	_barrel(Vector3(16.5, 0, 11.0))
-	_barrel(Vector3(-16.6, 0, -6.5))
-	_jump_pad(Vector3(0, 0, 5.2), 10.5)
+	# A crawl tunnel right under the forge, from wall to wall.
+	_tunnel(0.0, -18.0, 18.0, false)
+
+	# Iron plates, a column, crates, barrels.
+	_box(Vector3(10, 1, 9.0), Vector3(4, 2, 0.6), "block_b")
+	_box(Vector3(-6.5, 1, -6.0), Vector3(0.6, 2, 4), "block_b")
+	_cyl(Vector3(9.6, 0, -4.4), 0.65, 3.4, "block_a")
+	_box(Vector3(5.0, 0.6, -9.4), Vector3(4, 1.2, 0.6), "stripes")
+	_box(Vector3(-3.6, 0.75, 11.0), Vector3(1.5, 1.5, 1.5), "crate", true, 0.3)
+	_barrel(Vector3(17.2, 0, 11.6))
+	_barrel(Vector3(17.6, 0, -4.0))
+	_jump_pad(Vector3(0, 0, 6.2), 10.5)
 
 	# Lava channels along the north and south walls.
-	_lava(Vector3(0, 0, 13.2), Vector3(26.0, 0.1, 1.6))
+	_lava(Vector3(0, 0, 14.2), Vector3(26.0, 0.1, 1.6))
 
-	_spawns([Vector3(15, 0.1, 10.5), Vector3(0, 0.1, 11.2), Vector3(-9, 0.1, 11), Vector3(15.5, 2.6, -9)])
-	_pickups([["weapon", Vector3(2.2, 2.0, 2.2)], ["health", Vector3(15.5, 2.5, -5.5)]])
+	_spawns([Vector3(15, 0.1, 11.0), Vector3(0, 0.1, 12.2), Vector3(-16, 0.1, 12.0), Vector3(-12, 3.5, 7.0), Vector3(8, -DEPTH + 0.1, 0)])
+	_pickups([["weapon", Vector3(2.2, 2.0, 2.2)], ["health", Vector3(-14.5, 6.8, 9.0)]])
+	_pickups([["weapon", Vector3(0, -DEPTH, 0)]], false)
 
 
 # --------------------------------------------------------------------------
@@ -995,7 +1744,7 @@ func _layout_frost() -> void:
 	_box(Vector3(0, 5, 0), Vector3(3.6, 2, 3.6), "block_c", false)
 	_box(Vector3(0, 5.6, 0), Vector3(3.7, 0.12, 3.7), "accent_b", false, 0.0, false)
 	_cyl(Vector3(0, 6, 0), 0.1, 5.5, "dark", false, false)
-	_prop(_unit_sphere, "beacon", Vector3(0, 11.6, 0), Vector3.ONE * 0.22)
+	_ball(Vector3(0, 11.6, 0), Vector3.ONE * 0.22, "beacon", false)
 	_glow(Vector3(0, 7.5, 0), theme.accent_a, 18.0, 2.6, false)
 
 	# Steel bridges to the north/south decks; each deck has a ramp at both ends.
@@ -1030,6 +1779,10 @@ func _layout_frost() -> void:
 	_box(Vector3(30, 4.2, -5), Vector3(0.5, 1.2, 4), "stripes")
 	_glow(Vector3(34, 2.6, 0), theme.accent_a, 11.0, 2.0)
 
+	# Two-storey comms buildings with roof terraces, and bunker tunnels.
+	_building(Vector3(22, 0, -24), 9.0, 9.0, 2, "block_a", {"roof": "block_c"})
+	_tunnel(-8.0, -18.0, 18.0)
+
 	# Mid-field: walls of ice blocks, supply crates, barriers, pines.
 	_box(Vector3(20, 2, -12), Vector3(1.4, 4, 10), "block_b")
 	_box(Vector3(22, 1.5, 13), Vector3(6, 3, 1.4), "block_b")
@@ -1037,24 +1790,22 @@ func _layout_frost() -> void:
 	_box(Vector3(14.7, 1.0, -13), Vector3(2, 2, 2), "crate", true, -0.3)
 	_box(Vector3(-10, 1.0, -27), Vector3(2, 2, 2), "crate", true, 0.3)
 	_box(Vector3(-11.6, 0.65, -25.2), Vector3(1.3, 1.3, 1.3), "crate", true, 0.6)
-	_box(Vector3(8, 0.6, -9), Vector3(5, 1.2, 0.6), "stripes")
-	_box(Vector3(-8, 0.6, -12), Vector3(0.6, 1.2, 5), "stripes")
-	_box(Vector3(26, 0.6, -22), Vector3(6, 1.2, 0.6), "stripes")
+	_box(Vector3(8, 0.6, -11.5), Vector3(5, 1.2, 0.6), "stripes")
+	_box(Vector3(-8, 0.6, -14), Vector3(0.6, 1.2, 5), "stripes")
 	_box(Vector3(30, 0.6, 21), Vector3(0.6, 1.2, 6), "stripes")
 	_barrel(Vector3(40.5, 0, 14))
 	_barrel(Vector3(-22, 0, 30.2))
 	_barrel(Vector3(6, 0, 29.5))
-	for p in [Vector3(41.5, 0, -12), Vector3(-12, 0, 30), Vector3(18, 0, -29.5), Vector3(31, 0, 30), Vector3(-36, 0, 24.5)]:
-		_pine(p, _rng.randf_range(0.9, 1.25))
+	for p in [Vector3(41.5, 0, -10), Vector3(-12, 0, 30), Vector3(15, 0, -30), Vector3(31, 0, 30), Vector3(-36, 0, 24.5), Vector3(30, 0, -17)]:
+		_pine(p, _rng.randf_range(0.9, 1.3))
 	_jump_pad(Vector3(7.2, 0, 7.2), 15.5)
 	_jump_pad(Vector3(40, 0, -18), 16.0)
-	_glow(Vector3(22, 4.0, -24), theme.accent_b, 14.0, 1.6)
 	_glow(Vector3(-30, 4.0, 22), theme.accent_a, 14.0, 1.6)
 
 	_spawns([Vector3(41, 0.1, 27), Vector3(41, 0.1, -27), Vector3(24, 0.1, 29), Vector3(39, 0.1, 0),
-		Vector3(30, 0.1, -16), Vector3(-24, 0.1, 29)])
+		Vector3(30, 0.1, -14), Vector3(-24, 0.1, 29), Vector3(22, 3.5, -23)])
 	_pickups([["weapon", Vector3(3.2, 4.0, 3.2)], ["weapon", Vector3(6.5, 4.0, 22.5)], ["weapon", Vector3(36, 3.6, -4)],
-		["health", Vector3(38, 0.0, 0)], ["health", Vector3(0, 0.0, 11)]])
+		["health", Vector3(38, 0.0, 0)], ["health", Vector3(0, -DEPTH, -8.0)], ["weapon", Vector3(20.0, 6.8, -25.5)]])
 
 
 # --------------------------------------------------------------------------
@@ -1063,19 +1814,24 @@ func _layout_frost() -> void:
 
 func _build_scenery() -> void:
 	var rich: bool = Settings.v("scenery") == 1
-	# Apron outside the walls so the horizon is not empty.
-	var apron := PlaneMesh.new()
-	apron.size = Vector2(700, 700)
-	var ground_col: Color = theme.mats.ground[0]
-	var am := StandardMaterial3D.new()
-	am.albedo_color = ground_col.darkened(0.45)
-	am.roughness = 0.7
-	_prop(apron, am, Vector3(0, -0.6, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if not indoor:
+		var apron := PlaneMesh.new()
+		apron.size = Vector2(700, 700)
+		var ground_col: Color = theme.mats.ground[0]
+		var am := StandardMaterial3D.new()
+		am.albedo_color = ground_col.darkened(0.4)
+		am.roughness = 0.7
+		_add(apron, am, Transform3D(Basis(), Vector3(0, -0.6, 0)), false)
 	match theme.scenery:
-		"city": _scenery_city(30 if rich else 14)
+		"city": _scenery_city(30 if rich else 14, 6.0)
 		"rocks": _scenery_spires(46 if rich else 20, Color(0.2, 0.13, 0.11), theme.accent_a, false)
 		"ice": _scenery_spires(54 if rich else 22, Color(0.25, 0.42, 0.52), theme.accent_a, true)
+		"suburb": _scenery_suburb(rich)
+		"stadium":
+			_scenery_city(22 if rich else 10, 40.0)
+			_scenery_trees(30 if rich else 12, 4.0, 30.0)
 	if rich:
+		_grass()
 		if theme.scenery == "ice":
 			_snow_drifts()
 		_motes()
@@ -1089,29 +1845,26 @@ func _ring_spot(i: int, n: int, near: float, far: float) -> Vector3:
 	return Vector3(dir.x * d, 0, dir.y * d)
 
 
-## Night-city skyline: dark towers with glowing window bands.
-func _scenery_city(count: int) -> void:
-	var tower := BoxMesh.new()
+## Skyline: towers with glowing window bands at night, glazed by day.
+func _scenery_city(count: int, near: float) -> void:
 	var body := StandardMaterial3D.new()
-	body.albedo_color = Color(0.04, 0.045, 0.085)
+	body.albedo_color = Color(0.04, 0.045, 0.085) if time == "night" else Color(0.32, 0.36, 0.44)
 	body.roughness = 0.5
+	var box := BoxMesh.new()
 	for i in count:
-		var p := _ring_spot(i, count, 6.0, 55.0)
+		var p := _ring_spot(i, count, near, near + 50.0)
 		var w := _rng.randf_range(7.0, 16.0)
 		var h := _rng.randf_range(10.0, 44.0)
-		var t := _prop(tower, body, p + Vector3(0, h * 0.5, 0), Vector3(w, h, w))
-		t.rotation.y = _rng.randf() * 0.6
-		t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var neon: String = "accent_a" if i % 2 == 0 else "accent_b"
+		var yaw := _rng.randf() * 0.6
+		_add(box, body, Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(w, h, w)), p + Vector3(0, h * 0.5, 0)), false)
+		var neon: Material = _mats["accent_a" if i % 2 == 0 else "accent_b"] if night_amount > 0.9 else _mats["window"]
 		var bands := 2 + _rng.randi() % 4
 		for b in bands:
 			var y := h * (0.25 + 0.7 * b / float(bands))
-			var band := _prop(tower, neon, p + Vector3(0, y, 0), Vector3(w + 0.15, 0.22, w + 0.15))
-			band.rotation.y = t.rotation.y
-			band.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_add(box, neon, Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(w + 0.15, 0.22 if night_amount > 0.9 else 1.2, w + 0.15)), p + Vector3(0, y, 0)), false)
 
 
-## Jagged spires: dark rock for the pit, glowing crystals for the ice field.
+## Jagged spires: rock for the pit, glowing crystals for the ice field.
 func _scenery_spires(count: int, col: Color, glow: Color, crystal: bool) -> void:
 	var cone := CylinderMesh.new()
 	cone.top_radius = 0.0
@@ -1119,12 +1872,12 @@ func _scenery_spires(count: int, col: Color, glow: Color, crystal: bool) -> void
 	cone.height = 1.0
 	cone.radial_segments = 6
 	var rock := StandardMaterial3D.new()
-	rock.albedo_color = col
+	rock.albedo_color = col if time == "night" else col.lightened(0.35)
 	rock.roughness = 0.3 if crystal else 0.8
 	if crystal:
 		rock.emission_enabled = true
 		rock.emission = glow
-		rock.emission_energy_multiplier = 0.2
+		rock.emission_energy_multiplier = 0.2 * neon_scale
 		rock.rim_enabled = true
 	else:
 		var t: Array = _tex("rock")
@@ -1137,16 +1890,33 @@ func _scenery_spires(count: int, col: Color, glow: Color, crystal: bool) -> void
 		var p := _ring_spot(i, count, 2.0, 60.0)
 		var h := _rng.randf_range(5.0, 30.0) * (1.5 if i % 7 == 0 else 1.0)
 		var r := h * _rng.randf_range(0.14, 0.3)
-		var s := _prop(cone, rock, p + Vector3(0, h * 0.5 - 0.6, 0), Vector3(r, h, r))
-		s.rotation = Vector3(_rng.randf_range(-0.12, 0.12), _rng.randf() * TAU, _rng.randf_range(-0.12, 0.12))
-		s.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var basis := Basis.from_euler(Vector3(_rng.randf_range(-0.12, 0.12), _rng.randf() * TAU, _rng.randf_range(-0.12, 0.12)))
+		_add(cone, rock, Transform3D(basis.scaled(Vector3(r, h, r)), p + Vector3(0, h * 0.5 - 0.6, 0)), false)
 		if i % 3 == 0 and not crystal:
-			# A pool of lava at the foot of some spires.
-			var disc := CylinderMesh.new()
-			disc.top_radius = r * 1.8
-			disc.bottom_radius = r * 1.8
-			disc.height = 0.1
-			_prop(disc, "lava", p + Vector3(0, -0.5, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_add(_unit_cyl, _mats["lava"], Transform3D(Basis.from_scale(Vector3(r * 1.8, 0.1, r * 1.8)), p + Vector3(0, -0.5, 0)), false)
+
+
+func _scenery_trees(count: int, near: float, far: float) -> void:
+	for i in count:
+		var p := _ring_spot(i, count, near, far)
+		_tree(p, _rng.randf_range(1.2, 1.9), false)
+
+
+## Rows of houses and trees beyond the fences.
+func _scenery_suburb(rich: bool) -> void:
+	var walls := ["siding0", "siding1", "siding2", "siding3"]
+	var n := 24 if rich else 12
+	var box := BoxMesh.new()
+	var prism := PrismMesh.new()
+	for i in n:
+		var p := _ring_spot(i, n, 8.0, 22.0)
+		var w := _rng.randf_range(8.0, 11.0)
+		var d := _rng.randf_range(7.0, 9.0)
+		var basis := Basis(Vector3.UP, atan2(p.x, p.z))
+		_add(box, _mats[walls[i % 4]], Transform3D(basis.scaled(Vector3(w, 5.5, d)), p + Vector3(0, 2.75, 0)), false)
+		_add(prism, _mats["block_c" if i % 2 == 0 else "roof_red"], Transform3D(basis.scaled(Vector3(w + 0.6, 2.4, d + 0.6)) * Basis(Vector3.UP, PI * 0.5), p + Vector3(0, 6.7, 0)), false)
+		_add(box, _mats["window"], Transform3D(basis.scaled(Vector3(w * 0.7, 1.0, d + 0.06)), p + Vector3(0, 3.6, 0)), false)
+	_scenery_trees(40 if rich else 16, 2.0, 30.0)
 
 
 ## Soft mounds of snow against the inside of the walls (visual only).
@@ -1160,10 +1930,10 @@ func _snow_drifts() -> void:
 			2: pos = Vector3(half_x - 0.4, 0, along * (half_z - 3.0))
 			_: pos = Vector3(-half_x + 0.4, 0, along * (half_z - 3.0))
 		var r := _rng.randf_range(1.2, 2.6)
-		_prop(_unit_sphere, "ground", pos, Vector3(r, r * 0.3, r)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_add(_unit_sphere, _mats["ground"], Transform3D(Basis.from_scale(Vector3(r, r * 0.3, r)), pos), false)
 
 
-## Glowing specks in the air: fireflies, embers or snow depending on the theme.
+## Glowing specks in the air: fireflies, embers or dust motes.
 func _motes() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -1184,15 +1954,16 @@ func _motes() -> void:
 	tex.height = 32
 	mat.albedo_texture = tex
 	var ramp := Gradient.new()
-	ramp.set_color(0, theme.motes[0] * 1.8)
-	ramp.set_color(1, theme.motes[1] * 1.8)
+	var bright := 1.8 if time == "night" else 0.8
+	ramp.set_color(0, theme.motes[0] * bright)
+	ramp.set_color(1, theme.motes[1] * bright)
 	var rise: float = theme.mote_rise
 	var p := CPUParticles3D.new()
 	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	p.mesh = QuadMesh.new()
 	p.material_override = mat
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	p.amount = int(half_x * half_z * 0.3)
+	p.amount = int(half_x * half_z * 0.2)
 	p.lifetime = 10.0
 	p.preprocess = 10.0
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
@@ -1203,7 +1974,7 @@ func _motes() -> void:
 	p.initial_velocity_max = 0.5 + absf(rise)
 	p.gravity = Vector3(0, rise * 0.4, 0)
 	p.scale_amount_min = 0.05
-	p.scale_amount_max = 0.14
+	p.scale_amount_max = 0.12
 	p.color_initial_ramp = ramp
 	p.position = Vector3(0, 4.5, 0)
 	add_child(p)
@@ -1220,36 +1991,37 @@ func _ray(from: Vector3, to: Vector3, from_inside := false) -> Dictionary:
 
 
 ## Must run after the static body has been in the tree for a physics frame.
+## Samples a 2 m grid with downward rays (several surfaces per column, so decks,
+## upper floors and underground rooms all count), links walkable neighbours and
+## keeps the largest connected component.
 func build_nav() -> void:
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	var points: Array = []            # Vector3
-	var cells := {}                    # Vector2i -> Array of point indices
+	var points: Array = []
+	var cells := {}
 	var x := -half_x + 1.0
 	while x < half_x:
 		var z := -half_z + 1.0
 		while z < half_z:
-			var top := 12.0
-			for layer in 4:
-				var hit := _ray(Vector3(x, top, z), Vector3(x, -0.5, z))
+			var top := 14.0
+			for layer in 7:
+				var hit := _ray(Vector3(x, top, z), Vector3(x, -DEPTH - 1.5, z))
 				if hit.is_empty():
 					break
 				var p: Vector3 = hit.position
 				top = p.y - 0.5
-				if hit.normal.y > 0.7 and p.y < 8.0:
-					# Standing room, and not inside a solid.
+				if hit.normal.y > 0.7 and p.y < 10.0:
 					if _ray(p + Vector3(0, 0.15, 0), p + Vector3(0, 1.9, 0), true).is_empty():
 						var key := Vector2i(roundi(x), roundi(z))
 						if not cells.has(key):
 							cells[key] = []
 						cells[key].append(points.size())
 						points.append(p)
-				if top < 0.0:
+				if top < -DEPTH - 1.0:
 					break
 			z += NAV_STEP
 		x += NAV_STEP
 
-	# Link walkable neighbours.
 	var links: Array = []
 	var adj := {}
 	var step := int(NAV_STEP)
@@ -1267,7 +2039,6 @@ func build_nav() -> void:
 						adj[i].append(j)
 						adj[j].append(i)
 
-	# Keep only the largest connected component so every goal is reachable.
 	var seen := {}
 	var best: Array = []
 	for start in adj:
@@ -1300,13 +2071,11 @@ func build_nav() -> void:
 func _walkable(a: Vector3, b: Vector3) -> bool:
 	if absf(a.y - b.y) > 1.25:
 		return false
-	# Ground must be continuous under the segment.
 	for t in [0.25, 0.5, 0.75]:
 		var m := a.lerp(b, t)
 		var hit := _ray(m + Vector3(0, 1.0, 0), m + Vector3(0, -0.6, 0))
 		if hit.is_empty() or absf(hit.position.y - m.y) > 0.45:
 			return false
-	# Body-width corridor must be clear (the low ray also stops at kerbs).
 	var dir := (b - a)
 	dir.y = 0.0
 	var side := dir.normalized().cross(Vector3.UP) * 0.38
@@ -1324,8 +2093,6 @@ func find_path(from: Vector3, to: Vector3) -> PackedVector3Array:
 	return nav.get_point_path(_closest_node(from), _closest_node(to))
 
 
-## Nearest nav node that can actually be reached in a straight line from
-## `pos` (the plain nearest node may be on the other side of a wall).
 func _closest_node(pos: Vector3) -> int:
 	var near: Array = []
 	for id in _nav_ids:

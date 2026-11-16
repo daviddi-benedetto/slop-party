@@ -13,6 +13,7 @@ extends RefCounted
 ##   block     LB or RB                    Q
 ##   reload    X                           R
 ##   interact  Y (pick up weapon)          E
+##   crouch    right-stick click (R3)      C or Ctrl  (slide when running)
 ##
 ## Look is applied every rendered frame (update_look) for the lowest latency;
 ## buttons and movement are sampled every physics tick (update_buttons).
@@ -27,6 +28,8 @@ var device := KEYBOARD
 var move := Vector2.ZERO      # x = strafe right, y = forward
 var fire := false
 var aim := false              # held
+var crouch := false           # held (crouch, or slide when running)
+var jump_held := false        # held (jetpack)
 var jump := false             # edge triggered
 var dash := false             # edge triggered
 var block := false            # edge triggered
@@ -100,7 +103,9 @@ func update_buttons(_player, _delta: float) -> void:
 		move = k.normalized()
 		fire = Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
 		aim = Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
-		jump = _edge("jump", Input.is_physical_key_pressed(KEY_SPACE))
+		jump_held = Input.is_physical_key_pressed(KEY_SPACE)
+		jump = _edge("jump", jump_held)
+		crouch = Input.is_physical_key_pressed(KEY_C) or Input.is_physical_key_pressed(KEY_CTRL)
 		dash = _edge("dash", Input.is_physical_key_pressed(KEY_SHIFT))
 		block = _edge("block", Input.is_physical_key_pressed(KEY_Q))
 		reload = _edge("reload", Input.is_physical_key_pressed(KEY_R))
@@ -113,7 +118,9 @@ func update_buttons(_player, _delta: float) -> void:
 		move = Vector2(m.x, -m.y).limit_length(1.0)
 		fire = Input.get_joy_axis(device, JOY_AXIS_TRIGGER_RIGHT) > 0.3
 		aim = Input.get_joy_axis(device, JOY_AXIS_TRIGGER_LEFT) > 0.3
-		jump = _edge("jump", Input.is_joy_button_pressed(device, JOY_BUTTON_A))
+		jump_held = Input.is_joy_button_pressed(device, JOY_BUTTON_A)
+		jump = _edge("jump", jump_held)
+		crouch = Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_STICK)
 		dash = _edge("dash", Input.is_joy_button_pressed(device, JOY_BUTTON_B) or Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_STICK))
 		block = _edge("block", Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_SHOULDER) or Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER))
 		reload = _edge("reload", Input.is_joy_button_pressed(device, JOY_BUTTON_X))

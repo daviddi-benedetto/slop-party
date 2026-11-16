@@ -8,15 +8,18 @@ has not been verified.
 
 - Local splitscreen FPS, 1–6 humans plus optional bots, one PC, one screen.
 - One mode: free-for-all deathmatch, first to N KOs (5/10/15/20/30).
-- Three maps of different sizes, themes and music (see `map.gd`, `sfx.gd`):
-  Neon Yard, Ember Pit, Frost Line. Chosen in the lobby.
+- Six maps, each with its own theme and song (see `map.gd`, `map_places.gd`,
+  `sfx.gd`): Neon Yard, Ember Pit, Frost Line, Museum, Stadium, Suburb.
+  Every match also rolls a time of day (day / sunset / night, or the lobby's
+  choice) and a weather (clear / rain / fog / snow).
 - ROUNDS-style progression: **on every death** the dead player is shown three
   random cards and must pick one before respawning. Cards permanently modify
   that player's stats for the match and stack.
 - Twelve weapons (everyone starts with the Blaster). Weapons come from weapon
   cards in the deck and from pickup pads (press interact); health pads too.
 - Abilities everyone has: jump, dash, block (short guard that negates damage
-  and reflects bullets; 4 s cooldown) and aim down sights.
+  and reflects bullets; 4 s cooldown), aim down sights, crouch, slide, wall
+  run, wall jump and mantle.
 - Art direction: dark, moody arenas with neon trims, coloured point lights and
   heavy bloom, after ROUNDS. Plush animal characters (animal, colour, hat and
   face chosen per player). Chunky UI with the Fredoka font on near-black
@@ -54,6 +57,9 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `--map=N` picks the arena (0 Neon Yard, 1 Ember Pit, 2 Frost Line).
 - `--force-aim` makes everyone aim down sights (to check the sight picture).
 - `--seed=N` seeds the random generator so runs are comparable.
+- `--time=day|sunset|night`, `--weather=clear|rain|fog|snow` fix the conditions.
+- `--cards=2x Scope,Jetpack` gives every player those cards; `--weapon=N` a weapon.
+- `tools/contact_sheet.gd` combines screenshots into a grid (see its header).
 - `--lobby-demo=H,B` shows the lobby with H fake humans and B bots seated.
 - `--pause-at=S` opens the pause menu after S seconds.
 - `--options-demo` opens the Options screen in the lobby after one second.
@@ -84,7 +90,8 @@ parse error in one script.
 | `scripts/stage.gd` | Small sunny 3D "showroom" (sky, hills, podiums, camera) behind the lobby and results. |
 | `scripts/game.gd` | One match: world, splitscreen viewports, cameras, countdown, scoring, respawn, explosions, pause menu, aim assist, hand-over to results. |
 | `scripts/results.gd` | Victory screen: podium, crown, confetti, results table. |
-| `scripts/map.gd` | All arenas: `MAPS` (layouts) and `THEMES` (palette, sky, light, scenery), materials, spawn points, pickup spots, jump pads, bot nav graph. |
+| `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day/weather lighting, procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. |
+| `scripts/map_places.gd` | Layouts 3-5 (Museum, Stadium, Suburb) built with the map.gd helpers. |
 | `scripts/player.gd` | `CharacterBody3D`: movement, weapon, health, status effects, feedback values, death → card pick → respawn. |
 | `scripts/character.gd` | The plush animal model (6 species, 11 hats, 7 faces) and its procedural animation. |
 | `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
@@ -329,6 +336,63 @@ by the kerb failing the nav link test), `_pine()`. `_glow()` adds shadowless
 coloured point lights. The bot nav graph is generated per map with no extra
 data.
 
+### Map toolkit (`map.gd`)
+
+- **Batching:** `_add(mesh, material, transform)` queues static geometry;
+  `_flush()` merges everything per material into one MeshInstance at the end
+  of `build()`. Use `_box` / `_visual` / `_cyl` / `_rod` / `_ball` for static
+  pieces; only animated things (pad rings) and lights are separate nodes.
+- **Ground holes:** `_hole(rect)` cuts the ground slab, which is built after
+  the layout (`_build_floor`). `_surface()` decals (roads, paths) are split
+  around holes that exist when they are called, so cut holes first.
+- **Pieces:** `_wall_x` / `_wall_z` (walls with door/window openings),
+  `_stairs` (hidden ramp + drawn steps), `_slab` (floor with holes),
+  `_building` (multi-storey with stairs, flat roof terrace or `_gable` roof),
+  `_tunnel` (underground passage with ramps at both ends), `_basement`
+  (room below ground), `_tree` / `_bush` (noise-displaced leaf clusters),
+  `_pine`, `_lamp_post`, `_container`, `_sign`, `_lava`, `_jump_pad`,
+  `_lawn` (grass area) and `no_grass` (rects kept clear).
+- **Time of day:** `_build_environment` picks night (theme values) or the
+  DAY / SUNSET presets plus theme overrides. It sets `light_scale` (point
+  lights), `neon_scale` (emission) and `night_amount` (windows, street lamps,
+  floodlights) which the builders read. Indoor lights divide by light_scale so
+  they stay on in daylight.
+- **Weather:** changes clouds, fog, sun and wetness (materials get glossier in
+  rain). `game.gd::_make_weather` adds a GPU particle emitter per camera,
+  on that player's private layer, following the camera. Lightning flashes
+  (`flash_lightning`) and thunder happen in night/sunset rain.
+
+### Parkour, jetpack, scopes (`player.gd`, `viewmodel.gd`, `game.gd`)
+
+- **Wall run:** `_find_wall` ray-casts left and right from the chest. While
+  airborne, moving forward and fast enough, the player sticks to the wall for
+  up to `stats.wallrun_time`, gravity is replaced by a slow sink, and jumping
+  pushes off the wall (and refreshes air jumps). The same wall cannot be
+  re-run immediately. `wall_side` / `wall_tilt` roll the camera and gun.
+- **Slide:** crouch while running on the ground: a speed boost that decays,
+  steerable a little; the capsule shrinks (`_set_crouch`) and the camera
+  drops via `crouch_amount`. Jumping out of a slide keeps the speed. Air
+  movement no longer bleeds speed, so slide hops and wall jumps carry.
+- **Mantle:** `_find_ledge` looks for a ledge 0.4-2.0 m above the feet just
+  ahead with headroom on top, and gives a vault impulse.
+- **Jetpack (card):** `stats.jetpack` seconds of fuel; holding jump in the
+  air after 0.18 s thrusts upward. Refuels on the ground. The character shows
+  canisters and flames (`character.set_jetpack`); the HUD shows a fuel arc.
+- **Scopes (cards):** `stats.scope` > 1 gives the gun a scope whose lens shows
+  a live picture: `game.gd::_ensure_scope` creates a 384 px SubViewport with
+  a camera that copies the player's camera at `fov / scope`; it only renders
+  while aiming. `viewmodel.gd` puts that texture on the lens with a reticle
+  shader and moves the gun so the lens is centred when aiming. `red_dot`
+  draws a holographic sight. Weapons with `zoom < 0.5` (Rail) keep their
+  full-screen scope instead.
+- **Weapon feel:** each weapon style has its own shot sound
+  (`sfx.gd` "shot_<style>") and fire animation (`viewmodel.gd` match on
+  `_style`, driven by `player.shot_t`). Bullet effects add a sound layer
+  (`_attribute_sound`) and tint bullets, trails and muzzle flashes
+  (`attr_color`: frost blue, toxic green, explosive orange, homing pink).
+- **Crosshair:** a circle whose radius is the current spread projected with
+  the camera FOV (`hud.gd`), shrinking when aiming, hidden behind scopes.
+
 ### Character customisation
 
 A look is `{kind, color, hat, face}`. The lobby edits one per seat and stores
@@ -481,9 +545,11 @@ re-path when stuck. Bots cannot use the jump pads or roofs deliberately.
 ## 7. Verified vs not verified
 
 Verified by automated runs on an RTX 2070 at 1920×1080:
-- Lobby (with customisation), Options screen, matches on all three maps
-  (2/3/4/5/6 views), card picker, pause menu and victory podium all render
-  with no script errors.
+- Lobby, Options screen, matches on all six maps in day, sunset and night,
+  rain/fog/snow, card picker, pause menu and victory podium render with no
+  script errors. The live scope lens shows a correct magnified view.
+- Six-view uncapped FPS: about 120 (Suburb, rain), 135 (Stadium, night),
+  165-185 (Neon Yard, Frost Line).
 - 6-way splitscreen with vsync off and no frame cap: roughly 190 FPS on the
   High preset.
 - A settings file is read and applied (Low preset, wide FOV, hard bots).
@@ -495,6 +561,8 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 - Whether it now *feels* smooth: the pacing and latency changes are sound in
   principle but were made on a 30 Hz remote display with no controller, so
   nobody has felt them.
+- Wall running, sliding, mantling and the jetpack have not been played by a
+  human (bots do not use them); the numbers are first guesses.
 - Block, aim down sights and the pick-up button were only exercised by bots
   (block, pickups) or a forced-aim screenshot; no human has pressed them.
 - Weapon balance. Every weapon and card runs without errors in bot matches,

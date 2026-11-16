@@ -40,6 +40,7 @@ const Viewmodel = preload("res://scripts/viewmodel.gd")
 const Results = preload("res://scripts/results.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
 const Pickup = preload("res://scripts/pickup.gd")
+const Cards = preload("res://scripts/cards.gd")
 
 var config := {}
 var world: Node3D
@@ -69,6 +70,7 @@ var _options
 var _fade: ColorRect
 var _results = null
 var _last_count := 99
+var _lightning_t := 8.0
 
 
 func _ready() -> void:
@@ -80,7 +82,15 @@ func _ready() -> void:
 	add_child(world)
 	map = Map.new()
 	world.add_child(map)
-	map.build(config.get("map", 0))
+	var map_i: int = config.get("map", 0)
+	var tod: String = config.get("time", "random")
+	if not tod in Map.TIMES:
+		tod = Map.TIMES[randi() % Map.TIMES.size()]
+	var allowed: Array = Map.THEMES[Map.MAPS[map_i].theme].weathers
+	var wx: String = config.get("weather", "random")
+	if not wx in allowed:
+		wx = allowed[randi() % allowed.size()]
+	map.build(map_i, tod, wx)
 
 	var parts: Array = config.participants
 	var bot_n := 0
@@ -108,6 +118,22 @@ func _ready() -> void:
 		players.append(p)
 		world.add_child(p)
 
+	# Dev flags: --cards=Name,Name gives every player those cards, --weapon=N a weapon.
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--cards="):
+			for n in a.substr(8).split(","):
+				for c in Cards.deck():
+					if c.name == n:
+						for p in players:
+							if c.has("weapon"):
+								p.weapon = c.weapon
+							else:
+								p.picked.append(c)
+		elif a.begins_with("--weapon="):
+			for p in players:
+				p.weapon = int(a.substr(9))
+	for p in players:
+		p.rebuild_stats()
 	_build_views()
 	_build_overlays()
 	get_viewport().size_changed.connect(_layout)
@@ -260,7 +286,71 @@ func _add_view(player) -> void:
 	hud.player = player
 	hud.game = self
 	layer.add_child(hud)
-	_views.append({"container": container, "viewport": vp, "camera": cam, "gun": gun, "player": player, "fov": 70.0})
+	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "player": player, "fov": 70.0,
+		"scope_vp": null, "scope_cam": null, "weather": null}
+	if player != null and map.weather in ["rain", "snow"] and not map.indoor:
+		view.weather = _make_weather(map.weather, player.viewmodel_layer_bit())
+	_views.append(view)
+
+
+## Falling rain or snow around one camera, visible only to that camera.
+func _make_weather(kind: String, layer: int) -> GPUParticles3D:
+	var rain := kind == "rain"
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(13, 0.5, 13)
+	pm.direction = Vector3(0.08, -1, 0.04)
+	pm.spread = 3.0 if rain else 25.0
+	pm.initial_velocity_min = 20.0 if rain else 1.2
+	pm.initial_velocity_max = 25.0 if rain else 2.6
+	pm.gravity = Vector3(0, -9.8, 0) if rain else Vector3(0.3, -0.5, 0)
+	if not rain:
+		pm.turbulence_enabled = true
+		pm.turbulence_noise_strength = 0.8
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = Color(0.75, 0.82, 0.95, 0.32) if rain else Color(1, 1, 1, 0.85)
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y if rain else BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.billboard_keep_scale = true
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.02, 0.6) if rain else Vector2(0.07, 0.07)
+	quad.material = mat
+	var p := GPUParticles3D.new()
+	p.process_material = pm
+	p.draw_pass_1 = quad
+	p.amount = 1600 if rain else 1000
+	p.lifetime = 1.1 if rain else 7.0
+	p.preprocess = p.lifetime
+	p.local_coords = false
+	p.visibility_aabb = AABB(Vector3(-20, -30, -20), Vector3(40, 40, 40))
+	p.layers = layer
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	world.add_child(p)
+	return p
+
+
+## A second camera rendering a magnified view for a scope's lens.
+func _ensure_scope(v: Dictionary) -> void:
+	if v.scope_vp != null:
+		return
+	var vp := SubViewport.new()
+	vp.size = Vector2i(384, 384)
+	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	Settings.apply_viewport(vp)
+	vp.scaling_3d_scale = 1.0
+	add_child(vp)
+	var c := Camera3D.new()
+	c.near = 0.3
+	c.far = 400.0
+	c.cull_mask = v.camera.cull_mask & ~v.player.viewmodel_layer_bit()
+	c.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	vp.add_child(c)
+	c.current = true
+	v.scope_vp = vp
+	v.scope_cam = c
+	v.gun.scope_texture = vp.get_texture()
 
 
 func _layout() -> void:
@@ -293,25 +383,39 @@ func _update_cameras(delta: float) -> void:
 		var cam: Camera3D = v.camera
 		if p == null:
 			var a := time * 0.1
-			cam.look_at_from_position(Vector3(cos(a) * map.half_x * 1.2, map.half_x * 0.55, sin(a) * map.half_z * 1.35), Vector3(0, 1.5, 0))
+			if map.indoor:
+				cam.look_at_from_position(Vector3(cos(a) * map.half_x * 0.6, 7.5, sin(a) * map.half_z * 0.6), Vector3(0, 2.0, 0))
+			else:
+				cam.look_at_from_position(Vector3(cos(a) * map.half_x * 1.2, map.half_x * 0.55, sin(a) * map.half_z * 1.35), Vector3(0, 1.5, 0))
 			continue
 		if p.alive:
 			# Head bob, strafe lean and recoil kick on top of the raw view.
 			var hip: float = 1.0 - p.aim_amount
 			var amt: float = p.bob_amount * bob_scale * (0.25 + 0.75 * hip)
 			var ph: float = p.bob_phase
-			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT - p.land_dip * 0.16 + sin(ph * 2.0) * 0.024 * amt, 0)
+			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT - 0.6 * p.crouch_amount - p.land_dip * 0.16 + sin(ph * 2.0) * 0.024 * amt, 0)
 			eye += Basis(Vector3.UP, p.yaw) * Vector3(cos(ph) * 0.02 * amt, 0, 0)
 			var sh: float = p.shake * p.shake * 0.035 * shake_amount
 			var kick: float = p.recoil * clampf(p.stats.recoil_kick, 0.4, 3.0) * 0.011
 			var euler := Vector3(
 				p.pitch + kick + sin(ph * 2.0) * 0.004 * amt + sin(time * 61.0) * sh,
 				p.yaw + sin(time * 47.0 + 1.3) * sh,
-				-p.strafe_amount * 0.028 * bob_scale + cos(ph) * 0.005 * amt + sin(time * 53.0 + 2.1) * sh * 0.8)
+				-p.strafe_amount * 0.028 * bob_scale + p.wall_tilt * 0.16 + (0.05 if p.sliding > 0.0 else 0.0) + cos(ph) * 0.005 * amt + sin(time * 53.0 + 2.1) * sh * 0.8)
 			cam.global_transform = Transform3D(Basis.from_euler(euler), eye)
 			# Aim-down-sights zoom narrows the FOV; dashing widens it briefly.
 			var zoomed := rad_to_deg(2.0 * atan(tan(deg_to_rad(v.fov) * 0.5) * p.zoom_factor()))
-			cam.fov = zoomed + p.fov_kick * 7.0 * hip
+			cam.fov = zoomed + (p.fov_kick * 7.0 + (6.0 if p.sliding > 0.0 else 0.0) + (4.0 if p.wallrun > 0.0 else 0.0)) * hip
+			if v.weather != null:
+				v.weather.global_position = eye + Vector3(0, 8.0, 0) - cam.global_transform.basis.z * 5.0
+			var need_scope: bool = p.stats.scope > 1.0 and p.stats.zoom >= 0.5
+			if need_scope:
+				_ensure_scope(v)
+			if v.scope_vp != null:
+				var active: bool = need_scope and p.aim_amount > 0.05
+				v.scope_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
+				if active:
+					v.scope_cam.global_transform = cam.global_transform
+					v.scope_cam.fov = cam.fov / p.stats.scope
 		else:
 			# Death cam: drift up and tilt away.
 			cam.global_position += Vector3(0, delta * 0.5, 0)
@@ -458,6 +562,12 @@ func _process(delta: float) -> void:
 			go_flash = 1.0
 			Sfx.play("go", -3.0)
 	go_flash = maxf(0.0, go_flash - delta * 0.9)
+	if map.weather == "rain" and map.time != "day" and not match_over:
+		_lightning_t -= delta
+		if _lightning_t <= 0.0:
+			_lightning_t = randf_range(9.0, 22.0)
+			map.flash_lightning()
+			Sfx.play("thunder", -4.0, randf_range(0.8, 1.1))
 
 	_update_cameras(delta)
 

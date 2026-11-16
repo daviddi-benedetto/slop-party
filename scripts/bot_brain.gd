@@ -18,6 +18,8 @@ var ui_right := false
 var ui_accept := false
 var aim := false
 var block := false
+var crouch := false
+var jump_held := false
 var interact := false
 
 var skill := 0.6            # 0..1, scales turn speed and accuracy

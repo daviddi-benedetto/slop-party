@@ -20,6 +20,10 @@ const KIND_COUNT := 6
 var kind := 0
 var color := Color.WHITE
 var emote := ""                # "", "cheer", "sad"
+var crouch := 0.0              # 0..1, set by player.gd
+var jetting := false
+var _jetpack: Node3D
+var _jet_flames: Array = []
 var hat := 0
 var face := 0
 
@@ -315,6 +319,41 @@ func _build_face() -> void:
 				_ball(head, dark, Vector3(sx * 0.075, -0.1, -0.44), Vector3(0.085, 0.03, 0.03)).rotation.z = -sx * 0.3
 
 
+## Two fuel canisters on the back with flame jets (visible while flying).
+func set_jetpack(on: bool) -> void:
+	if on == (_jetpack != null):
+		return
+	if not on:
+		_jetpack.queue_free()
+		_jetpack = null
+		_jet_flames.clear()
+		return
+	_jetpack = Node3D.new()
+	_jetpack.position = Vector3(0, 0.85, 0.36)
+	rig.add_child(_jetpack)
+	var metal := _plain(Color(0.55, 0.57, 0.62), 0.35)
+	metal.metallic = 0.7
+	var can := CapsuleMesh.new()
+	can.radius = 0.11
+	can.height = 0.55
+	var flame_mat := StandardMaterial3D.new()
+	flame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flame_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	flame_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	flame_mat.albedo_color = Color(1.4, 0.6, 0.15, 0.8)
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.09
+	cone.bottom_radius = 0.0
+	cone.height = 0.6
+	for sx in [-0.14, 0.14]:
+		_mesh(_jetpack, can, metal, Vector3(sx, 0, 0))
+		var f := _mesh(_jetpack, cone, flame_mat, Vector3(sx, -0.55, 0))
+		f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		f.visible = false
+		_jet_flames.append(f)
+	_mesh(_jetpack, _sphere, _plain(color, 0.4), Vector3(0, 0.05, 0.06)).scale = Vector3(0.12, 0.2, 0.06)
+
+
 ## Third-person gun: a simple barrel sized per weapon ("tp" in weapons.gd).
 func set_weapon(id: int) -> void:
 	if _gun == null or id == _weapon:
@@ -461,7 +500,8 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 			head_x = -0.5
 			arm_x = 0.15
 			aim_x = -0.9
-	rig.position.y = bob + hop
+	rig.position.y = bob + hop - crouch * 0.45
+	rig.rotation.x -= crouch * 0.25
 	rig.rotation.x = -0.13 * run
 	rig.rotation.z = sin(_phase) * 0.05 * run - strafe * 0.16
 	_arm_l.rotation.x = arm_x
@@ -487,6 +527,10 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 	for e in _eyes:
 		e.scale.y = absf(e.scale.x) * (1.2 if kind != 5 else 1.0) * eye_y
 
+	for f in _jet_flames:
+		f.visible = jetting
+		if jetting:
+			f.scale = Vector3.ONE * (0.8 + randf() * 0.5)
 	if _flash > 0.0:
 		_flash = maxf(0.0, _flash - delta * 6.0)
 		_mat_body.emission_energy_multiplier = _flash * 1.6

@@ -20,7 +20,25 @@ const Weapons = preload("res://scripts/weapons.gd")
 const HIP := Vector3(0.27, -0.25, -0.58)
 const ADS := Vector3(0.0, -0.155, -0.5)
 
+const LENS_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled, shadows_disabled;
+uniform sampler2D view : source_color, filter_linear;
+void fragment() {
+	vec2 c = UV - 0.5;
+	float r = length(c);
+	if (r > 0.5) { discard; }
+	vec3 col = texture(view, UV).rgb;
+	float cross = (abs(c.x) < 0.0035 || abs(c.y) < 0.0035) ? step(0.07, r) : 0.0;
+	col = mix(col, vec3(0.0), cross * 0.85);
+	col = mix(col, vec3(1.0, 0.15, 0.1), smoothstep(0.016, 0.01, r));
+	col *= smoothstep(0.5, 0.36, r);
+	ALBEDO = col;
+}
+"""
+
 var weapon := -1
+var scope_texture: Texture2D          # set by game.gd: the live view of the scope camera
 var _color := Color.WHITE
 var _layer := 1
 var _with_paw := true
@@ -34,6 +52,10 @@ var _sway := Vector2.ZERO
 var _swap := 1.0
 var _t := 0.0
 var _spin_speed := 0.0
+var _style := ""
+var _attach: Node3D
+var _lens_mat: ShaderMaterial
+var _attach_key := ""
 
 var _shell: StandardMaterial3D
 var _accent: StandardMaterial3D
@@ -74,7 +96,10 @@ func set_weapon(id: int) -> void:
 		c.queue_free()
 	_spin = null
 	_sight_y = 0.07
-	_build_gun(Weapons.LIST[id].style)
+	_style = Weapons.LIST[id].style
+	_build_gun(_style)
+	_attach = null
+	_attach_key = ""
 	if _with_paw:
 		var plush := _mat(_color.lerp(Color(1, 0.97, 0.9), 0.25), 0.95)
 		plush.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
@@ -229,6 +254,59 @@ func _build_gun(style: String) -> void:
 			_muzzle_z = -0.32
 
 
+## Scope (live lens) or red-dot sight on top of the gun, from the player's cards.
+func _update_attachments(p) -> void:
+	var lens: bool = p.stats.scope > 1.0 and p.stats.zoom >= 0.5
+	var key := "scope" if lens else ("dot" if p.stats.red_dot else "")
+	if key == _attach_key:
+		if lens and _lens_mat != null:
+			_lens_mat.set_shader_parameter("view", scope_texture)
+		return
+	_attach_key = key
+	if _attach != null:
+		_attach.queue_free()
+		_attach = null
+	if key == "":
+		return
+	_attach = Node3D.new()
+	_attach.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	add_child(_attach)
+	if lens:
+		var tube := CylinderMesh.new()
+		tube.top_radius = 0.036
+		tube.bottom_radius = 0.036
+		tube.height = 0.2
+		var t := _part(tube, _dark, Vector3(0, 0.115, -0.03))
+		t.rotation.x = PI / 2
+		t.reparent(_attach)
+		for z in [-0.12, 0.06]:
+			var ring := CylinderMesh.new()
+			ring.top_radius = 0.04
+			ring.bottom_radius = 0.04
+			ring.height = 0.025
+			var r := _part(ring, _dark if z > 0.0 else _accent, Vector3(0, 0.115, z))
+			r.rotation.x = PI / 2
+			r.reparent(_attach)
+		_box(_dark, Vector3(0.02, 0.05, 0.04), Vector3(0, 0.07, -0.06)).reparent(_attach)
+		var sh := Shader.new()
+		sh.code = LENS_SHADER
+		_lens_mat = ShaderMaterial.new()
+		_lens_mat.shader = sh
+		_lens_mat.set_shader_parameter("view", scope_texture)
+		var quad := QuadMesh.new()
+		quad.size = Vector2(0.066, 0.066)
+		_part(quad, _lens_mat, Vector3(0, 0.115, 0.074)).reparent(_attach)
+	else:
+		_box(_dark, Vector3(0.05, 0.004, 0.006), Vector3(0, _sight_y + 0.07, -0.05)).reparent(_attach)
+		_box(_dark, Vector3(0.004, 0.04, 0.006), Vector3(-0.024, _sight_y + 0.05, -0.05)).reparent(_attach)
+		_box(_dark, Vector3(0.004, 0.04, 0.006), Vector3(0.024, _sight_y + 0.05, -0.05)).reparent(_attach)
+		_box(_dark, Vector3(0.05, 0.012, 0.05), Vector3(0, _sight_y + 0.025, -0.05)).reparent(_attach)
+		var dot := _mat(Color(1.0, 0.1, 0.1), 0.3)
+		dot.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		dot.albedo_color = Color(2.0, 0.2, 0.2)
+		_ball(dot, Vector3(0, _sight_y + 0.05, -0.05), Vector3.ONE * 0.0035).reparent(_attach)
+
+
 func _mat(col: Color, rough: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = col
@@ -308,7 +386,13 @@ func update(delta: float, p) -> void:
 	var bob := Vector3(cos(p.bob_phase) * 0.014, -absf(sin(p.bob_phase)) * 0.022 + 0.008, 0.0) * amt
 
 	var kick: float = p.recoil * p.stats.recoil_kick * (0.6 + 0.4 * hip)
-	var base := HIP.lerp(ADS - Vector3(0, _sight_y - 0.07, 0), smoothstep(0.0, 1.0, aim))
+	_update_attachments(p)
+	var ads := ADS - Vector3(0, _sight_y - 0.07, 0)
+	if _attach_key == "scope":
+		ads = Vector3(0, -0.115, -0.33)
+	elif _attach_key == "dot":
+		ads = Vector3(0, -(_sight_y + 0.05), -0.4)
+	var base := HIP.lerp(ads, smoothstep(0.0, 1.0, aim))
 	var pos := base + bob
 	pos += Vector3(sway.x - p.strafe_amount * 0.014 * hip, -sway.y - p.land_dip * 0.06, kick * 0.06)
 	# Jump / fall inertia: the gun trails the body's vertical motion.
@@ -330,6 +414,39 @@ func update(delta: float, p) -> void:
 		var g := sin(clampf(p.block_left / p.BLOCK_TIME, 0.0, 1.0) * PI)
 		pos += Vector3(-0.12, 0.03, 0.06) * g
 		rot += Vector3(0.1, 0.7, 0.3) * g
+	# Per-weapon fire animation, driven by the time since the last shot.
+	var st: float = p.shot_t
+	scale = Vector3.ONE
+	match _style:
+		"scatter":
+			var pump := sin(clampf((st - 0.12) / 0.35, 0.0, 1.0) * PI)
+			pos.z += pump * 0.07 * hip
+			rot.x -= pump * 0.12 * hip
+			rot.z += pump * 0.18 * hip
+		"magnum":
+			rot.x += exp(-st * 9.0) * 0.55 * (0.4 + 0.6 * hip)
+			pos.y += exp(-st * 9.0) * 0.03
+		"rail":
+			pos.z += exp(-st * 5.0) * 0.1
+			rot.x += exp(-st * 5.0) * 0.2 * hip
+			_glow.emission_energy_multiplier = 1.8 + 6.0 * exp(-st * 3.0)
+		"boomer", "lobber":
+			pos.z += exp(-st * 4.0) * 0.14
+			rot.x += exp(-st * 4.0) * 0.3 * hip
+		"spinner", "zapper", "flamer":
+			var j: float = p.recoil * 0.005
+			pos += Vector3(randf_range(-j, j), randf_range(-j, j), 0.0)
+		"bubbler":
+			scale = Vector3.ONE * (1.0 + sin(st * 40.0) * exp(-st * 9.0) * 0.1)
+		"pinball":
+			rot.z += exp(-st * 8.0) * 0.5 * hip
+		"burst":
+			rot.x += exp(-st * 14.0) * 0.12
+	# Parkour poses: tilt away from a wall, lower and roll during a slide.
+	rot.z += p.wall_tilt * 0.3 * hip
+	if p.sliding > 0.0:
+		pos += Vector3(-0.04, -0.03, 0.02) * hip
+		rot.z += 0.3 * hip
 	# New weapon swings up into view.
 	_swap = minf(1.0, _swap + delta * 3.5)
 	if _swap < 1.0:

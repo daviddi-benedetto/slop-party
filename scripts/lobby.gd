@@ -28,11 +28,13 @@ const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
 const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "FACE"]
 const KEYS := ["kind", "color", "hat", "face"]
+const TIME_OPTS := ["random", "day", "sunset", "night"]
 
 var seats: Array = []        # [{device, kind, color, hat, face, row}] in join order
 var bots := 0
 var target_i := 2
 var map_i := 0
+var time_i := 0
 var message := ""
 var message_t := 0.0
 
@@ -59,6 +61,7 @@ func _ready() -> void:
 	bots = int(Settings.lobby.get("bots", 0))
 	target_i = clampi(int(Settings.lobby.get("target", 2)), 0, KILL_TARGETS.size() - 1)
 	map_i = clampi(int(Settings.lobby.get("map", 0)), 0, Map.MAPS.size() - 1)
+	time_i = clampi(int(Settings.lobby.get("time", 0)), 0, TIME_OPTS.size() - 1)
 	_options = SettingsMenu.new()
 	add_child(_options)
 	_options.closed.connect(func():
@@ -145,6 +148,7 @@ func _process(delta: float) -> void:
 	var bot_step := false
 	var target_step := false
 	var map_step := false
+	var time_step := false
 
 	# Keyboard seat.
 	var k_seat := _seat_of(KEYBOARD)
@@ -163,6 +167,7 @@ func _process(delta: float) -> void:
 	if _edge("k_bots", Input.is_physical_key_pressed(KEY_B)): bot_step = true
 	if _edge("k_target", Input.is_physical_key_pressed(KEY_K)): target_step = true
 	if _edge("k_map", Input.is_physical_key_pressed(KEY_M)): map_step = true
+	if _edge("k_time", Input.is_physical_key_pressed(KEY_T)): time_step = true
 	if _edge("k_quit", Input.is_physical_key_pressed(KEY_ESCAPE)) and _armed:
 		_remember()
 		get_tree().quit()
@@ -190,6 +195,7 @@ func _process(delta: float) -> void:
 		if _edge(k + "y", Input.is_joy_button_pressed(d, JOY_BUTTON_Y)): bot_step = true
 		if _edge(k + "x", Input.is_joy_button_pressed(d, JOY_BUTTON_X)): target_step = true
 		if _edge(k + "rb", Input.is_joy_button_pressed(d, JOY_BUTTON_RIGHT_SHOULDER)): map_step = true
+		if _edge(k + "lb", Input.is_joy_button_pressed(d, JOY_BUTTON_LEFT_SHOULDER)): time_step = true
 		if _edge(k + "back", Input.is_joy_button_pressed(d, JOY_BUTTON_BACK)): want_options = true
 	var was_armed := _armed
 	_armed = true
@@ -204,6 +210,9 @@ func _process(delta: float) -> void:
 	if target_step:
 		target_i = (target_i + 1) % KILL_TARGETS.size()
 		Sfx.play("tick", -8.0)
+	if time_step:
+		time_i = (time_i + 1) % TIME_OPTS.size()
+		Sfx.play("tick", -6.0, 1.1)
 	if map_step:
 		map_i = (map_i + 1) % Map.MAPS.size()
 		Sfx.play("tick", -6.0, 1.2)
@@ -327,6 +336,7 @@ func _remember() -> void:
 	Settings.lobby["bots"] = bots
 	Settings.lobby["target"] = target_i
 	Settings.lobby["map"] = map_i
+	Settings.lobby["time"] = time_i
 	Settings.save()
 
 
@@ -337,7 +347,7 @@ func _start() -> void:
 		var human := i < seats.size()
 		parts.append({"device": seats[i].device if human else -2, "bot": not human, "view": human,
 			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face})
-	start.emit({"participants": parts, "kill_target": KILL_TARGETS[target_i], "map": map_i})
+	start.emit({"participants": parts, "kill_target": KILL_TARGETS[target_i], "map": map_i, "time": TIME_OPTS[time_i]})
 
 
 # --------------------------------------------------------------------------
@@ -385,10 +395,11 @@ func _draw() -> void:
 	var pad: bool = not Input.get_connected_joypads().is_empty()
 	var map_info: Dictionary = Map.MAPS[map_i]
 	var chips := [
-		["Y" if pad else "B", "BOTS", str(bots), 250.0],
-		["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i], 290.0],
-		["RB" if pad else "M", "MAP", "%s  %s" % [map_info.name, map_info.size], 560.0],
-		["BACK" if pad else "O", "OPTIONS", "", 250.0],
+		["Y" if pad else "B", "BOTS", str(bots), 210.0],
+		["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i], 250.0],
+		["RB" if pad else "M", "MAP", "%s  %s" % [map_info.name, map_info.size], 500.0],
+		["LB" if pad else "T", "TIME", TIME_OPTS[time_i].to_upper(), 300.0],
+		["BACK" if pad else "O", "OPTIONS", "", 230.0],
 	]
 	var total_w := -16.0 * s
 	for chip in chips:
@@ -421,7 +432,7 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(-mw * 0.5, 9 * s), message, 26 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, mw, 700, 0.12)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B dash  -  LB block  -  X reload  -  Y pick up          KEYBOARD   LMB  -  RMB  -  Space  -  Shift  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
+	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B dash  -  R3 slide  -  LB block  -  X reload  -  Y pick up          KEYBOARD   LMB  -  RMB  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
 		16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w, 500, 0.12)
 
 

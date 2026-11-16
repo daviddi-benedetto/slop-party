@@ -187,14 +187,25 @@ func _draw_alive(w: float, h: float) -> void:
 		draw_line(c - Vector2(0, rr), c + Vector2(0, rr), Color(0, 0, 0, sa * 0.8), 1.5 * s)
 	if player.block_left > 0.0 or player.block_flash > 0.0:
 		draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(player.color.lerp(Color.WHITE, 0.3 + 0.6 * player.block_flash), 0.75))
-	var gap: float = (6.0 + player.recoil * 7.0 * player.stats.recoil_kick) * s * (1.0 - 0.75 * aim)
-	var ln := 7.0 * s * (1.0 - aim)
-	for d2 in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
-		draw_line(c + d2 * (gap - s), c + d2 * (gap + ln + s), UiKit.INK, 5.0 * s)
-	for d3 in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
-		draw_line(c + d3 * gap, c + d3 * (gap + ln), Color.WHITE, 2.4 * s)
-	draw_circle(c, 3.2 * s, UiKit.INK)
-	draw_circle(c, 1.8 * s, Color.WHITE)
+	# Crosshair: a small circle whose radius is the weapon's current spread.
+	var cam := get_viewport().get_camera_3d()
+	var vfov := deg_to_rad(cam.fov if cam != null else 70.0)
+	var spread: float = (player.stats.spread + (0.02 if player.stats.pellets > 1 else 0.0)) * lerpf(1.0, player.stats.ads_spread, aim)
+	spread += player.recoil * 0.01 * player.stats.recoil_kick
+	var rad: float = maxf(4.5 * s, tan(spread) / tan(vfov * 0.5) * h * 0.5)
+	var lens: bool = player.stats.scope > 1.0 and player.stats.zoom >= 0.5 and aim > 0.6
+	if not scoped and not lens:
+		var ca: float = 1.0 - (aim if player.stats.red_dot else 0.5 * aim)
+		draw_arc(c, rad, 0.0, TAU, 48, Color(UiKit.INK, 0.75 * ca), 3.6 * s)
+		draw_arc(c, rad, 0.0, TAU, 48, Color(1, 1, 1, 0.95 * ca), 1.6 * s)
+		draw_circle(c, 2.2 * s, Color(UiKit.INK, ca))
+		draw_circle(c, 1.1 * s, Color(1, 1, 1, ca))
+	# Jetpack fuel: an arc left of the crosshair.
+	if player.stats.jetpack > 0.0:
+		var ff: float = clampf(player.jet_fuel / player.stats.jetpack, 0.0, 1.0)
+		draw_arc(c, 40 * s, PI * 0.7, PI * 1.3, 24, Color(UiKit.INK, 0.7), 6.0 * s)
+		if ff > 0.01:
+			draw_arc(c, 40 * s, PI * 1.3 - PI * 0.6 * ff, PI * 1.3, 24, Color(1.0, 0.6, 0.2, 0.9), 3.5 * s)
 	if player.hit_marker > 0.0:
 		var hm: float = player.hit_marker
 		var hc := UiKit.GOLD if player.hit_crit else Color.WHITE
@@ -508,6 +519,7 @@ func _draw_banners(w: float, h: float) -> void:
 			_big(c, str(num), 110, Color(1, 1, 1, clampf(f * 3.0, 0.0, 1.0)), 0.8 + f * 0.6)
 		else:
 			_big(c, "GET READY", 40, Color.WHITE, 1.0 + sin(game.time * 6.0) * 0.03)
+		_big(c + Vector2(0, 52 * s), game.map.label(), 15, Color(1, 1, 1, 0.85), 1.0)
 	elif game.go_flash > 0.0:
 		var g: float = game.go_flash
 		_big(c, "FIGHT!", 84, Color(UiKit.GOLD, clampf(g * 3.0, 0.0, 1.0)), 0.7 + UiKit.back_out(clampf((1.0 - g) * 4.0, 0.0, 1.0)) * 0.5, -0.04)

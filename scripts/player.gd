@@ -107,6 +107,22 @@ var shield_timer := 0.0           # > 0 while the bubble shield recharges
 var second_wind_left := 0
 var kills_life := 0
 var near_pickup = null            # pickup.gd pad we are standing on (set by the pad)
+var crouching := false
+var crouch_amount := 0.0          # smoothed 0..1, lowers the camera
+var sliding := 0.0                # seconds of slide left
+var wallrun := 0.0                # seconds into the current wall run (0 = not running)
+var wall_normal := Vector3.ZERO
+var wall_side := 0.0              # -1..1, which side the wall is on (camera roll)
+var wall_tilt := 0.0              # smoothed wall_side
+var jet_fuel := 0.0
+var jetting := false
+var shot_t := 9.0                 # seconds since the last shot (weapon animation)
+var _last_wall := Vector3.ZERO
+var _since_wall := 9.0
+var _wall_cd := 0.0
+var _mantle_cd := 0.0
+var _jump_held_t := 0.0
+var _jet_t := 0.0
 var pickup_prompt := ""           # what the HUD offers to pick up
 
 # Card selection while dead
@@ -143,6 +159,7 @@ var character
 var name_label: Label3D
 var health_bar: MeshInstance3D
 var bullet_material: StandardMaterial3D
+var attr_color := Color.WHITE
 var trail_material: StandardMaterial3D
 var _shape: CollisionShape3D
 var _was_floor := true
@@ -283,6 +300,21 @@ func rebuild_stats() -> void:
 	stats = s
 	ammo = mini(ammo, stats.mag_size)
 	character.set_weapon(weapon)
+	character.set_jetpack(stats.jetpack > 0.0)
+	jet_fuel = minf(jet_fuel, stats.jetpack)
+	# Bullets, trails and muzzle flashes take on the colour of their effect.
+	attr_color = color
+	if stats.frost > 0.0:
+		attr_color = Color(0.5, 0.85, 1.0)
+	elif stats.poison > 0.0 and not stats.flame:
+		attr_color = Color(0.45, 1.0, 0.3)
+	elif stats.explosive > 0.0:
+		attr_color = Color(1.0, 0.55, 0.15)
+	elif stats.homing > 0.0:
+		attr_color = Color(1.0, 0.4, 0.85)
+	var mix := attr_color.lerp(color, 0.35) if attr_color != color else color
+	bullet_material.emission = mix.lerp(Color.WHITE, 0.4)
+	trail_material.albedo_color = Color(mix.lerp(Color.WHITE, 0.15), 0.7)
 
 
 func weapon_name() -> String:
@@ -316,6 +348,82 @@ func is_blocking() -> bool:
 ## How much the view is zoomed (1 = hip fire). Also scales look sensitivity.
 func zoom_factor() -> float:
 	return lerpf(1.0, stats.zoom, aim_amount)
+
+
+func _set_crouch(on: bool) -> void:
+	if on == crouching:
+		return
+	crouching = on
+	var cap: CapsuleShape3D = _shape.shape
+	cap.height = 1.15 if on else 1.8
+	_shape.position.y = cap.height * 0.5
+
+
+func _ceiling_low() -> bool:
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 1.0, 0), global_position + Vector3(0, 1.9, 0), WORLD_MASK)
+	return not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
+
+
+## Normal of a runnable wall beside the player, or ZERO.
+func _find_wall(flat: Basis) -> Vector3:
+	var space := get_world_3d().direct_space_state
+	var chest := global_position + Vector3(0, 1.0, 0)
+	var best := Vector3.ZERO
+	var best_d := 9.0
+	for side in [flat.x, -flat.x]:
+		var q := PhysicsRayQueryParameters3D.create(chest, chest + side * 0.85, WORLD_MASK)
+		var hit := space.intersect_ray(q)
+		if hit and absf(hit.normal.y) < 0.3:
+			var d: float = chest.distance_to(hit.position)
+			if d < best_d:
+				best_d = d
+				best = hit.normal
+	return best
+
+
+func _end_wallrun() -> void:
+	_last_wall = wall_normal
+	_since_wall = 0.0
+	wallrun = 0.0
+	_wall_cd = 0.25
+
+
+## Height of a ledge just ahead that can be mantled (0.4-2.0 m), or 0.
+func _find_ledge(fwd: Vector3) -> float:
+	var space := get_world_3d().direct_space_state
+	var chest := global_position + Vector3(0, 0.9, 0)
+	var q := PhysicsRayQueryParameters3D.create(chest, chest + fwd * 0.75, WORLD_MASK)
+	var hit := space.intersect_ray(q)
+	if hit.is_empty() or absf(hit.normal.y) > 0.4:
+		return 0.0
+	var top_from: Vector3 = hit.position + fwd * 0.35 + Vector3(0, 1.4, 0)
+	var q2 := PhysicsRayQueryParameters3D.create(top_from, top_from - Vector3(0, 1.8, 0), WORLD_MASK)
+	var down := space.intersect_ray(q2)
+	if down.is_empty() or down.normal.y < 0.7:
+		return 0.0
+	var h: float = down.position.y - global_position.y
+	if h < 0.4 or h > 2.0:
+		return 0.0
+	var q3 := PhysicsRayQueryParameters3D.create(down.position + Vector3(0, 0.1, 0), down.position + Vector3(0, 1.7, 0), WORLD_MASK)
+	q3.hit_from_inside = true
+	if not space.intersect_ray(q3).is_empty():
+		return 0.0
+	return h
+
+
+## An extra sound layer for the bullet's special effect, if it has one.
+func _attribute_sound(style: String) -> String:
+	if stats.explosive > 0.0 and not style in ["boomer", "lobber"]:
+		return "mod_boom"
+	if stats.frost > 0.0:
+		return "mod_ice"
+	if stats.poison > 0.0 and style != "flamer":
+		return "mod_toxic"
+	if stats.homing > 0.0 and style != "bubbler":
+		return "mod_seek"
+	if stats.pierce > 0 and style != "rail":
+		return "mod_pierce"
+	return ""
 
 
 ## Called by game.gd for every credited KO.
@@ -370,6 +478,10 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 	near_pickup = null
 	pickup_prompt = ""
 	aim_amount = 0.0
+	sliding = 0.0
+	wallrun = 0.0
+	jet_fuel = stats.jetpack
+	_set_crouch(false)
 	alive = true
 	spawn_time = 0.0
 	_was_floor = true
@@ -380,7 +492,7 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 
 
 func eye_position() -> Vector3:
-	return global_position + Vector3(0, EYE_HEIGHT, 0)
+	return global_position + Vector3(0, EYE_HEIGHT - 0.6 * crouch_amount, 0)
 
 
 func chest_position() -> Vector3:
@@ -407,6 +519,9 @@ func _process(delta: float) -> void:
 	block_flash = maxf(0.0, block_flash - delta * 3.0)
 	notice_t = maxf(0.0, notice_t - delta)
 	spawn_time += delta
+	shot_t += delta
+	crouch_amount = move_toward(crouch_amount, 1.0 if crouching else 0.0, delta * 7.0)
+	wall_tilt = lerpf(wall_tilt, wall_side, clampf(delta * 8.0, 0.0, 1.0))
 	if health_ghost > health:
 		health_ghost = maxf(health, health_ghost - delta * stats.max_health * 0.7)
 	else:
@@ -496,32 +611,125 @@ func _physics_process(delta: float) -> void:
 
 	# --- movement ---
 	var input: Vector2 = brain.move
-	var wish := Basis(Vector3.UP, yaw) * Vector3(input.x, 0.0, -input.y)
+	var flat := Basis(Vector3.UP, yaw)
+	var wish := flat * Vector3(input.x, 0.0, -input.y)
 	var speed: float = stats.move_speed * (1.0 + rush) * (1.0 - 0.3 * aim_amount) * (1.0 - (slow_amount if slow_left > 0.0 else 0.0))
 	var on_floor := is_on_floor()
 	var horiz := Vector3(velocity.x, 0.0, velocity.z)
-	horiz = horiz.move_toward(wish * speed, (70.0 if on_floor else 22.0) * delta)
+	_wall_cd = maxf(0.0, _wall_cd - delta)
+	_since_wall += delta
+	_mantle_cd = maxf(0.0, _mantle_cd - delta)
+	_jump_held_t = _jump_held_t + delta if brain.jump_held else 0.0
+
+	# Crouch and slide (slide = crouch while running on the ground).
+	var want_crouch: bool = brain.crouch
+	if on_floor and want_crouch and not crouching and horiz.length() > stats.move_speed * 0.75:
+		sliding = 0.9
+		var boost: float = maxf(horiz.length() * 1.2, stats.move_speed * 1.55) * stats.slide_boost
+		horiz = horiz.normalized() * boost
+		Sfx.play_at("slide", global_position, -6.0)
+		Fx.puff(game.world, global_position + Vector3(0, 0.15, 0), Color(1, 1, 1, 0.5), 8, 0.5)
+	if sliding > 0.0:
+		sliding -= delta
+		if not want_crouch or horiz.length() < stats.move_speed * 0.55:
+			sliding = 0.0
+	_set_crouch(want_crouch or sliding > 0.0 or (crouching and _ceiling_low()))
+
+	# Ground and air movement. In the air, input steers without bleeding off
+	# momentum (wall jumps, slide hops and pads keep their speed).
+	if sliding > 0.0:
+		horiz = horiz.move_toward(Vector3.ZERO, 5.5 * delta)
+		horiz = horiz.rotated(Vector3.UP, clampf(input.x, -1.0, 1.0) * -0.9 * delta)
+	elif on_floor:
+		horiz = horiz.move_toward(wish * speed * (0.5 if crouching else 1.0), 70.0 * delta)
+	else:
+		var cur := horiz.length()
+		horiz += wish * 24.0 * delta
+		var cap := maxf(cur, speed)
+		if horiz.length() > cap:
+			horiz = horiz.normalized() * cap
+		horiz *= 1.0 - 0.12 * delta
+
+	# Wall running: airborne, moving forward, fast, next to a wall.
+	if wallrun <= 0.0 and not on_floor and _wall_cd <= 0.0 and input.y > 0.3 and horiz.length() > 4.5 and velocity.y < 6.0:
+		var n := _find_wall(flat)
+		if n != Vector3.ZERO and not (n.dot(_last_wall) > 0.85 and _since_wall < 0.9):
+			wallrun = 0.001
+			wall_normal = n
+			air_jumps = stats.max_jumps - 1
+			velocity.y = maxf(velocity.y, 1.5)
+			Sfx.play_at("step", global_position, -6.0, 1.3)
+	if wallrun > 0.0:
+		wallrun += delta
+		var n2 := _find_wall(flat)
+		if on_floor or n2 == Vector3.ZERO or wallrun > stats.wallrun_time or input.y < 0.1:
+			_end_wallrun()
+		else:
+			wall_normal = n2
+			var along := horiz - wall_normal * horiz.dot(wall_normal)
+			along = along.normalized() * maxf(along.length(), stats.move_speed * 1.3)
+			horiz = along - wall_normal * 1.5
+			velocity.y = move_toward(velocity.y, -2.0 * wallrun / stats.wallrun_time, 22.0 * delta)
+			_step_dist += along.length() * delta
+	wall_side = -wall_normal.dot(flat.x) if wallrun > 0.0 else 0.0
+
 	if on_floor:
 		air_jumps = stats.max_jumps - 1
+		if stats.jetpack > 0.0:
+			jet_fuel = minf(stats.jetpack, jet_fuel + delta * 0.9)
 		if not _was_floor and _fall_speed > 6.0:
 			land_dip = clampf(_fall_speed / 16.0, 0.3, 1.0)
 			Fx.puff(game.world, global_position + Vector3(0, 0.1, 0), Color(1, 1, 1, 0.5), 6, 0.45)
 			Sfx.play_at("land", global_position, -12.0)
-	else:
+	elif wallrun <= 0.0:
 		velocity.y -= GRAVITY * stats.gravity_mult * delta
 		_fall_speed = -velocity.y
 	_was_floor = on_floor
+
 	if brain.jump:
-		if on_floor:
+		if wallrun > 0.0:
+			# Wall jump: off the wall, keeping speed along it.
+			var along2 := horiz - wall_normal * horiz.dot(wall_normal)
+			horiz = along2 + wall_normal * 7.5
+			velocity.y = stats.jump_velocity * 1.05
+			_end_wallrun()
+			Sfx.play_at("jump", global_position, -9.0, 1.15)
+			Fx.ring(game.world, global_position + Vector3(0, 1.0, 0), Color(1, 1, 1, 0.7), 0.2, 1.0, 0.3)
+		elif on_floor or (sliding > 0.0):
 			velocity.y = stats.jump_velocity
+			sliding = 0.0
 			Sfx.play_at("jump", global_position, -12.0)
 		elif air_jumps > 0:
 			air_jumps -= 1
 			velocity.y = stats.jump_velocity
 			Sfx.play_at("jump", global_position, -10.0, 1.3)
 			Fx.ring(game.world, global_position, Color(1, 1, 1, 0.8), 0.2, 0.9, 0.3)
+
+	# Mantle: moving forward into a ledge up to 2 m above the feet vaults onto it.
+	if not on_floor and _mantle_cd <= 0.0 and wallrun <= 0.0 and input.y > 0.3 and velocity.y < 4.0:
+		var ledge := _find_ledge(flat * Vector3.FORWARD)
+		if ledge > 0.0:
+			velocity.y = sqrt(2.0 * GRAVITY * (ledge + 0.3))
+			horiz = flat * Vector3.FORWARD * maxf(3.5, horiz.length() * 0.6)
+			_mantle_cd = 0.5
+			Sfx.play_at("jump", global_position, -11.0, 0.8)
+
+	# Jetpack (card): hold jump in the air.
+	jetting = false
+	if stats.jetpack > 0.0 and not on_floor and wallrun <= 0.0 and brain.jump_held and jet_fuel > 0.0 and _jump_held_t > 0.18 and velocity.y < 3.5:
+		jetting = true
+		jet_fuel -= delta
+		velocity.y = minf(velocity.y + (GRAVITY * stats.gravity_mult + 17.0) * delta, 6.5)
+		_jet_t -= delta
+		if _jet_t <= 0.0:
+			_jet_t = 0.06
+			var back := global_position + flat * Vector3(0, 0.9, 0.45)
+			Fx.flash(game.world, back, Color(1.0, 0.6, 0.2, 0.85), 0.12, 0.38, 0.14)
+			Fx.puff(game.world, back - Vector3(0, 0.4, 0), Color(0.8, 0.8, 0.85, 0.35), 1, 0.4)
+			Sfx.play_at("jet", global_position, -12.0)
+
 	if brain.dash and dash_cd <= 0.0:
-		dash_dir = wish.normalized() if wish.length() > 0.1 else Basis(Vector3.UP, yaw) * Vector3.FORWARD
+		dash_dir = wish.normalized() if wish.length() > 0.1 else flat * Vector3.FORWARD
 		dash_left = 0.16
 		dash_cd = stats.dash_cooldown
 		fov_kick = 1.0
@@ -534,6 +742,8 @@ func _physics_process(delta: float) -> void:
 	velocity.z = horiz.z
 	move_and_slide()
 	rotation.y = yaw
+	character.crouch = crouch_amount
+	character.jetting = jetting
 
 	var hspeed := Vector2(velocity.x, velocity.z).length()
 	var strafe: float = (Basis(Vector3.UP, yaw).inverse() * velocity).x / stats.move_speed
@@ -584,8 +794,13 @@ func _fire_round() -> void:
 	ammo -= 1
 	recoil = 1.0
 	muzzle_flash = 1.0
+	shot_t = 0.0
 	shake = maxf(shake, 0.1 * stats.recoil_kick)
-	Sfx.play_at("shoot", global_position, -5.0 + (2.0 if stats.recoil_kick > 1.5 else 0.0) - (5.0 if stats.fire_interval < 0.06 else 0.0), stats.shoot_pitch)
+	var style: String = Weapons.LIST[weapon].style
+	Sfx.play_at("shot_" + style, global_position, -4.0 - (4.0 if stats.fire_interval < 0.06 else 0.0), clampf(stats.shoot_pitch * 0.3 + 0.7, 0.7, 1.3))
+	var mod := _attribute_sound(style)
+	if mod != "":
+		Sfx.play_at(mod, global_position, -9.0)
 
 	var eye := eye_position()
 	var basis := aim_basis()
@@ -600,12 +815,12 @@ func _fire_round() -> void:
 	var block := PhysicsRayQueryParameters3D.create(eye, muzzle, WORLD_MASK)
 	if space.intersect_ray(block) or target.distance_to(eye) < 1.2:
 		muzzle = eye
-	var flash_col := Color(color.lerp(Color(1.0, 0.95, 0.7), 0.6), 0.9)
+	var flash_col := Color(attr_color.lerp(Color(1.0, 0.95, 0.7), 0.5), 0.9)
 	Fx.flash(game.world, character.muzzle_position(), flash_col, 0.08, 0.22 + 0.1 * stats.recoil_kick, 0.07, body_layer_bit())
 	if stats.recoil_kick > 1.5:
 		Fx.sparks(game.world, character.muzzle_position(), color.lerp(Color.WHITE, 0.5), 6, 6.0, -basis.z, 55.0, 0.4, body_layer_bit())
 
-	var aim_spread := lerpf(1.0, 0.3, aim_amount)
+	var aim_spread := lerpf(1.0, stats.ads_spread, aim_amount)
 	for i in stats.pellets:
 		var s: float = (stats.spread + (0.02 if i > 0 else 0.0)) * aim_spread
 		var dir := (target - muzzle).normalized()

@@ -21,6 +21,9 @@ var adrenaline := 0.0       # bonus speed and fire rate while below 40% health
 var block_cooldown := 4.0   # seconds between blocks
 var block_heal := 0.0       # health restored by a successful block
 var block_wave := 0.0       # damage of the shockwave released by a successful block
+var wallrun_time := 1.4     # longest wall run in seconds
+var slide_boost := 1.0      # slide speed multiplier
+var jetpack := 0.0          # jetpack fuel in seconds (0 = no jetpack)
 
 # --- gun ---
 var damage := 24.0
@@ -33,6 +36,9 @@ var recoil_kick := 1.0
 var shoot_pitch := 1.0
 var burst := 1              # rounds fired per trigger pull
 var zoom := 0.72            # FOV multiplier when aiming down sights (lower = more zoom)
+var scope := 0.0            # > 1: a scope with this magnification (rendered live in the lens)
+var red_dot := false        # holographic red-dot sight
+var ads_spread := 0.3       # spread multiplier when aiming
 
 # --- bullet ---
 var bullet_speed := 55.0
