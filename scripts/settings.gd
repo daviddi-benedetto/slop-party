@@ -36,7 +36,8 @@ const ITEMS := [
 	{"key": "music", "label": "Music volume", "range": [0, 10], "def": 6},
 	{"key": "sfx", "label": "Effects volume", "range": [0, 10], "def": 8},
 	{"section": "CONTROLS"},
-	{"key": "stick", "label": "Gamepad look speed", "range": [1, 10], "def": 4},
+	{"key": "stick", "label": "Gamepad look speed", "range": [1, 10], "def": 5},
+	{"key": "deadzone", "label": "Stick dead zone", "opts": ["Small", "Normal", "Large"], "vals": [0.08, 0.14, 0.24], "def": 1},
 	{"key": "mouse", "label": "Mouse look speed", "range": [1, 10], "def": 4},
 	{"key": "invert_y", "label": "Invert look Y", "opts": ON_OFF, "vals": [false, true], "def": 0},
 	{"key": "aim_assist", "label": "Gamepad aim assist", "opts": ON_OFF, "vals": [false, true], "def": 1},
@@ -44,6 +45,7 @@ const ITEMS := [
 	{"section": "GAMEPLAY"},
 	{"key": "fov", "label": "Field of view", "opts": ["Narrow", "Normal", "Wide"], "vals": [86.0, 100.0, 112.0], "def": 1},
 	{"key": "shake", "label": "Screen shake", "opts": ["Off", "Low", "Full"], "vals": [0.0, 0.5, 1.0], "def": 2},
+	{"key": "bob", "label": "View bob and sway", "opts": ["Off", "Low", "Full"], "vals": [0.0, 0.5, 1.0], "def": 2},
 	{"key": "numbers", "label": "Damage numbers", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "bots", "label": "Bot difficulty", "opts": ["Easy", "Normal", "Hard"], "vals": [0, 1, 2], "def": 1},
 ]
@@ -57,6 +59,7 @@ const PRESETS := {
 }
 
 var idx := {}
+var lobby := {}            # free-form values the lobby remembers (loadouts, map, bots)
 var _items := {}           # key -> item dictionary (with opts/vals filled in)
 var rows: Array = []       # ITEMS with ranges expanded; what the menu shows
 var _path := ""
@@ -66,6 +69,8 @@ var _keep_window := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# Deliver mouse motion as it arrives instead of once per frame.
+	Input.use_accumulated_input = false
 	_uncapped = "--uncapped" in OS.get_cmdline_user_args()
 	for a in OS.get_cmdline_args():
 		if a == "-w" or a == "--windowed":
@@ -132,7 +137,14 @@ func apply() -> void:
 			win.mode = want
 	if not _uncapped:
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v("vsync") else DisplayServer.VSYNC_DISABLED)
-		Engine.max_fps = v("fps")
+		# A frame limiter fighting v-sync causes uneven frame pacing. With v-sync
+		# on, only limit when the cap is clearly below the display's refresh
+		# rate; otherwise let v-sync alone pace the frames.
+		var cap: int = v("fps")
+		var refresh := DisplayServer.screen_get_refresh_rate()
+		if v("vsync") and cap > 0 and refresh > 0.0 and cap >= int(refresh) - 2:
+			cap = 0
+		Engine.max_fps = cap
 	var master: int = v("master")
 	AudioServer.set_bus_mute(0, master == 0)
 	AudioServer.set_bus_volume_db(0, linear_to_db(maxf(0.001, master / 10.0)))
@@ -163,6 +175,8 @@ func save() -> void:
 	var cfg := ConfigFile.new()
 	for key in idx:
 		cfg.set_value("settings", key, idx[key])
+	for key in lobby:
+		cfg.set_value("lobby", key, lobby[key])
 	cfg.save(_path)
 
 
@@ -170,6 +184,9 @@ func _load() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(_path) != OK:
 		return
+	if cfg.has_section("lobby"):
+		for key in cfg.get_section_keys("lobby"):
+			lobby[key] = cfg.get_value("lobby", key)
 	for key in idx:
 		var val = cfg.get_value("settings", key, idx[key])
 		if val is int and val >= 0 and val < _items[key].opts.size():

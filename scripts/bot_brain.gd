@@ -16,6 +16,9 @@ var reload := false
 var ui_left := false
 var ui_right := false
 var ui_accept := false
+var aim := false
+var block := false
+var interact := false
 
 var skill := 0.6            # 0..1, scales turn speed and accuracy
 
@@ -47,6 +50,7 @@ func update_buttons(player, delta: float) -> void:
 	jump = false
 	dash = false
 	reload = false
+	block = false
 	if not player.alive:
 		_path = PackedVector3Array()
 		_target = null
@@ -91,10 +95,13 @@ func update_buttons(player, delta: float) -> void:
 		elif dist < 6.0:
 			fwd = -1.0
 		world_move = (side + to_t * fwd).normalized()
-		if randf() < 0.006:
+		if randf() < 0.36 * delta:
 			jump = true
-		if randf() < 0.004:
+		if randf() < 0.24 * delta:
 			dash = true
+		# Guard now and then while under fire; better bots do it more.
+		if player.since_damage < 0.6 and randf() < (0.4 + skill) * 1.6 * delta:
+			block = true
 		_repath = 0.0
 	else:
 		_los_time = 0.0

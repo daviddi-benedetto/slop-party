@@ -12,6 +12,7 @@ static var _quad: QuadMesh
 static var _torus: TorusMesh
 static var _mat_soft: StandardMaterial3D
 static var _mat_flat: StandardMaterial3D
+static var _mat_add: StandardMaterial3D
 static var _shrink: Curve
 static var _confetti_ramp: Gradient
 
@@ -45,6 +46,9 @@ static func _init_shared() -> void:
 	_mat_soft = _particle_mat()
 	_mat_soft.albedo_texture = tex
 	_mat_flat = _particle_mat()
+	_mat_add = _particle_mat()
+	_mat_add.albedo_texture = tex
+	_mat_add.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 
 	_shrink = Curve.new()
 	_shrink.add_point(Vector2(0, 1))
@@ -101,6 +105,31 @@ static func burst(parent: Node, pos: Vector3, color: Color, amount: int, speed: 
 	return p
 
 
+## Bright additive sparks that shoot out along `dir` and bloom.
+static func sparks(parent: Node, pos: Vector3, color: Color, amount: int, speed: float,
+		dir := Vector3.UP, spread := 55.0, life := 0.4, layers := 1) -> void:
+	var p := burst(parent, pos, Color(color.r * 2.2, color.g * 2.2, color.b * 2.2, 1.0), amount, speed, 0.2, life, -9.0, dir, spread, false, false)
+	p.material_override = _mat_add
+	p.layers = layers
+	p.damping_min = 3.0
+	p.damping_max = 6.0
+	p.emitting = true
+
+
+## A short flash of light that fades out (explosions, deaths).
+static func light(parent: Node, pos: Vector3, color: Color, energy: float, radius: float, time: float) -> void:
+	var l := OmniLight3D.new()
+	l.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	l.light_color = color
+	l.light_energy = energy
+	l.omni_range = radius
+	parent.add_child(l)
+	l.global_position = pos
+	var tw := l.create_tween()
+	tw.tween_property(l, "light_energy", 0.0, time).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(l.queue_free)
+
+
 ## Party-popper burst of spinning coloured squares.
 static func confetti(parent: Node, pos: Vector3, amount := 40, speed := 7.0, life := 1.6) -> void:
 	var p := burst(parent, pos, Color.WHITE, amount, speed, 0.16, life, -7.0, Vector3.UP, 70.0, true, false)
@@ -148,7 +177,7 @@ static func puff(parent: Node, pos: Vector3, color := Color(1, 1, 1, 0.7), amoun
 
 
 ## An unshaded sphere that grows from r0 to r1 and fades out.
-static func flash(parent: Node, pos: Vector3, color: Color, r0: float, r1: float, time: float) -> void:
+static func flash(parent: Node, pos: Vector3, color: Color, r0: float, r1: float, time: float, layers := 1) -> void:
 	_init_shared()
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -157,6 +186,7 @@ static func flash(parent: Node, pos: Vector3, color: Color, r0: float, r1: float
 	var mi := MeshInstance3D.new()
 	mi.mesh = _sphere
 	mi.material_override = mat
+	mi.layers = layers
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	parent.add_child(mi)

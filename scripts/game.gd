@@ -47,6 +47,7 @@ var map
 var players: Array = []
 var kill_target := 15
 var match_over := false
+var debug_aim := false       # dev flag --force-aim: everyone aims down sights
 var frozen := true
 var winner = null
 var time := 0.0
@@ -73,12 +74,13 @@ var _last_count := 99
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	kill_target = config.get("kill_target", 15)
+	debug_aim = "--force-aim" in OS.get_cmdline_user_args()
 	world = Node3D.new()
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
 	map = Map.new()
 	world.add_child(map)
-	map.build()
+	map.build(config.get("map", 0))
 
 	var parts: Array = config.participants
 	var bot_n := 0
@@ -86,8 +88,10 @@ func _ready() -> void:
 		var part: Dictionary = parts[i]
 		var p = Player.new()
 		p.index = i
-		p.color = UiKit.PLAYER_COLORS[i % UiKit.PLAYER_COLORS.size()]
+		p.color = part.get("color", UiKit.PLAYER_COLORS[i % UiKit.PLAYER_COLORS.size()])
 		p.kind = part.get("kind", i)
+		p.hat = part.get("hat", 0)
+		p.face = part.get("face", 0)
 		p.game = self
 		p.is_bot = part.bot
 		if part.bot:
@@ -138,6 +142,8 @@ func _prewarm() -> void:
 	Fx.burst(world, p, Color.WHITE, 4, 1.0, 0.2, 0.3)
 	Fx.confetti(world, p, 4)
 	Fx.puff(world, p)
+	Fx.sparks(world, p, Color.WHITE, 4, 1.0)
+	Fx.light(world, p, Color.WHITE, 1.0, 2.0, 0.2)
 	Fx.damage_number(world, p, 1.0, false, 0)
 
 
@@ -240,7 +246,7 @@ func _add_view(player) -> void:
 		cam.cull_mask = 1 | (all_bodies & ~player.body_layer_bit()) | player.viewmodel_layer_bit()
 		gun = Viewmodel.new()
 		cam.add_child(gun)
-		gun.build(player.color, player.viewmodel_layer_bit())
+		gun.build(player.color, player.viewmodel_layer_bit(), player.weapon)
 	else:
 		cam.cull_mask = 1 | all_bodies
 	vp.add_child(cam)
@@ -281,22 +287,31 @@ func _layout() -> void:
 func _update_cameras(delta: float) -> void:
 	var ears: Array = []
 	var shake_amount: float = Settings.v("shake")
+	var bob_scale: float = Settings.v("bob")
 	for v in _views:
 		var p = v.player
 		var cam: Camera3D = v.camera
 		if p == null:
 			var a := time * 0.1
-			cam.look_at_from_position(Vector3(cos(a) * 38.0, 17.0, sin(a) * 32.0), Vector3(0, 1.5, 0))
+			cam.look_at_from_position(Vector3(cos(a) * map.half_x * 1.2, map.half_x * 0.55, sin(a) * map.half_z * 1.35), Vector3(0, 1.5, 0))
 			continue
 		if p.alive:
-			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT - p.land_dip * 0.14, 0)
+			# Head bob, strafe lean and recoil kick on top of the raw view.
+			var hip: float = 1.0 - p.aim_amount
+			var amt: float = p.bob_amount * bob_scale * (0.25 + 0.75 * hip)
+			var ph: float = p.bob_phase
+			var eye: Vector3 = p.get_global_transform_interpolated().origin + Vector3(0, p.EYE_HEIGHT - p.land_dip * 0.16 + sin(ph * 2.0) * 0.024 * amt, 0)
+			eye += Basis(Vector3.UP, p.yaw) * Vector3(cos(ph) * 0.02 * amt, 0, 0)
 			var sh: float = p.shake * p.shake * 0.035 * shake_amount
+			var kick: float = p.recoil * clampf(p.stats.recoil_kick, 0.4, 3.0) * 0.011
 			var euler := Vector3(
-				p.pitch + p.recoil * 0.014 + sin(time * 61.0) * sh,
+				p.pitch + kick + sin(ph * 2.0) * 0.004 * amt + sin(time * 61.0) * sh,
 				p.yaw + sin(time * 47.0 + 1.3) * sh,
-				sin(time * 53.0 + 2.1) * sh * 0.8)
+				-p.strafe_amount * 0.028 * bob_scale + cos(ph) * 0.005 * amt + sin(time * 53.0 + 2.1) * sh * 0.8)
 			cam.global_transform = Transform3D(Basis.from_euler(euler), eye)
-			cam.fov = v.fov + p.fov_kick * 7.0
+			# Aim-down-sights zoom narrows the FOV; dashing widens it briefly.
+			var zoomed := rad_to_deg(2.0 * atan(tan(deg_to_rad(v.fov) * 0.5) * p.zoom_factor()))
+			cam.fov = zoomed + p.fov_kick * 7.0 * hip
 		else:
 			# Death cam: drift up and tilt away.
 			cam.global_position += Vector3(0, delta * 0.5, 0)
@@ -466,7 +481,7 @@ func _show_results() -> void:
 	Engine.time_scale = 1.0
 	var rows: Array = []
 	for p in ranked():
-		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size()})
+		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size()})
 	_views.clear()
 	players.clear()
 	_ui.queue_free()
@@ -540,6 +555,8 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 	Fx.burst(world, pos, Color(1.0, 0.75, 0.3), 16, radius * 4.0, 0.4, 0.5, -6.0)
 	Fx.puff(world, pos, Color(0.4, 0.36, 0.45, 0.7), 10, radius * 0.5)
 	Fx.ring(world, pos, Color(1, 1, 1, 0.8), radius * 0.2, radius * 1.1, 0.3)
+	Fx.sparks(world, pos, Color(1.0, 0.7, 0.3), 26, radius * 5.0, Vector3.UP, 180.0, 0.6)
+	Fx.light(world, pos, Color(1.0, 0.65, 0.3), 8.0, radius * 4.0, 0.4)
 	Sfx.play_at("boom", pos, -1.0)
 	for p in players:
 		if not p.alive:

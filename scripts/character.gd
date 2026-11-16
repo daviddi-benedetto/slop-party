@@ -7,6 +7,9 @@ extends Node3D
 ##
 ## Kinds: 0 bear, 1 bunny, 2 cat, 3 dog, 4 fox, 5 frog  (see ui_kit.KIND_NAMES;
 ## ui_kit.portrait() draws the matching 2D face).
+## Customisation: a hat (ui_kit.HAT_NAMES) and a face accessory
+## (ui_kit.FACE_NAMES), built by _build_hat() / _build_face(). To add one,
+## append its name in ui_kit.gd and a branch in the matching function.
 ##
 ## Local space: feet at y = 0, facing -Z, about 1.75 m tall plus ears.
 
@@ -17,6 +20,8 @@ const KIND_COUNT := 6
 var kind := 0
 var color := Color.WHITE
 var emote := ""                # "", "cheer", "sad"
+var hat := 0
+var face := 0
 
 var rig: Node3D                # squash / stretch / lean
 var head: Node3D
@@ -43,11 +48,17 @@ var _was_floor := true
 var _blink := 2.0
 var _flash := 0.0
 var _pop := 1.0
+var _eye_pos := Vector3(0.16, 0.07, -0.33)   # right eye, in head space
+var _accent: StandardMaterial3D
 
 
-func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
+func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, face_id := 0) -> void:
 	kind = posmod(k, KIND_COUNT)
 	color = col
+	hat = hat_id
+	face = face_id
+	if kind == 5:
+		_eye_pos = Vector3(0.2, 0.32, -0.2)
 	_layers = layer_bits
 	_t = randf() * 10.0
 
@@ -74,7 +85,10 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
 	_foot_r = _ball(rig, mat_dark, Vector3(0.18, 0.1, -0.03), Vector3(0.15, 0.1, 0.2))
 
 	# Scarf in a contrasting colour hides the neck seam and adds charm.
-	var scarf_mat := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.5, 1.0))
+	var scarf_mat := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0))
+	scarf_mat.emission = scarf_mat.albedo_color
+	scarf_mat.emission_energy_multiplier = 0.9
+	_accent = scarf_mat
 	var scarf := TorusMesh.new()
 	scarf.inner_radius = 0.19
 	scarf.outer_radius = 0.33
@@ -177,6 +191,128 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true) -> void:
 			_tail.rotation.x = -0.5
 			_ball(_tail, _mat_body, Vector3(0, 0, 0.26), Vector3(0.15, 0.15, 0.32))
 			_ball(_tail, _mat_light, Vector3(0, 0, 0.5), Vector3(0.1, 0.1, 0.13))
+	_build_hat()
+	_build_face()
+
+
+func _cyl(parent: Node3D, mat: Material, top: float, bottom: float, height: float, pos: Vector3, sides := 20) -> MeshInstance3D:
+	var m := CylinderMesh.new()
+	m.top_radius = top
+	m.bottom_radius = bottom
+	m.height = height
+	m.radial_segments = sides
+	return _mesh(parent, m, mat, pos)
+
+
+func _build_hat() -> void:
+	var gold := _plain(Color(1.0, 0.78, 0.2), 0.25)
+	gold.metallic = 0.7
+	gold.emission_enabled = true
+	gold.emission = Color(1.0, 0.65, 0.1)
+	gold.emission_energy_multiplier = 0.6
+	var dark := _plain(Color(0.07, 0.07, 0.1), 0.5)
+	var cream := _plain(Color(0.95, 0.92, 0.85), 0.6)
+	match hat:
+		1:  # cap
+			_ball(head, _accent, Vector3(0, 0.2, 0.0), Vector3(0.43, 0.22, 0.41))
+			var brim := BoxMesh.new()
+			brim.size = Vector3(0.5, 0.04, 0.3)
+			_mesh(head, brim, _accent, Vector3(0, 0.2, -0.46)).rotation.x = -0.15
+		2:  # crown
+			_cyl(head, gold, 0.21, 0.19, 0.1, Vector3(0, 0.4, 0))
+			for i in 5:
+				var a := TAU * i / 5.0
+				_cyl(head, gold, 0.0, 0.06, 0.16, Vector3(cos(a) * 0.17, 0.52, sin(a) * 0.17), 8)
+		3:  # top hat
+			_cyl(head, dark, 0.34, 0.34, 0.035, Vector3(0, 0.36, 0))
+			_cyl(head, dark, 0.2, 0.21, 0.34, Vector3(0, 0.54, 0))
+			_cyl(head, _accent, 0.215, 0.215, 0.07, Vector3(0, 0.42, 0))
+		4:  # party hat
+			_cyl(head, _accent, 0.0, 0.17, 0.42, Vector3(0, 0.56, 0))
+			_ball(head, gold, Vector3(0, 0.78, 0), Vector3.ONE * 0.05)
+		5:  # horns
+			for sx in [-1.0, 1.0]:
+				var horn := _cyl(head, cream, 0.0, 0.07, 0.3, Vector3(sx * 0.24, 0.42, 0), 10)
+				horn.rotation.z = -sx * 0.5
+		6:  # halo
+			var torus := TorusMesh.new()
+			torus.inner_radius = 0.19
+			torus.outer_radius = 0.25
+			torus.rings = 24
+			torus.ring_segments = 8
+			var glow := _plain(Color(1.0, 0.9, 0.4), 0.3)
+			glow.emission_enabled = true
+			glow.emission = Color(1.0, 0.85, 0.3)
+			glow.emission_energy_multiplier = 3.0
+			_mesh(head, torus, glow, Vector3(0, 0.62, 0))
+		7:  # headphones
+			var band := TorusMesh.new()
+			band.inner_radius = 0.4
+			band.outer_radius = 0.45
+			band.rings = 24
+			band.ring_segments = 8
+			var b := _mesh(head, band, dark, Vector3(0, 0.02, 0))
+			b.rotation.x = PI / 2
+			b.scale = Vector3(1.0, 1.0, 0.95)
+			for sx in [-1.0, 1.0]:
+				_ball(head, _accent, Vector3(sx * 0.43, 0.0, 0), Vector3(0.07, 0.13, 0.13))
+		8:  # bow
+			for sx in [-1.0, 1.0]:
+				_ball(head, _accent, Vector3(0.2 + sx * 0.1, 0.36, -0.05), Vector3(0.1, 0.075, 0.05)).rotation.z = sx * 0.4
+			_ball(head, gold, Vector3(0.2, 0.36, -0.06), Vector3.ONE * 0.04)
+		9:  # antenna
+			_cyl(head, dark, 0.012, 0.012, 0.34, Vector3(0, 0.52, 0), 6)
+			var bulb := _plain(color, 0.3)
+			bulb.emission_enabled = true
+			bulb.emission = color
+			bulb.emission_energy_multiplier = 3.5
+			_ball(head, bulb, Vector3(0, 0.72, 0), Vector3.ONE * 0.06)
+		10:  # mohawk
+			for i in 5:
+				var z := -0.24 + i * 0.12
+				_cyl(head, _accent, 0.0, 0.06, 0.22 - absf(i - 2) * 0.03, Vector3(0, 0.42 - absf(i - 2) * 0.03, z), 8)
+
+
+func _build_face() -> void:
+	var dark := _plain(Color(0.06, 0.06, 0.09), 0.35)
+	var e := _eye_pos
+	match face:
+		1:  # angry brows
+			for sx in [-1.0, 1.0]:
+				var brow := BoxMesh.new()
+				brow.size = Vector3(0.14, 0.035, 0.04)
+				_mesh(head, brow, dark, Vector3(sx * e.x, e.y + 0.1, e.z - 0.03)).rotation.z = sx * 0.45
+		2:  # shades
+			var bar := BoxMesh.new()
+			bar.size = Vector3(e.x * 2.0 + 0.2, 0.11, 0.06)
+			_mesh(head, bar, dark, Vector3(0, e.y, e.z - 0.04))
+			var shine := _plain(Color(0.3, 0.8, 1.0), 0.2)
+			shine.emission_enabled = true
+			shine.emission = Color(0.2, 0.7, 1.0)
+			shine.emission_energy_multiplier = 1.5
+			var glint := BoxMesh.new()
+			glint.size = Vector3(e.x * 2.0 + 0.16, 0.02, 0.065)
+			_mesh(head, glint, shine, Vector3(0, e.y + 0.025, e.z - 0.04))
+		3:  # eye patch
+			_ball(head, dark, Vector3(-e.x, e.y, e.z - 0.02), Vector3(0.09, 0.09, 0.04))
+			var strap := BoxMesh.new()
+			strap.size = Vector3(0.6, 0.025, 0.02)
+			_mesh(head, strap, dark, Vector3(-0.05, e.y + 0.07, e.z + 0.02)).rotation.z = 0.25
+		4:  # sleepy lids
+			for sx in [-1.0, 1.0]:
+				_ball(head, _mat_body, Vector3(sx * e.x, e.y + 0.045, e.z - 0.005), Vector3(0.075, 0.05, 0.05))
+		5:  # monocle
+			var rim := TorusMesh.new()
+			rim.inner_radius = 0.075
+			rim.outer_radius = 0.095
+			rim.rings = 20
+			rim.ring_segments = 6
+			var gold := _plain(Color(1.0, 0.8, 0.25), 0.25)
+			gold.metallic = 0.7
+			_mesh(head, rim, gold, Vector3(e.x, e.y, e.z - 0.04)).rotation.x = PI / 2
+		6:  # mustache
+			for sx in [-1.0, 1.0]:
+				_ball(head, dark, Vector3(sx * 0.075, -0.1, -0.44), Vector3(0.085, 0.03, 0.03)).rotation.z = -sx * 0.3
 
 
 ## Third-person gun: a simple barrel sized per weapon ("tp" in weapons.gd).

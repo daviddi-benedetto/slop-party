@@ -4,19 +4,22 @@ Local splitscreen first-person deathmatch for 1–6 players on one PC. Every tim
 you die you are dealt three random powerup cards and keep one for the rest of
 the match, so whoever is losing keeps getting stronger.
 
-You play as a plush animal (bear, bunny, cat, dog, fox or frog) in a bright
-toy-park arena.
+You play as a customisable plush animal in dark, neon-lit arenas (the look is
+inspired by ROUNDS).
 
-- **7 weapons:** Blaster, Scatter (shotgun), Zapper (rapid fire), Boomer
-  (rockets), Rail (piercing sniper), Lobber (bouncing grenades) and Bubbler
-  (homing bubbles). Swap by picking a weapon card or walking over a purple
+- **12 weapons:** Blaster, Scatter, Zapper, Boomer, Rail, Lobber, Bubbler,
+  Tripler (burst), Magnum, Spinner (minigun), Pinball (ricochet) and Flamer.
+  Get them from weapon cards or by pressing the pick-up button on a purple
   weapon pad; your powerups carry over.
-- **40 powerup cards** in three rarities, from simple stat boosts to bubble
-  shields, ricochets, piercing rounds and a second wind.
-- **Pickups:** weapon pads and pink health pads around the arena.
+- **43 powerup cards** in three rarities.
+- **Abilities:** dash, block (a short guard that negates damage and bats
+  bullets back at the shooter) and aim down sights.
+- **3 maps:** Neon Yard (medium), Ember Pit (small) and Frost Line (large).
+- **Character customisation:** animal, colour, hat and face per player,
+  remembered between sessions.
 
 Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript.
-The map, characters, textures, icons, sounds and music are all generated in code; the
+The maps, characters, textures, icons, sounds and music are all generated in code; the
 only bundled asset is the Fredoka UI font (SIL Open Font License, see
 `fonts/OFL.txt`).
 
@@ -26,33 +29,47 @@ Double-click **`Play.bat`**. It runs `build\Fragdeck.exe` if it exists,
 otherwise it runs the project from source with the bundled engine.
 
 In the lobby each player presses **A** on their own gamepad to take a seat
-(Space joins a keyboard + mouse player) and picks an animal with left/right.
-**Y** (keyboard: B) cycles the number of bots, **X** (keyboard: K) cycles the
-kill target, **B** (keyboard: Backspace) leaves, and **Start** (or Enter)
-begins the match. **Back/Select** (keyboard: O) opens **Options**.
+(Space joins a keyboard + mouse player). Up/down picks what to customise
+(animal, colour, hat, face) and left/right changes it.
 
-| Action | Gamepad | Keyboard + mouse |
+| Lobby | Gamepad | Keyboard |
+|---|---|---|
+| Join / leave | A / B | Space / Backspace |
+| Customise | D-pad or left stick | WASD or arrows |
+| Bots | Y | B |
+| Kill target | X | K |
+| Next map | RB | M |
+| Options | Back / Select | O |
+| Start | Start | Enter |
+
+| In a match | Gamepad | Keyboard + mouse |
 |---|---|---|
 | Move | Left stick | WASD |
-| Aim | Right stick (with aim assist) | Mouse |
-| Fire | RT (or RB) | Left click |
-| Jump | A or LT | Space |
-| Dash | B, LB or L-stick click | Shift or right click |
+| Look | Right stick (with aim assist) | Mouse |
+| Fire | RT | Left click |
+| Aim down sights | LT (hold) | Right click (hold) |
+| Jump | A | Space |
+| Dash | B or left-stick click | Shift |
+| Block | LB or RB | Q |
 | Reload | X | R |
+| Pick up weapon | Y | E |
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |
-| Pause / quit to lobby | Start | Esc |
+| Pause / options / quit to lobby | Start | Esc |
 | Toggle fullscreen (lobby) | – | F11 |
 
 ### Options
 
 Reachable from the lobby and from the pause menu:
 
-- **Display:** fullscreen, V-Sync, frame rate limit (60 by default).
+- **Display:** fullscreen, V-Sync, frame rate limit (60 by default; with V-Sync
+  on a 60 Hz display the limiter steps aside so V-Sync alone paces frames).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing (Off, FXAA,
   MSAA 2x/4x/8x), render scale, shadows, ambient occlusion, bloom, scenery.
 - **Audio:** master, music and effects volume.
-- **Controls:** gamepad and mouse look speed, invert Y, aim assist, rumble.
-- **Gameplay:** field of view, screen shake, damage numbers, bot difficulty.
+- **Controls:** gamepad and mouse look speed, stick dead zone, invert Y, aim
+  assist, rumble.
+- **Gameplay:** field of view, screen shake, view bob and sway, damage numbers,
+  bot difficulty.
 
 Options are saved in `fragdeck_settings.cfg` beside the game executable.
 

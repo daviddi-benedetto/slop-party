@@ -132,6 +132,7 @@ func _build_effects() -> void:
 	_streams["step"] = _make(0.05, 0.15, func(t, _d): return (_noise() * 0.6 + sin(TAU * 120.0 * t) * 0.5) * exp(-t * 90.0))
 	_streams["pad"] = _make(0.4, 1.0, func(t, _d): return sin(TAU * (260.0 * t + 900.0 * t * t) + sin(t * 70.0) * 0.6) * 0.5 * exp(-t * 7.0))
 	_streams["reload"] = _make(0.26, 0.5, func(t, _d): return (_noise() * 0.6 * exp(-t * 160.0)) + (_noise() * 0.7 * exp(-(t - 0.17) * 140.0) if t > 0.17 else 0.0) + _bell(t - 0.17, 880.0, 60.0) * 0.12)
+	_streams["block"] = _make(0.26, 1.0, func(t, _d): return (_bell(t, 880.0, 20.0) + _bell(t, 1320.0, 24.0)) * 0.3 + _noise() * 0.35 * exp(-t * 80.0))
 	_streams["tick"] = _make(0.06, 1.0, func(t, _d): return _bell(t, 1245.0, 90.0) * 0.4)
 	_streams["bounce"] = _make(0.1, 1.0, func(t, _d): return _sweep(t, 1500.0, 900.0, 40.0) * 0.35 * exp(-t * 45.0))
 	_streams["card"] = _make(0.7, 1.0, func(t, _d): return (_bell(t, 523.0, 9.0) + _bell(t - 0.07, 659.0, 9.0) + _bell(t - 0.14, 784.0, 9.0) + _bell(t - 0.21, 1046.0, 7.0)) * 0.24)

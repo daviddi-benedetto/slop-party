@@ -49,7 +49,13 @@ static func deck() -> Array:
 				"apply": func(s): s.kill_heal += 35.0},
 			{"name": "Feather Fall", "icon": "jump", "rarity": COMMON, "desc": "30% lower gravity\n+10% jump power",
 				"apply": func(s): s.gravity_mult *= 0.7; s.jump_velocity *= 1.1},
+			{"name": "Quick Guard", "icon": "shield", "rarity": COMMON, "desc": "Block recharges 35% faster",
+				"apply": func(s): s.block_cooldown *= 0.65},
 			# ---------------- rare ----------------
+			{"name": "Healing Guard", "icon": "heart", "rarity": RARE, "desc": "Blocking a hit\nheals you for 25",
+				"apply": func(s): s.block_heal += 25.0},
+			{"name": "Shock Guard", "icon": "boom", "rarity": RARE, "desc": "Blocking a hit releases\na damaging shockwave",
+				"apply": func(s): s.block_wave += 22.0},
 			{"name": "Bouncy", "icon": "bounce", "rarity": RARE, "desc": "Bullets bounce 2 more times",
 				"apply": func(s): s.bounces += 2},
 			{"name": "Ricochet", "icon": "bounce", "rarity": RARE, "desc": "+1 bounce, and each bounce\nadds 40% damage",

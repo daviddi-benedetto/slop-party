@@ -31,10 +31,12 @@ func _ready() -> void:
 	for i in mini(rows.size(), spots.size()):
 		var row: Dictionary = rows[i]
 		var top: float = _stage.add_podium(spots[i][0], spots[i][1], row.color)
-		var c = _stage.add_character(row.kind, row.color, Vector3(spots[i][0].x, top, spots[i][0].z))
+		var look := {"kind": row.kind, "color": row.color, "hat": row.get("hat", 0), "face": row.get("face", 0)}
+		if i == 0:
+			look.hat = 2      # the winner always wears the crown
+		var c = _stage.add_character(look, Vector3(spots[i][0].x, top, spots[i][0].z))
 		if i == 0:
 			c.emote = "cheer"
-			_add_crown(c)
 		elif i >= 3:
 			c.emote = "sad"
 	Fx.confetti_rain(_stage, Vector3(0, 9.0, 0), Vector3(8.0, 0.5, 2.0))
@@ -42,39 +44,6 @@ func _ready() -> void:
 	Fx.confetti(_stage, Vector3(3, 1.5, 2), 60, 9.0, 2.2)
 	Sfx.play("win", -2.0)
 	Sfx.music("lobby")
-
-
-func _add_crown(c) -> void:
-	var gold := StandardMaterial3D.new()
-	gold.albedo_color = Color(1.0, 0.8, 0.2)
-	gold.metallic = 0.6
-	gold.roughness = 0.25
-	gold.emission_enabled = true
-	gold.emission = Color(1.0, 0.7, 0.1)
-	gold.emission_energy_multiplier = 0.35
-	var crown := Node3D.new()
-	crown.position = Vector3(0, 0.42, 0)
-	crown.rotation.z = 0.12
-	c.head.add_child(crown)
-	var band := CylinderMesh.new()
-	band.top_radius = 0.2
-	band.bottom_radius = 0.18
-	band.height = 0.1
-	var bi := MeshInstance3D.new()
-	bi.mesh = band
-	bi.material_override = gold
-	crown.add_child(bi)
-	for i in 5:
-		var a := TAU * i / 5.0
-		var spike := CylinderMesh.new()
-		spike.top_radius = 0.0
-		spike.bottom_radius = 0.06
-		spike.height = 0.16
-		var si := MeshInstance3D.new()
-		si.mesh = spike
-		si.material_override = gold
-		si.position = Vector3(cos(a) * 0.17, 0.12, sin(a) * 0.17)
-		crown.add_child(si)
 
 
 func _process(delta: float) -> void:
@@ -127,7 +96,7 @@ func _draw() -> void:
 		var row: Dictionary = rows[i]
 		var slide := UiKit.back_out(clampf((_t - 0.6 - i * 0.1) / 0.45, 0.0, 1.0))
 		var r := Rect2(x0 + i * (cw + gap), h - 232 * s + (1.0 - slide) * 320 * s, cw, 150 * s)
-		UiKit.card(self, r, UiKit.PANEL if i > 0 else Color(0.36, 0.26, 0.12, 0.92), 26 * s, s)
+		UiKit.card(self, r, UiKit.PANEL if i > 0 else Color(0.2, 0.12, 0.05, 0.94), 26 * s, s)
 		UiKit.panel(self, Rect2(r.position, Vector2(cw, 58 * s)).grow(-5 * s), Color(row.color, 0.9), 20 * s)
 		draw_circle(Vector2(r.position.x + 36 * s, r.position.y + 30 * s), 23 * s, UiKit.INK)
 		draw_circle(Vector2(r.position.x + 36 * s, r.position.y + 30 * s), 20 * s, UiKit.CREAM)

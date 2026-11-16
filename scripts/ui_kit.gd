@@ -7,15 +7,21 @@ extends RefCounted
 ## Style: chunky rounded "sticker" UI - thick dark outlines, drop shadows,
 ## saturated candy colours, Fredoka font.
 
-const INK := Color(0.17, 0.12, 0.24)
-const CREAM := Color(1.0, 0.97, 0.9)
-const GOLD := Color(1.0, 0.8, 0.22)
-const PANEL := Color(0.2, 0.16, 0.3, 0.88)
+# Palette after ROUNDS: near-black navy surfaces, off-white text, a hot orange
+# highlight, and saturated neon player colours.
+const INK := Color(0.035, 0.04, 0.075)
+const CREAM := Color(0.93, 0.95, 1.0)
+const GOLD := Color(1.0, 0.62, 0.2)
+const PANEL := Color(0.075, 0.085, 0.14, 0.92)
 const PLAYER_COLORS := [
-	Color(1.0, 0.36, 0.38), Color(0.28, 0.6, 1.0), Color(0.3, 0.84, 0.45),
-	Color(1.0, 0.8, 0.2), Color(0.72, 0.48, 1.0), Color(1.0, 0.56, 0.22),
+	Color(1.0, 0.45, 0.18), Color(0.22, 0.6, 1.0), Color(0.3, 0.9, 0.45), Color(1.0, 0.84, 0.2),
+	Color(0.72, 0.45, 1.0), Color(1.0, 0.36, 0.66), Color(0.18, 0.9, 0.92), Color(1.0, 0.28, 0.3),
+	Color(0.7, 0.95, 0.25), Color(0.9, 0.93, 1.0),
 ]
+const COLOR_NAMES := ["ORANGE", "BLUE", "GREEN", "YELLOW", "PURPLE", "PINK", "CYAN", "RED", "LIME", "WHITE"]
 const KIND_NAMES := ["BEAR", "BUNNY", "CAT", "DOG", "FOX", "FROG"]
+const HAT_NAMES := ["NONE", "CAP", "CROWN", "TOP HAT", "PARTY HAT", "HORNS", "HALO", "HEADPHONES", "BOW", "ANTENNA", "MOHAWK"]
+const FACE_NAMES := ["NORMAL", "ANGRY", "SHADES", "EYE PATCH", "SLEEPY", "MONOCLE", "MUSTACHE"]
 
 static var _fonts := {}
 static var _sb: StyleBoxFlat
@@ -63,7 +69,7 @@ static func panel(ci: CanvasItem, rect: Rect2, color: Color, radius: float,
 	_sb.border_color = border
 	_sb.set_border_width_all(int(border_w))
 	_sb.shadow_size = 1 if shadow > 0.0 else 0
-	_sb.shadow_color = Color(0.08, 0.05, 0.12, 0.45 * color.a)
+	_sb.shadow_color = Color(0.0, 0.0, 0.02, 0.55 * color.a)
 	_sb.shadow_offset = Vector2(0, shadow)
 	ci.draw_style_box(_sb, rect)
 
@@ -77,7 +83,7 @@ static func card(ci: CanvasItem, rect: Rect2, color: Color, radius: float, s: fl
 static func bar(ci: CanvasItem, rect: Rect2, frac: float, fill: Color, s: float, ghost := -1.0) -> void:
 	var r := rect.size.y * 0.5
 	panel(ci, rect.grow(3.0 * s), INK, r + 3.0 * s, Color(0, 0, 0, 0), 0.0, 3.0 * s)
-	panel(ci, rect, Color(0.32, 0.27, 0.42), r)
+	panel(ci, rect, Color(0.14, 0.15, 0.23), r)
 	if ghost > frac:
 		panel(ci, Rect2(rect.position, Vector2(maxf(rect.size.y, rect.size.x * ghost), rect.size.y)), Color(1, 1, 1, 0.85), r)
 	if frac > 0.001:

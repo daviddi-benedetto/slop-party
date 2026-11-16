@@ -7,6 +7,7 @@ extends Node
 ##   --views=N             in autotest, give the first N bots a splitscreen view
 ##   --kb                  in autotest, make player 1 a keyboard/mouse human
 ##   --target=<kills>      kill target for the autotest match
+##   --map=<index>         which arena the autotest match uses (0, 1, 2)
 ##   --lobby-demo=H,B      show the lobby with H fake humans and B bots seated
 ##   --shot=<file.png>     save a screenshot, print stats, then quit
 ##   --shot-time=<sec>     when to take it (default 6)
@@ -45,14 +46,15 @@ func _ready() -> void:
 	layer.add_child(_fade)
 
 	if _args.has("autotest"):
+		seed(int(_args.get("seed", "1")))
 		var views := int(_args.get("views", "6"))
 		var parts: Array = []
 		for i in 6:
-			parts.append({"device": -2, "bot": true, "view": i < views, "kind": i})
+			parts.append({"device": -2, "bot": true, "view": i < views, "kind": i, "hat": i + 1, "face": i})
 		if _args.has("kb"):
 			parts[0] = {"device": -1, "bot": false, "view": true, "kind": 0}
 		lobby.visible = false
-		_begin({"participants": parts, "kill_target": int(_args.get("target", "15"))})
+		_begin({"participants": parts, "kill_target": int(_args.get("target", "15")), "map": int(_args.get("map", "0"))})
 	else:
 		if _args.has("lobby-demo"):
 			var hb := str(_args["lobby-demo"]).split(",")
@@ -107,6 +109,8 @@ func _screenshot_later(delay: float, path: String) -> void:
 	print("[shot] screen refresh=%.0f Hz" % DisplayServer.screen_get_refresh_rate())
 	print("[shot] saved %s  fps=%d  draw_calls=%d" % [path, Performance.get_monitor(Performance.TIME_FPS),
 		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
+	print("[shot] nodes=%d objects=%d process_ms=%.2f physics_ms=%.2f" % [Performance.get_monitor(Performance.OBJECT_NODE_COUNT), Performance.get_monitor(Performance.OBJECT_COUNT),
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0])
 	if game != null:
 		for p in game.players:
 			print("[shot] %s kills=%d deaths=%d cards=%s" % [p.pname, p.kills, p.deaths, str(p.cards)])

@@ -18,6 +18,9 @@ var thorns := 0.0           # fraction of damage taken reflected to the attacker
 var shield_cd := 0.0        # > 0: a bubble that blocks one hit, recharging in this many seconds
 var second_wind := 0        # lethal hits survived per life
 var adrenaline := 0.0       # bonus speed and fire rate while below 40% health
+var block_cooldown := 4.0   # seconds between blocks
+var block_heal := 0.0       # health restored by a successful block
+var block_wave := 0.0       # damage of the shockwave released by a successful block
 
 # --- gun ---
 var damage := 24.0
@@ -28,6 +31,8 @@ var pellets := 1
 var spread := 0.006
 var recoil_kick := 1.0
 var shoot_pitch := 1.0
+var burst := 1              # rounds fired per trigger pull
+var zoom := 0.72            # FOV multiplier when aiming down sights (lower = more zoom)
 
 # --- bullet ---
 var bullet_speed := 55.0
@@ -40,6 +45,7 @@ var pierce := 0             # players a bullet can pass through
 var explosive := 0.0        # blast radius in metres
 var fuse := 0.0             # > 0: grenade - bounces around and explodes after this long
 var smoke := false          # leaves a smoke trail
+var flame := false          # short-lived growing fire puff instead of a bullet
 var homing := 0.0           # steering strength (rad/s)
 
 # --- on hit / on KO ---

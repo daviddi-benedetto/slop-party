@@ -8,18 +8,22 @@ has not been verified.
 
 - Local splitscreen FPS, 1–6 humans plus optional bots, one PC, one screen.
 - One mode: free-for-all deathmatch, first to N KOs (5/10/15/20/30).
-- One map: "Toy Park", a 64 × 48 m walled yard.
+- Three maps of different sizes and themes (see `map.gd`): Neon Yard, Ember
+  Pit, Frost Line. Chosen in the lobby.
 - ROUNDS-style progression: **on every death** the dead player is shown three
   random cards and must pick one before respawning. Cards permanently modify
   that player's stats for the match and stack.
-- Seven weapons (everyone starts with the Blaster). Weapons come from weapon
-  cards in the deck and from pickup pads on the map; health pads too.
-- 40 stat cards plus the weapon cards.
-- Art direction: bright, soft, toy-like party game. Plush animal characters,
-  rounded pastel geometry, chunky "sticker" UI with the Fredoka font.
+- Twelve weapons (everyone starts with the Blaster). Weapons come from weapon
+  cards in the deck and from pickup pads (press interact); health pads too.
+- Abilities everyone has: jump, dash, block (short guard that negates damage
+  and reflects bullets; 4 s cooldown) and aim down sights.
+- Art direction: dark, moody arenas with neon trims, coloured point lights and
+  heavy bloom, after ROUNDS. Plush animal characters (animal, colour, hat and
+  face chosen per player). Chunky UI with the Fredoka font on near-black
+  panels.
 - Engine: Godot 4.7.2, Forward+ renderer, GDScript only. The only imported
   asset is `fonts/Fredoka.ttf` (SIL OFL, licence beside it). Everything else –
-  meshes, textures, sounds, icons – is generated in code.
+  meshes, textures, sounds, music, icons – is generated in code.
 
 ## 2. Running, testing, building
 
@@ -47,6 +51,9 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `--views=N` gives the first N bots a splitscreen cell (0 = spectator only).
 - `--kb` makes player 1 a keyboard/mouse human.
 - `--target=K` sets the kill target (`--target=1` reaches the podium quickly).
+- `--map=N` picks the arena (0 Neon Yard, 1 Ember Pit, 2 Frost Line).
+- `--force-aim` makes everyone aim down sights (to check the sight picture).
+- `--seed=N` seeds the random generator so runs are comparable.
 - `--lobby-demo=H,B` shows the lobby with H fake humans and B bots seated.
 - `--pause-at=S` opens the pause menu after S seconds.
 - `--options-demo` opens the Options screen in the lobby after one second.
@@ -68,18 +75,18 @@ parse error in one script.
 
 | File | Role |
 |---|---|
-| `project.godot` | Project settings. Notable: physics interpolation ON; autoloads `Settings` then `Sfx`. Display and AA values here are only startup defaults – `settings.gd` overrides them. |
+| `project.godot` | Project settings. Notable: 120 Hz physics with interpolation ON and jitter fix 0; swapchain image count 2 (less input lag); autoloads `Settings` then `Sfx`. Display and AA values here are only startup defaults – `settings.gd` overrides them. |
 | `main.tscn` | A single `Node` with `main.gd`. Every other node is created in code. |
 | `fonts/Fredoka.ttf` | The UI font (variable weight). Loaded by `ui_kit.gd`. |
 | `scripts/main.gd` | Entry point. Owns the lobby, creates/destroys a `game.gd` per match, screen fades, dev flags. |
 | `scripts/ui_kit.gd` | Shared UI look: colours, font, panels, bars, text with outline, icons, 2D animal portraits, button prompts, easing. |
-| `scripts/lobby.gd` | Join screen: 3D stage with podiums plus a drawn overlay. Emits `start(config)`. |
+| `scripts/lobby.gd` | Join screen: 3D stage with podiums, per-player character customisation, map / bots / kill-target selection. Emits `start(config)`. |
 | `scripts/stage.gd` | Small sunny 3D "showroom" (sky, hills, podiums, camera) behind the lobby and results. |
 | `scripts/game.gd` | One match: world, splitscreen viewports, cameras, countdown, scoring, respawn, explosions, pause menu, aim assist, hand-over to results. |
 | `scripts/results.gd` | Victory screen: podium, crown, confetti, results table. |
-| `scripts/map.gd` | Builds the arena, materials, lighting, scenery, spawn points, jump pads, bot nav graph. |
+| `scripts/map.gd` | All arenas: `MAPS` (layouts) and `THEMES` (palette, sky, light, scenery), materials, spawn points, pickup spots, jump pads, bot nav graph. |
 | `scripts/player.gd` | `CharacterBody3D`: movement, weapon, health, status effects, feedback values, death → card pick → respawn. |
-| `scripts/character.gd` | The plush animal model (6 species) and its procedural animation. |
+| `scripts/character.gd` | The plush animal model (6 species, 11 hats, 7 faces) and its procedural animation. |
 | `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
 | `scripts/viewmodel.gd` | Toy gun model per weapon style; first-person sway/recoil/reload animation; also used as the pickup prop. |
 | `scripts/pickup.gd` | Weapon and health pickup pads. |
@@ -259,6 +266,67 @@ Every effect frees itself with a pausable timer. For `burst()` with
 `explosiveness = 1`, all particle properties must be set **before** `emitting`
 is turned on (see `confetti()`), or they are ignored.
 
+### Smoothness and input latency
+
+These choices exist because the game "did not feel smooth at 60":
+- **Frame pacing:** a frame limiter fighting V-Sync gives uneven frame times.
+  `settings.gd::apply` only sets `Engine.max_fps` when the cap is clearly
+  below the display's refresh rate (or V-Sync is off); otherwise V-Sync alone
+  paces frames.
+- **Physics at 120 Hz** with interpolation on and `physics_jitter_fix = 0`
+  (the documented pairing). Interpolation shows the previous tick, so 120 Hz
+  halves that delay to about 8 ms. All gameplay code is per-second (multiplied
+  by delta), so the tick rate can be changed freely.
+- **View rotation is not interpolated at all:** `brain.update_look` runs every
+  rendered frame and `game.gd` builds the camera from yaw/pitch directly.
+- **Swapchain image count 2** and un-accumulated mouse input reduce input lag.
+- **Right stick** (`input_source.gd::_stick`): radial dead zone (setting),
+  1.6-power response curve, and a turn boost after holding the stick hard
+  over for a moment.
+Measured on an RTX 2070 at 1080p with six views: about 190 FPS uncapped on
+average; momentary dips happen when several players are on the (blurred) card
+screen at once.
+
+### Abilities (`player.gd`, `input_source.gd`)
+
+- **Block:** `block_left` (0.38 s window) and `block_cd` (`stats.block_cooldown`).
+  `take_damage` returns 0 while blocking; `bullet.gd::_reflect` hands the
+  bullet to the blocker and sends it back at the shooter. Cards hook in via
+  `_blocked()` (heal, shockwave).
+- **Aim down sights:** `aim_amount` (0–1, smoothed). It narrows the camera FOV
+  by `stats.zoom` (`game.gd::_update_cameras`), scales look sensitivity
+  (`zoom_factor`), tightens spread, slows movement, and slides the gun to the
+  screen centre (`viewmodel.gd`, `HIP` → `ADS`). Weapons with `zoom < 0.5`
+  (Rail) hide the gun and draw a scope in `hud.gd`.
+- **Interact:** a weapon pad sets `player.near_pickup` every tick for players
+  standing on it; the player shows `pickup_prompt` and calls `pad.take()` when
+  the interact button is pressed. Health pads stay automatic. Bots take a
+  weapon automatically while they still hold the Blaster.
+- **First-person motion:** `bob_phase`, `bob_amount`, `strafe_amount`,
+  `fall_amount`, `land_dip`, `recoil` are smoothed on the player and consumed
+  by the camera (head bob, strafe roll, recoil kick) and by `viewmodel.gd`
+  (figure-of-eight bob, look sway, jump/fall inertia, guard pose). The "View
+  bob and sway" option scales the walking part.
+
+### Maps and themes (`map.gd`)
+
+`MAPS` pairs a layout function (`_layout_yard`, `_layout_pit`, `_layout_frost`)
+with a `THEMES` entry. A theme holds surface colours, two neon accents, sky
+shader parameters, moon/sun, fog, grass colours (or none), the kind of
+backdrop scenery (`city`, `rocks`, `ice`) and the drifting motes. Layouts only
+use material *keys* (`block_a`, `deck`, `accent_a`, …), so any layout works
+with any theme. `_glow()` adds shadowless coloured point lights; emissive
+trims plus bloom do the rest. The bot nav graph is generated per map with no
+extra data.
+
+### Character customisation
+
+A look is `{kind, color, hat, face}`. The lobby edits one per seat and stores
+them in `Settings.lobby` (saved in the settings file as `seat0`…`seat5`).
+`character.gd::_build_hat` / `_build_face` build the accessories; names live
+in `ui_kit.gd` (`HAT_NAMES`, `FACE_NAMES`, `COLOR_NAMES`). The winner on the
+podium always wears the crown. Two humans can never pick the same colour.
+
 ### Options (`settings.gd`, `settings_menu.gd`)
 
 `Settings.ITEMS` is the single list of options (display, graphics, audio,
@@ -391,16 +459,22 @@ re-path when stuck. Bots cannot use the jump pads or roofs deliberately.
 ## 7. Verified vs not verified
 
 Verified by automated runs on an RTX 2070 at 1920×1080:
-- Lobby, Options screen, match (2/3/4/5/6 views), card picker, pause menu and
-  victory podium all render with no script errors.
-- 6-way splitscreen with vsync off and no frame cap: roughly 200 FPS on the
-  High preset (measured after the grass/sky/normal-map upgrade).
+- Lobby (with customisation), Options screen, matches on all three maps
+  (2/3/4/5/6 views), card picker, pause menu and victory podium all render
+  with no script errors.
+- 6-way splitscreen with vsync off and no frame cap: roughly 190 FPS on the
+  High preset.
 - A settings file is read and applied (Low preset, wide FOV, hard bots).
 - Bots fight, die, pick cards, respawn; a match reaches the kill target, shows
   the podium and returns to the lobby.
 - The exported `build\Fragdeck.exe` starts and plays.
 
 **Not verified:**
+- Whether it now *feels* smooth: the pacing and latency changes are sound in
+  principle but were made on a 30 Hz remote display with no controller, so
+  nobody has felt them.
+- Block, aim down sights and the pick-up button were only exercised by bots
+  (block, pickups) or a forced-aim screenshot; no human has pressed them.
 - Weapon balance. Every weapon and card runs without errors in bot matches,
   but the numbers in `weapons.gd` and `cards.gd` are first guesses.
 - Anything audible. The music and sound effects are generated without errors

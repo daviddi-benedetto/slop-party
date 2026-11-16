@@ -1,53 +1,116 @@
 extends Node3D
-## The arena ("Toy Park"). Everything is generated in code: geometry,
-## materials, textures, lighting, scenery, spawn points, jump pads and the bot
+## An arena. Everything is generated in code: geometry, materials, textures,
+## lighting, sky, scenery, spawn points, pickup spots, jump pads and the bot
 ## nav graph.
 ##
-## Layout (metres, Y up): floor is 64 x 48 centred on the origin. Almost every
-## piece is added with mirror=true, which also places a copy rotated 180 deg
-## about the Y axis ((x, z) -> (-x, -z)), so the map is point-symmetric.
+## MAPS lists the arenas; build(index) makes one. Each map is a layout
+## function (geometry) plus a THEMES entry (palette, sky, light, scenery):
+##   0  NEON YARD   medium  64 x 48   navy night, orange/cyan neon, city skyline
+##   1  EMBER PIT   small   36 x 28   charcoal and lava glow, rock spires
+##   2  FROST LINE  large   88 x 64   dark teal ice, aurora, crystal spires
 ##
-## Look: soft toy-like shapes. _box() meshes have rounded edges (the collision
-## stays a plain box). Materials are pastel colours with faint world-space
-## triplanar detail textures. Scenery outside the walls (hills, trees, clouds)
-## and decorations (bunting, balloons, bushes) have no collision.
+## Look: dark, moody surfaces with emissive neon trims and coloured point
+## lights, so bloom does most of the work (the palette follows ROUNDS).
+##
+## Layout conventions (metres, Y up): the floor is centred on the origin with
+## half-extents half_x / half_z. Almost every piece is added with mirror=true,
+## which also places a copy rotated 180 deg about Y ((x, z) -> (-x, -z)), so
+## maps are point-symmetric and only half has to be described.
+## Material keys a layout may use: ground, path, wall, block_a, block_b,
+## block_c, deck, crate, accent_a, accent_b, rail, stripes.
 ##
 ## Collision layers: 1 = world (this file), 2 = players.
 ##
 ## Nav graph: build_nav() samples a 2 m grid with downward ray-casts (several
 ## height layers, so space under decks counts too), links neighbours that are
 ## actually walkable, and keeps the largest connected component in an AStar3D.
+## It needs no per-map data.
+##
+## To add a map: write a _layout_xxx() function, add a THEMES entry if it needs
+## a new look, and append to MAPS.
 
 const SkyKit = preload("res://scripts/sky.gd")
 
-const HALF_X := 32.0
-const HALF_Z := 24.0
+const MAPS := [
+	{"name": "NEON YARD", "size": "MEDIUM", "theme": "neon", "half": Vector2(32, 24), "wall": 4.5},
+	{"name": "EMBER PIT", "size": "SMALL", "theme": "ember", "half": Vector2(18, 14), "wall": 4.0},
+	{"name": "FROST LINE", "size": "LARGE", "theme": "frost", "half": Vector2(44, 32), "wall": 5.0},
+]
+
+const THEMES := {
+	"neon": {
+		"ground": Color(0.07, 0.09, 0.15), "path": Color(0.12, 0.14, 0.22), "wall": Color(0.1, 0.12, 0.2),
+		"block_a": Color(0.16, 0.18, 0.3), "block_b": Color(0.2, 0.14, 0.3), "block_c": Color(0.1, 0.1, 0.18),
+		"deck": Color(0.2, 0.17, 0.2), "crate": Color(0.13, 0.15, 0.24),
+		"accent_a": Color(1.0, 0.42, 0.16), "accent_b": Color(0.15, 0.75, 1.0),
+		"sky": {"top": Color(0.01, 0.015, 0.05), "horizon": Color(0.1, 0.1, 0.26), "ground": Color(0.02, 0.02, 0.05),
+			"sun": Color(0.75, 0.82, 1.0), "cloud_color": Color(0.13, 0.13, 0.26), "clouds": 0.55, "stars": 1.0, "aurora": 0.0},
+		"sun_color": Color(0.6, 0.7, 1.0), "sun_energy": 0.75, "sun_dir": Vector3(-50, 38, 0),
+		"ambient": 0.55, "fog": Color(0.05, 0.06, 0.14), "fog_density": 0.006,
+		"grass": [Color(0.03, 0.1, 0.12), Color(0.1, 0.4, 0.42)],
+		"scenery": "city", "motes": [Color(0.4, 0.9, 1.0), Color(1.0, 0.6, 0.3)], "mote_rise": 0.05,
+	},
+	"ember": {
+		"ground": Color(0.1, 0.08, 0.08), "path": Color(0.16, 0.11, 0.1), "wall": Color(0.14, 0.09, 0.09),
+		"block_a": Color(0.24, 0.13, 0.12), "block_b": Color(0.3, 0.12, 0.1), "block_c": Color(0.12, 0.08, 0.08),
+		"deck": Color(0.22, 0.14, 0.1), "crate": Color(0.2, 0.12, 0.1),
+		"accent_a": Color(1.0, 0.5, 0.1), "accent_b": Color(1.0, 0.85, 0.3),
+		"sky": {"top": Color(0.03, 0.01, 0.02), "horizon": Color(0.42, 0.12, 0.05), "ground": Color(0.12, 0.03, 0.01),
+			"sun": Color(1.0, 0.55, 0.25), "cloud_color": Color(0.2, 0.07, 0.05), "clouds": 0.8, "stars": 0.3, "aurora": 0.0},
+		"sun_color": Color(1.0, 0.6, 0.4), "sun_energy": 0.8, "sun_dir": Vector3(-38, -60, 0),
+		"ambient": 0.6, "fog": Color(0.2, 0.06, 0.03), "fog_density": 0.009,
+		"grass": [],
+		"scenery": "rocks", "motes": [Color(1.0, 0.6, 0.15), Color(1.0, 0.3, 0.1)], "mote_rise": 0.7,
+	},
+	"frost": {
+		"ground": Color(0.08, 0.14, 0.17), "path": Color(0.13, 0.2, 0.24), "wall": Color(0.1, 0.17, 0.21),
+		"block_a": Color(0.2, 0.32, 0.38), "block_b": Color(0.16, 0.24, 0.34), "block_c": Color(0.08, 0.13, 0.18),
+		"deck": Color(0.17, 0.2, 0.26), "crate": Color(0.14, 0.22, 0.28),
+		"accent_a": Color(0.3, 1.0, 0.95), "accent_b": Color(0.45, 0.6, 1.0),
+		"sky": {"top": Color(0.01, 0.03, 0.07), "horizon": Color(0.06, 0.2, 0.26), "ground": Color(0.02, 0.05, 0.07),
+			"sun": Color(0.8, 0.95, 1.0), "cloud_color": Color(0.1, 0.18, 0.24), "clouds": 0.35, "stars": 1.0, "aurora": 1.0},
+		"sun_color": Color(0.65, 0.85, 1.0), "sun_energy": 0.85, "sun_dir": Vector3(-46, 130, 0),
+		"ambient": 0.6, "fog": Color(0.05, 0.12, 0.16), "fog_density": 0.005,
+		"grass": [],
+		"scenery": "ice", "motes": [Color(0.9, 0.97, 1.0), Color(0.7, 0.9, 1.0)], "mote_rise": -0.6,
+	},
+}
+
 const NAV_STEP := 2.0
-const WALL_H := 4.5
+
+var map_index := 0
+var theme := {}
+var half_x := 32.0
+var half_z := 24.0
+var wall_h := 4.5
 
 var spawn_points: Array = []      # Array of Vector3
 var pickup_spots: Array = []      # [["weapon" | "health", Vector3], ...] read by game.gd
-var _normals := {}                # texture kind -> normal map
 var nav := AStar3D.new()
 var nav_ready := false
 var _nav_ids := PackedInt64Array()
 var _body: StaticBody3D
 var _mats := {}
+var _normals := {}                # texture kind -> normal map
 var _box_cache := {}
 var _unit_sphere: SphereMesh
 var _rng := RandomNumberGenerator.new()
-
-# Animated decorations.
-var _clouds: Node3D
 var _env: Environment
 var _sun: DirectionalLight3D
-var _balloons: Array = []         # [node, base_y, phase]
+
+# Animated decorations.
 var _pad_rings: Array = []        # [mesh_instance, material, phase]
 var _time := 0.0
 
 
-func build() -> void:
-	_rng.seed = 20240607
+func build(index := 0) -> void:
+	map_index = clampi(index, 0, MAPS.size() - 1)
+	var info: Dictionary = MAPS[map_index]
+	theme = THEMES[info.theme]
+	half_x = info.half.x
+	half_z = info.half.y
+	wall_h = info.wall
+	_rng.seed = 20240607 + map_index
 	_body = StaticBody3D.new()
 	_body.collision_layer = 1
 	_body.collision_mask = 0
@@ -59,17 +122,16 @@ func build() -> void:
 	_unit_sphere.rings = 10
 	_make_materials()
 	_build_environment()
-	_build_geometry()
+	_build_shell()
+	match map_index:
+		1: _layout_pit()
+		2: _layout_frost()
+		_: _layout_yard()
 	_build_scenery()
 
 
 func _process(delta: float) -> void:
 	_time += delta
-	if _clouds != null:
-		_clouds.rotation.y += delta * 0.006
-	for b in _balloons:
-		b[0].position.y = b[1] + sin(_time * 1.3 + b[2]) * 0.12
-		b[0].rotation.z = sin(_time * 0.9 + b[2]) * 0.08
 	for r in _pad_rings:
 		var t := fmod(_time * 0.8 + r[2], 1.0)
 		r[0].position.y = 0.15 + t * 1.6
@@ -82,55 +144,42 @@ func _process(delta: float) -> void:
 # --------------------------------------------------------------------------
 
 func _make_materials() -> void:
-	_mats["grass"] = _mat(Color(0.5, 0.8, 0.38), _texture("soft"), 0.07)
-	_mats["path"] = _mat(Color(1.0, 0.88, 0.62), _texture("soft"), 0.11, "soft")
-	_mats["wall"] = _mat(Color(1.0, 0.94, 0.8), _texture("panels"), 0.25, "panels")
-	_mats["coral"] = _mat(Color(1.0, 0.47, 0.42), null, 1.0)
-	_mats["stone"] = _mat(Color(0.93, 0.91, 0.96), _texture("panels"), 0.25, "panels")
-	_mats["teal"] = _mat(Color(0.16, 0.74, 0.72), null, 1.0)
-	_mats["wood"] = _mat(Color(1.0, 0.75, 0.42), _texture("planks"), 0.5, "planks")
-	_mats["blue"] = _mat(Color(0.26, 0.56, 1.0), null, 1.0)
-	_mats["pink"] = _mat(Color(1.0, 0.62, 0.7), _texture("bricks"), 0.4, "bricks")
-	_mats["roof"] = _mat(Color(0.5, 0.42, 0.92), _texture("planks"), 0.35, "planks")
-	_mats["block_r"] = _mat(Color(1.0, 0.4, 0.4), _texture("soft"), 0.3)
-	_mats["block_y"] = _mat(Color(1.0, 0.82, 0.25), _texture("soft"), 0.3)
-	_mats["block_b"] = _mat(Color(0.3, 0.66, 1.0), _texture("soft"), 0.3)
-	_mats["block_g"] = _mat(Color(0.4, 0.85, 0.5), _texture("soft"), 0.3)
-	_mats["stripes"] = _mat(Color.WHITE, _texture("stripes"), 0.7)
-	_mats["barrel"] = _mat(Color(1.0, 0.58, 0.2), null, 1.0)
-	_mats["trunk"] = _mat(Color(0.62, 0.42, 0.28), null, 1.0)
-	_mats["leaf_a"] = _mat(Color(0.3, 0.72, 0.36), null, 1.0)
-	_mats["leaf_b"] = _mat(Color(0.45, 0.82, 0.38), null, 1.0)
-	_mats["leaf_c"] = _mat(Color(0.98, 0.6, 0.72), null, 1.0)
-	_mats["hill_a"] = _mat(Color(0.42, 0.76, 0.4), null, 1.0)
-	_mats["hill_b"] = _mat(Color(0.52, 0.82, 0.46), null, 1.0)
-	_mats["pad_base"] = _mat(Color(0.24, 0.2, 0.36), null, 1.0)
-	for k in _mats:
-		_mats[k].diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	var cloud := StandardMaterial3D.new()
-	cloud.albedo_color = Color(1, 1, 1)
-	cloud.emission_enabled = true
-	cloud.emission = Color(0.85, 0.9, 1.0)
-	cloud.emission_energy_multiplier = 0.55
-	cloud.roughness = 1.0
-	cloud.disable_fog = true
-	_mats["cloud"] = cloud
-	var pad := StandardMaterial3D.new()
-	pad.albedo_color = Color(0.3, 1.0, 0.9)
-	pad.emission_enabled = true
-	pad.emission = Color(0.2, 1.0, 0.85)
-	pad.emission_energy_multiplier = 2.2
-	_mats["pad"] = pad
+	var soft := _texture("soft")
+	var panels := _texture("panels")
+	var planks := _texture("planks")
+	var bricks := _texture("bricks")
+	_mats["ground"] = _mat(theme.ground, soft, 0.07, "soft", 0.42)
+	_mats["path"] = _mat(theme.path, panels, 0.25, "panels", 0.35)
+	_mats["wall"] = _mat(theme.wall, panels, 0.25, "panels", 0.6)
+	_mats["block_a"] = _mat(theme.block_a, panels, 0.25, "panels", 0.5)
+	_mats["block_b"] = _mat(theme.block_b, bricks, 0.4, "bricks", 0.7)
+	_mats["block_c"] = _mat(theme.block_c, planks, 0.35, "planks", 0.5)
+	_mats["deck"] = _mat(theme.deck, planks, 0.5, "planks", 0.55)
+	_mats["crate"] = _mat(theme.crate, panels, 0.5, "panels", 0.45)
+	_mats["dark"] = _mat(Color(0.04, 0.04, 0.07), null, 1.0, "", 0.5)
+	_mats["accent_a"] = _neon(theme.accent_a, 1.7)
+	_mats["accent_b"] = _neon(theme.accent_b, 1.7)
+	_mats["rail"] = _neon(theme.accent_b, 0.9)
+	_mats["pad"] = _neon(Color(0.3, 1.0, 0.85), 2.0)
+	# Hazard stripes: dark with glowing bands.
+	var stripe_tex := _texture("stripes")
+	var stripes := _mat(Color.WHITE, stripe_tex, 0.7, "", 0.5)
+	stripes.emission_enabled = true
+	stripes.emission_texture = stripe_tex
+	stripes.emission_energy_multiplier = 0.7
+	_mats["stripes"] = stripes
 
 
-func _mat(tint: Color, tex: Texture2D, uv_scale: float, bump := "") -> StandardMaterial3D:
+func _mat(tint: Color, tex: Texture2D, uv_scale: float, bump := "", rough := 0.6) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = tint
-	m.roughness = 0.9
+	m.roughness = rough
+	m.metallic = 0.12
+	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	if bump != "" and _normals.has(bump):
 		m.normal_enabled = true
 		m.normal_texture = _normals[bump]
-		m.normal_scale = 0.9
+		m.normal_scale = 1.0
 	if tex != null:
 		m.albedo_texture = tex
 		m.uv1_triplanar = true
@@ -139,17 +188,19 @@ func _mat(tint: Color, tex: Texture2D, uv_scale: float, bump := "") -> StandardM
 	return m
 
 
-func _glossy(col: Color) -> StandardMaterial3D:
+## Emissive strip material: this is what the bloom picks up.
+func _neon(col: Color, energy: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
-	m.albedo_color = col
-	m.roughness = 0.22
-	m.rim_enabled = true
-	m.rim = 0.6
+	m.albedo_color = col.darkened(0.3)
+	m.roughness = 0.4
+	m.emission_enabled = true
+	m.emission = col
+	m.emission_energy_multiplier = energy
 	return m
 
 
-## Tileable detail textures, multiplied by the material tint. Deliberately
-## low contrast so surfaces read as painted toys rather than gritty materials.
+## Tileable detail textures, multiplied by the material tint, plus a matching
+## normal map (stored in _normals) so seams and grain catch the light.
 func _texture(kind: String) -> ImageTexture:
 	const N := 256
 	var rng := RandomNumberGenerator.new()
@@ -174,6 +225,7 @@ func _texture(kind: String) -> ImageTexture:
 		var d := lattice[((y0 + 1) % freq) * P + ((x0 + 1) % freq)]
 		return lerpf(lerpf(a, b, fx), lerpf(c, d, fx), fy)
 
+	var stripe_a: Color = theme.accent_a
 	var img := Image.create(N, N, true, Image.FORMAT_RGB8)
 	var himg := Image.create(N, N, false, Image.FORMAT_RGB8)
 	for py in N:
@@ -181,43 +233,42 @@ func _texture(kind: String) -> ImageTexture:
 			var u := float(px) / N
 			var v := float(py) / N
 			var n: float = noise.call(u, v, 4) * 0.65 + noise.call(u, v, 8) * 0.35
-			var val := 0.9 + n * 0.1
+			var val := 0.82 + n * 0.18
 			var col := Color(val, val, val)
 			var seam := false
 			match kind:
 				"soft":
-					val = 0.84 + n * 0.16
+					val = 0.7 + n * 0.3
 					col = Color(val, val, val)
 				"panels":
 					if px % 128 < 3 or py % 128 < 3:
-						val *= 0.86
+						val *= 0.6
 						seam = true
 					col = Color(val, val, val)
 				"planks":
 					var plank := py / 32
-					val *= 0.92 + 0.08 * lattice[plank % (P * P)]
+					val *= 0.85 + 0.15 * lattice[plank % (P * P)]
 					if py % 32 < 3 or (px + plank * 67) % 128 < 3:
-						val *= 0.8
+						val *= 0.55
 						seam = true
 					col = Color(val, val, val)
 				"bricks":
 					var row := py / 32
 					var bx := (px + (row % 2) * 32) % 64
-					val *= 0.93 + 0.07 * lattice[(row * 5 + ((px + (row % 2) * 32) / 64) * 3) % (P * P)]
+					val *= 0.85 + 0.15 * lattice[(row * 5 + ((px + (row % 2) * 32) / 64) * 3) % (P * P)]
 					if py % 32 < 3 or bx < 3:
-						val = 1.0
+						val *= 0.5
 						seam = true
 					col = Color(val, val, val)
 				"stripes":
-					var band := ((px + py) % 128) < 64
-					col = Color(1.0, 0.36, 0.38) if band else Color(1.0, 0.98, 0.94)
+					var band := ((px + py) % 128) < 52
+					col = stripe_a if band else Color(0.03, 0.03, 0.05)
 			img.set_pixel(px, py, col)
 			var hgt := 0.0 if seam else 0.75 + n * 0.25
 			himg.set_pixel(px, py, Color(hgt, hgt, hgt))
 	img.generate_mipmaps()
-	# Height -> normal map, so seams and grain catch the light.
 	if kind != "stripes":
-		himg.bump_map_to_normal_map(5.0 if kind != "soft" else 2.0)
+		himg.bump_map_to_normal_map(5.0 if kind != "soft" else 2.5)
 		himg.generate_mipmaps(true)
 		_normals[kind] = ImageTexture.create_from_image(himg)
 	return ImageTexture.create_from_image(img)
@@ -228,50 +279,48 @@ func _texture(kind: String) -> ImageTexture:
 # --------------------------------------------------------------------------
 
 func _build_environment() -> void:
-	var sky: Sky = SkyKit.make()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
-	env.sky = sky
+	env.sky = SkyKit.make(theme.sky)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.7
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_white = 1.0
+	env.ambient_light_energy = theme.ambient * 6.5
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 1.45
+	env.tonemap_white = 4.0
 	env.ssao_enabled = true
-	env.ssao_radius = 1.2
-	env.ssao_intensity = 1.4
+	env.ssao_radius = 1.4
+	env.ssao_intensity = 1.6
 	env.glow_enabled = true
-	env.glow_intensity = 0.45
+	env.glow_intensity = 0.5
+	env.glow_strength = 1.0
 	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = 1.5
+	env.glow_hdr_threshold = 1.0
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
+	env.set_glow_level(2, 1.0)
+	env.set_glow_level(4, 0.7)
+	env.set_glow_level(6, 0.25)
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.2
-	env.adjustment_contrast = 1.14
+	env.adjustment_saturation = 1.15
+	env.adjustment_contrast = 1.08
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.74, 0.88, 1.0)
-	env.fog_density = 0.0004
+	env.fog_light_color = theme.fog
+	env.fog_density = theme.fog_density
 	env.fog_sky_affect = 0.0
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-52.0, 38.0, 0.0)
-	sun.light_color = Color(1.0, 0.96, 0.86)
-	sun.light_energy = 1.15
+	sun.rotation_degrees = theme.sun_dir
+	sun.light_color = theme.sun_color
+	sun.light_energy = theme.sun_energy * 1.7
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.6
-	sun.shadow_opacity = 0.8
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-	sun.directional_shadow_max_distance = 80.0
+	sun.directional_shadow_max_distance = 90.0
 	sun.shadow_bias = 0.06
 	add_child(sun)
-	# Cool fill light from the opposite side keeps shaded faces readable.
-	var fill := DirectionalLight3D.new()
-	fill.rotation_degrees = Vector3(-30.0, -150.0, 0.0)
-	fill.light_color = Color(0.7, 0.82, 1.0)
-	fill.light_energy = 0.16
-	fill.light_specular = 0.0
-	add_child(fill)
 	_env = env
 	_sun = sun
 	_on_settings()
@@ -282,86 +331,48 @@ func _on_settings() -> void:
 	Settings.apply_environment(_env, _sun)
 
 
+## A coloured point light with no shadows: cheap, and it is what sells the
+## neon. Mirrored like geometry.
+func _glow(pos: Vector3, col: Color, radius := 8.0, energy := 1.6, mirror := true) -> void:
+	var spots := [pos]
+	if mirror:
+		spots.append(Vector3(-pos.x, pos.y, -pos.z))
+	for s in spots:
+		var l := OmniLight3D.new()
+		l.position = s
+		l.light_color = col
+		l.light_energy = energy * 0.8
+		l.omni_range = radius
+		l.omni_attenuation = 1.6
+		add_child(l)
+
+
 # --------------------------------------------------------------------------
-# Geometry
+# Building blocks
 # --------------------------------------------------------------------------
 
-func _build_geometry() -> void:
-	# Floor, painted paths, perimeter (visual wall is low; collision is tall).
-	_collider(Vector3(0, -0.5, 0), Vector3(66, 1, 50))
-	_visual(Vector3(0, -0.5, 0), Vector3(140, 1, 120), "grass")
-	_visual(Vector3(0, 0.006, 0), Vector3(64, 0.012, 7), "path")
-	_visual(Vector3(0, 0.008, 0), Vector3(7, 0.012, 48), "path")
+## Floor, paths and perimeter. The visible wall is low; its collider is tall
+## so nobody can jump out.
+func _build_shell() -> void:
+	var w := half_x * 2.0
+	var d := half_z * 2.0
+	_collider(Vector3(0, -0.5, 0), Vector3(w + 2, 1, d + 2))
+	_visual(Vector3(0, -0.5, 0), Vector3(w + 2, 1, d + 2), "ground")
+	_visual(Vector3(0, 0.006, 0), Vector3(w, 0.012, 7), "path")
+	_visual(Vector3(0, 0.008, 0), Vector3(7, 0.012, d), "path")
 	for sgn in [1.0, -1.0]:
-		_collider(Vector3(0, 8, sgn * (HALF_Z + 0.5)), Vector3(66, 16, 1))
-		_collider(Vector3(sgn * (HALF_X + 0.5), 8, 0), Vector3(1, 16, 50))
-	_box(Vector3(0, WALL_H * 0.5, HALF_Z + 0.5), Vector3(66, WALL_H, 1), "wall", true, 0.0, false)
-	_box(Vector3(HALF_X + 0.5, WALL_H * 0.5, 0), Vector3(1, WALL_H, 50), "wall", true, 0.0, false)
-	_box(Vector3(0, WALL_H + 0.2, HALF_Z + 0.5), Vector3(66.6, 0.5, 1.5), "coral", true, 0.0, false)
-	_box(Vector3(HALF_X + 0.5, WALL_H + 0.2, 0), Vector3(1.5, 0.5, 50.6), "coral", true, 0.0, false)
-	_box(Vector3(0, 0.3, HALF_Z + 0.02), Vector3(64, 0.6, 0.25), "teal", true, 0.0, false)
-	_box(Vector3(HALF_X + 0.02, 0.3, 0), Vector3(0.25, 0.6, 48), "teal", true, 0.0, false)
-
-	# Centre platform with east/west ramps.
-	_box(Vector3(0, 1.5, 0), Vector3(12, 3, 12), "stone", false)
-	_box(Vector3(0, 2.55, 0), Vector3(12.12, 0.5, 12.12), "teal", false, 0.0, false)
-	_wedge(Vector3(10, 0, 0), Vector3(8, 3, 5), PI, "wood")
-	_box(Vector3(0, 3.65, 0), Vector3(2.4, 1.3, 2.4), "block_y", false, 0.5)
-	_box(Vector3(4.6, 3.5, -4.2), Vector3(0.5, 1.0, 3.0), "stripes")
-
-	# Bridge from the platform to the north deck (mirrored: south deck).
-	_box(Vector3(0, 2.8, 10), Vector3(3, 0.4, 8), "wood")
-	_box(Vector3(1.55, 3.45, 10), Vector3(0.15, 0.9, 8), "blue")
-	_box(Vector3(-1.55, 3.45, 10), Vector3(0.15, 0.9, 8), "blue")
-
-	# North deck on pillars, ramp down to the west, jump pad on the east.
-	_box(Vector3(0, 2.8, 18), Vector3(16, 0.4, 8), "wood")
-	for px in [-7.0, 7.0]:
-		for pz in [15.0, 21.0]:
-			_box(Vector3(px, 1.3, pz), Vector3(0.8, 2.6, 0.8), "blue")
-	_wedge(Vector3(-12, 0, 18), Vector3(8, 3, 4), 0.0, "wood")
-	_box(Vector3(-4.75, 3.45, 14.1), Vector3(6.5, 0.9, 0.2), "blue")
-	_box(Vector3(4.75, 3.45, 14.1), Vector3(6.5, 0.9, 0.2), "blue")
-	_box(Vector3(4, 3.6, 20.5), Vector3(3, 1.2, 0.5), "stripes")
-	_jump_pad(Vector3(9.6, 0, 18), 14.5)
-
-	# Pink hut with two doors.
-	_box(Vector3(-27.3, 1.6, 13), Vector3(0.4, 3.2, 9), "pink")
-	_box(Vector3(-23, 1.6, 17.3), Vector3(9, 3.2, 0.4), "pink")
-	_box(Vector3(-18.7, 1.6, 10.15), Vector3(0.4, 3.2, 3.3), "pink")
-	_box(Vector3(-18.7, 1.6, 15.85), Vector3(0.4, 3.2, 3.3), "pink")
-	_box(Vector3(-18.7, 2.8, 13), Vector3(0.4, 0.8, 2.4), "pink")
-	_box(Vector3(-25.85, 1.6, 8.7), Vector3(3.3, 3.2, 0.4), "pink")
-	_box(Vector3(-20.15, 1.6, 8.7), Vector3(3.3, 3.2, 0.4), "pink")
-	_box(Vector3(-23, 2.8, 8.7), Vector3(2.4, 0.8, 0.4), "pink")
-	_box(Vector3(-23, 3.4, 13), Vector3(9.8, 0.4, 9.8), "roof")
-	_box(Vector3(-26.2, 0.6, 16.2), Vector3(1.2, 1.2, 1.2), "block_b", true, 0.2)
-	_lamp(Vector3(-23, 2.7, 13))
-
-	# Lane-splitting wall, toy blocks, striped barriers, barrels.
-	_box(Vector3(16, 2, -5), Vector3(1, 4, 9), "stone")
-	_box(Vector3(16, 4.15, -5), Vector3(1.3, 0.3, 9.3), "coral", true, 0.0, false)
-	_box(Vector3(22, 1.25, 14), Vector3(2.5, 2.5, 2.5), "block_r", true, 0.15)
-	_box(Vector3(24.7, 1.0, 13.0), Vector3(2, 2, 2), "block_b", true, -0.3)
-	_box(Vector3(22.2, 3.25, 14.1), Vector3(1.5, 1.5, 1.5), "block_y", true, 0.6)
-	_box(Vector3(14, 0.6, 21), Vector3(1.2, 1.2, 1.2), "block_g", true, 0.4)
-	_box(Vector3(-6, 0.75, -16.5), Vector3(1.5, 1.5, 1.5), "block_r", true, 0.25)
-	_box(Vector3(9, 0.6, -9.5), Vector3(5, 1.2, 0.6), "stripes")
-	_box(Vector3(-12, 0.6, -11), Vector3(0.6, 1.2, 5), "stripes")
-	_box(Vector3(27, 0.6, 3), Vector3(0.6, 1.2, 6), "stripes")
-	_barrel(Vector3(20, 0, -20.5))
-	_barrel(Vector3(21.3, 0, -19.8))
-	_barrel(Vector3(-3, 0, 22.6))
-	_barrel(Vector3(30.5, 0, 9))
-
-	for p in [Vector3(28, 0.1, 20.5), Vector3(29.5, 0.1, -6), Vector3(-18, 0.1, 21.5),
-			Vector3(24, 0.1, -21.5), Vector3(-23, 0.1, 13)]:
-		spawn_points.append(p)
-		spawn_points.append(Vector3(-p.x, p.y, -p.z))
-	for spot in [["weapon", Vector3(0, 3.0, 3.9)], ["weapon", Vector3(-5.0, 3.0, 19.6)],
-			["health", Vector3(-25.6, 0.0, 10.4)], ["health", Vector3(20.0, 0.0, 2.0)]]:
-		pickup_spots.append(spot)
-		pickup_spots.append([spot[0], Vector3(-spot[1].x, spot[1].y, -spot[1].z)])
+		_collider(Vector3(0, 8, sgn * (half_z + 0.5)), Vector3(w + 2, 16, 1))
+		_collider(Vector3(sgn * (half_x + 0.5), 8, 0), Vector3(1, 16, d + 2))
+	_box(Vector3(0, wall_h * 0.5, half_z + 0.5), Vector3(w + 2, wall_h, 1), "wall", true, 0.0, false)
+	_box(Vector3(half_x + 0.5, wall_h * 0.5, 0), Vector3(1, wall_h, d + 2), "wall", true, 0.0, false)
+	_box(Vector3(0, wall_h + 0.04, half_z + 0.08), Vector3(w + 0.3, 0.1, 0.16), "accent_a", true, 0.0, false)
+	_box(Vector3(half_x + 0.08, wall_h + 0.04, 0), Vector3(0.16, 0.1, d + 0.3), "accent_a", true, 0.0, false)
+	_box(Vector3(0, 0.12, half_z + 0.02), Vector3(w, 0.16, 0.14), "accent_b", true, 0.0, false)
+	_box(Vector3(half_x + 0.02, 0.12, 0), Vector3(0.14, 0.16, d), "accent_b", true, 0.0, false)
+	# Path edge lines.
+	for off in [3.5, -3.5]:
+		_visual(Vector3(0, 0.02, off), Vector3(w, 0.03, 0.08), "rail")
+		_visual(Vector3(off, 0.02, 0), Vector3(0.08, 0.03, d), "rail")
 
 
 func _collider(pos: Vector3, size: Vector3, yaw := 0.0) -> void:
@@ -373,12 +384,15 @@ func _collider(pos: Vector3, size: Vector3, yaw := 0.0) -> void:
 	_body.add_child(cs)
 
 
-func _visual(pos: Vector3, size: Vector3, mat: String, yaw := 0.0) -> void:
+func _visual(pos: Vector3, size: Vector3, mat: String, yaw := 0.0) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = _rounded_box(size)
 	mi.material_override = _mats[mat]
 	mi.transform = Transform3D(Basis(Vector3.UP, yaw), pos)
+	if mat.begins_with("accent") or mat == "rail" or mat == "pad":
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+	return mi
 
 
 func _box(pos: Vector3, size: Vector3, mat: String, mirror := true, yaw := 0.0, collide := true) -> void:
@@ -389,17 +403,20 @@ func _box(pos: Vector3, size: Vector3, mat: String, mirror := true, yaw := 0.0, 
 		if collide:
 			_collider(c[0], size, c[1])
 		_visual(c[0], size, mat, c[1])
+		if mat == "crate":
+			# A glowing band around each crate.
+			_visual(c[0], Vector3(size.x + 0.04, 0.1, size.z + 0.04), "accent_a", c[1])
 
 
-## Box mesh with rounded edges, built at its real size so the bevel radius is
-## not distorted by scaling. Cached per size.
+## Box mesh with slightly rounded edges, built at its real size so the bevel
+## radius is not distorted by scaling. Cached per size.
 func _rounded_box(size: Vector3) -> ArrayMesh:
 	var key := "%.3f,%.3f,%.3f" % [size.x, size.y, size.z]
 	if _box_cache.has(key):
 		return _box_cache[key]
 	const SEG := 2
 	var h := size * 0.5
-	var r := minf(0.14, minf(size.x, minf(size.y, size.z)) * 0.3)
+	var r := minf(0.07, minf(size.x, minf(size.y, size.z)) * 0.3)
 	var faces := [
 		[Vector3.RIGHT, Vector3.UP, Vector3.BACK], [Vector3.LEFT, Vector3.BACK, Vector3.UP],
 		[Vector3.UP, Vector3.BACK, Vector3.RIGHT], [Vector3.DOWN, Vector3.RIGHT, Vector3.BACK],
@@ -499,13 +516,14 @@ func _wedge(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := tru
 		mi.material_override = _mats[mat]
 		mi.transform = xf
 		add_child(mi)
-		# Painted side rails so the ramp reads as a toy slide.
+		# Glowing side rails.
 		for side in [-1.0, 1.0]:
 			var rail := MeshInstance3D.new()
 			var length := sqrt(size.x * size.x + size.y * size.y)
-			rail.mesh = _rounded_box(Vector3(length, 0.22, 0.22))
-			rail.material_override = _mats["coral"]
-			rail.transform = xf * Transform3D(Basis(Vector3.BACK, atan2(size.y, size.x)), Vector3(0, h * 0.5 + 0.06, side * (w - 0.05)))
+			rail.mesh = _rounded_box(Vector3(length, 0.12, 0.12))
+			rail.material_override = _mats["accent_a"]
+			rail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			rail.transform = xf * Transform3D(Basis(Vector3.BACK, atan2(size.y, size.x)), Vector3(0, h * 0.5 + 0.04, side * (w - 0.05)))
 			add_child(rail)
 
 
@@ -516,9 +534,9 @@ func _barrel(pos: Vector3, mirror := true) -> void:
 	mesh.height = 1.2
 	mesh.radial_segments = 18
 	var band := CylinderMesh.new()
-	band.top_radius = 0.46
-	band.bottom_radius = 0.46
-	band.height = 0.14
+	band.top_radius = 0.45
+	band.bottom_radius = 0.45
+	band.height = 0.08
 	band.radial_segments = 18
 	var shape := CylinderShape3D.new()
 	shape.radius = 0.45
@@ -531,9 +549,9 @@ func _barrel(pos: Vector3, mirror := true) -> void:
 		cs.shape = shape
 		cs.position = s + Vector3(0, 0.6, 0)
 		_body.add_child(cs)
-		_prop(mesh, "barrel", s + Vector3(0, 0.6, 0))
-		_prop(band, "wall", s + Vector3(0, 0.95, 0))
-		_prop(band, "wall", s + Vector3(0, 0.25, 0))
+		_prop(mesh, "dark", s + Vector3(0, 0.6, 0))
+		_prop(band, "accent_b", s + Vector3(0, 0.95, 0))
+		_prop(band, "accent_b", s + Vector3(0, 0.25, 0))
 
 
 func _prop(mesh: Mesh, mat, pos: Vector3, scl := Vector3.ONE, parent: Node3D = null) -> MeshInstance3D:
@@ -546,16 +564,6 @@ func _prop(mesh: Mesh, mat, pos: Vector3, scl := Vector3.ONE, parent: Node3D = n
 	return mi
 
 
-func _lamp(pos: Vector3) -> void:
-	for s in [pos, Vector3(-pos.x, pos.y, -pos.z)]:
-		var l := OmniLight3D.new()
-		l.position = s
-		l.light_color = Color(1.0, 0.85, 0.6)
-		l.light_energy = 1.4
-		l.omni_range = 9.0
-		add_child(l)
-
-
 ## Launches any player that steps on it straight up.
 func _jump_pad(pos: Vector3, power: float) -> void:
 	for s in [pos, Vector3(-pos.x, pos.y, -pos.z)]:
@@ -563,12 +571,13 @@ func _jump_pad(pos: Vector3, power: float) -> void:
 		base.top_radius = 1.15
 		base.bottom_radius = 1.3
 		base.height = 0.14
-		_prop(base, "pad_base", s + Vector3(0, 0.07, 0))
+		_prop(base, "dark", s + Vector3(0, 0.07, 0))
 		var top := CylinderMesh.new()
 		top.top_radius = 0.9
 		top.bottom_radius = 0.9
 		top.height = 0.06
-		_prop(top, "pad", s + Vector3(0, 0.16, 0))
+		_prop(top, "pad", s + Vector3(0, 0.16, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_glow(s + Vector3(0, 1.2, 0), Color(0.3, 1.0, 0.85), 6.0, 1.6, false)
 		var torus := TorusMesh.new()
 		torus.inner_radius = 0.78
 		torus.outer_radius = 0.9
@@ -578,7 +587,8 @@ func _jump_pad(pos: Vector3, power: float) -> void:
 			var m := StandardMaterial3D.new()
 			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			m.albedo_color = Color(0.4, 1.0, 0.9, 0.8)
+			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+			m.albedo_color = Color(0.4, 1.4, 1.2, 0.8)
 			var holder := Node3D.new()
 			holder.position = s
 			add_child(holder)
@@ -603,90 +613,291 @@ func _jump_pad(pos: Vector3, power: float) -> void:
 				Sfx.play_at("pad", body.global_position, -5.0))
 
 
+func _spawns(points: Array) -> void:
+	for p in points:
+		spawn_points.append(p)
+		spawn_points.append(Vector3(-p.x, p.y, -p.z))
+
+
+func _pickups(spots: Array) -> void:
+	for spot in spots:
+		pickup_spots.append(spot)
+		pickup_spots.append([spot[0], Vector3(-spot[1].x, spot[1].y, -spot[1].z)])
+
+
+## A small building: walls with door gaps and a flat roof. `c` is the centre of
+## its floor, `half` its half-extents; doors face +X (two) by default.
+func _hut(c: Vector3, mat: String) -> void:
+	_box(c + Vector3(-4.3, 1.6, 0), Vector3(0.4, 3.2, 9), mat)
+	_box(c + Vector3(0, 1.6, 4.3), Vector3(9, 3.2, 0.4), mat)
+	_box(c + Vector3(4.3, 1.6, -2.85), Vector3(0.4, 3.2, 3.3), mat)
+	_box(c + Vector3(4.3, 1.6, 2.85), Vector3(0.4, 3.2, 3.3), mat)
+	_box(c + Vector3(4.3, 2.8, 0), Vector3(0.4, 0.8, 2.4), mat)
+	_box(c + Vector3(-2.85, 1.6, -4.3), Vector3(3.3, 3.2, 0.4), mat)
+	_box(c + Vector3(2.85, 1.6, -4.3), Vector3(3.3, 3.2, 0.4), mat)
+	_box(c + Vector3(0, 2.8, -4.3), Vector3(2.4, 0.8, 0.4), mat)
+	_box(c + Vector3(0, 3.4, 0), Vector3(9.8, 0.4, 9.8), "block_c")
+	_box(c + Vector3(0, 3.4, 0), Vector3(9.9, 0.12, 9.9), "accent_b", true, 0.0, false)
+	_glow(c + Vector3(0, 2.6, 0), theme.accent_a, 8.0, 1.8)
+
+
+# --------------------------------------------------------------------------
+# Layout 0: NEON YARD (medium)
+# --------------------------------------------------------------------------
+
+func _layout_yard() -> void:
+	# Centre platform with east/west ramps.
+	_box(Vector3(0, 1.5, 0), Vector3(12, 3, 12), "block_a", false)
+	_box(Vector3(0, 2.6, 0), Vector3(12.1, 0.14, 12.1), "accent_b", false, 0.0, false)
+	_wedge(Vector3(10, 0, 0), Vector3(8, 3, 5), PI, "deck")
+	_box(Vector3(0, 3.65, 0), Vector3(2.4, 1.3, 2.4), "crate", false, 0.5)
+	_box(Vector3(4.6, 3.5, -4.2), Vector3(0.5, 1.0, 3.0), "stripes")
+	_glow(Vector3(0, 5.2, 0), theme.accent_b, 13.0, 2.2, false)
+
+	# Bridge from the platform to the north deck (mirrored: south deck).
+	_box(Vector3(0, 2.8, 10), Vector3(3, 0.4, 8), "deck")
+	_box(Vector3(1.55, 3.45, 10), Vector3(0.15, 0.9, 8), "rail")
+	_box(Vector3(-1.55, 3.45, 10), Vector3(0.15, 0.9, 8), "rail")
+
+	# North deck on pillars, ramp down to the west, jump pad on the east.
+	_box(Vector3(0, 2.8, 18), Vector3(16, 0.4, 8), "deck")
+	for px in [-7.0, 7.0]:
+		for pz in [15.0, 21.0]:
+			_box(Vector3(px, 1.3, pz), Vector3(0.8, 2.6, 0.8), "block_c")
+			_box(Vector3(px, 1.3, pz), Vector3(0.86, 0.12, 0.86), "accent_a", true, 0.0, false)
+	_wedge(Vector3(-12, 0, 18), Vector3(8, 3, 4), 0.0, "deck")
+	_box(Vector3(-4.75, 3.45, 14.1), Vector3(6.5, 0.9, 0.2), "rail")
+	_box(Vector3(4.75, 3.45, 14.1), Vector3(6.5, 0.9, 0.2), "rail")
+	_box(Vector3(4, 3.6, 20.5), Vector3(3, 1.2, 0.5), "stripes")
+	_jump_pad(Vector3(9.6, 0, 18), 14.5)
+	_glow(Vector3(0, 1.6, 18), theme.accent_a, 10.0, 1.6)
+
+	_hut(Vector3(-23, 0, 13), "block_b")
+	_box(Vector3(-26.2, 0.6, 16.2), Vector3(1.2, 1.2, 1.2), "crate", true, 0.2)
+
+	# Lane-splitting wall, crates, striped barriers, barrels.
+	_box(Vector3(16, 2, -5), Vector3(1, 4, 9), "block_a")
+	_box(Vector3(16, 4.1, -5), Vector3(1.2, 0.16, 9.2), "accent_a", true, 0.0, false)
+	_box(Vector3(22, 1.25, 14), Vector3(2.5, 2.5, 2.5), "crate", true, 0.15)
+	_box(Vector3(24.7, 1.0, 13.0), Vector3(2, 2, 2), "crate", true, -0.3)
+	_box(Vector3(22.2, 3.25, 14.1), Vector3(1.5, 1.5, 1.5), "crate", true, 0.6)
+	_box(Vector3(14, 0.6, 21), Vector3(1.2, 1.2, 1.2), "crate", true, 0.4)
+	_box(Vector3(-6, 0.75, -16.5), Vector3(1.5, 1.5, 1.5), "crate", true, 0.25)
+	_box(Vector3(9, 0.6, -9.5), Vector3(5, 1.2, 0.6), "stripes")
+	_box(Vector3(-12, 0.6, -11), Vector3(0.6, 1.2, 5), "stripes")
+	_box(Vector3(27, 0.6, 3), Vector3(0.6, 1.2, 6), "stripes")
+	_barrel(Vector3(20, 0, -20.5))
+	_barrel(Vector3(21.3, 0, -19.8))
+	_barrel(Vector3(-3, 0, 22.6))
+	_barrel(Vector3(30.5, 0, 9))
+	_glow(Vector3(24, 3.5, -4), theme.accent_b, 12.0, 1.5)
+	_glow(Vector3(-27, 3.0, -18), theme.accent_a, 12.0, 1.5)
+
+	_spawns([Vector3(28, 0.1, 20.5), Vector3(29.5, 0.1, -6), Vector3(-18, 0.1, 21.5),
+		Vector3(24, 0.1, -21.5), Vector3(-23, 0.1, 13)])
+	_pickups([["weapon", Vector3(0, 3.0, 3.9)], ["weapon", Vector3(-5.0, 3.0, 19.6)],
+		["health", Vector3(-25.6, 0.0, 10.4)], ["health", Vector3(20.0, 0.0, 2.0)]])
+
+
+# --------------------------------------------------------------------------
+# Layout 1: EMBER PIT (small)
+# --------------------------------------------------------------------------
+
+func _layout_pit() -> void:
+	# Central block with east/west ramps and a pillar on top.
+	_box(Vector3(0, 1, 0), Vector3(6, 2, 6), "block_a", false)
+	_box(Vector3(0, 1.7, 0), Vector3(6.1, 0.14, 6.1), "accent_a", false, 0.0, false)
+	_wedge(Vector3(5.5, 0, 0), Vector3(5, 2, 3.5), PI, "deck")
+	_box(Vector3(0, 2.9, 0), Vector3(1.6, 1.8, 1.6), "crate", false, 0.4)
+	_glow(Vector3(0, 4.6, 0), theme.accent_a, 12.0, 2.4, false)
+
+	# Raised ledges along the east and west walls, each with a ramp.
+	_box(Vector3(15.5, 1.25, -8), Vector3(5, 2.5, 8), "block_b")
+	_box(Vector3(15.5, 2.2, -8), Vector3(5.1, 0.14, 8.1), "accent_b", true, 0.0, false)
+	_wedge(Vector3(15.5, 0, -0.75), Vector3(6.5, 2.5, 5), PI / 2, "deck")
+	_box(Vector3(13.2, 3.0, -8), Vector3(0.3, 1.0, 5), "stripes")
+
+	# Corner cover.
+	_box(Vector3(10, 1, 8), Vector3(4, 2, 0.6), "block_a")
+	_box(Vector3(11.7, 1, 6.3), Vector3(0.6, 2, 4), "block_a")
+	_box(Vector3(-8, 1, 8.5), Vector3(4, 2, 0.6), "block_a")
+	_box(Vector3(-9.7, 1, 6.8), Vector3(0.6, 2, 4), "block_a")
+	_box(Vector3(0, 0.6, 9), Vector3(5, 1.2, 0.6), "stripes")
+	_box(Vector3(7.5, 0.6, -8), Vector3(0.6, 1.2, 4), "stripes")
+	_box(Vector3(-4, 0.75, 11.5), Vector3(1.5, 1.5, 1.5), "crate", true, 0.3)
+	_barrel(Vector3(16.5, 0, 12.3))
+	_barrel(Vector3(-16.6, 0, -6.5))
+	_jump_pad(Vector3(0, 0, 5.2), 10.5)
+	_glow(Vector3(12, 3.0, 10), theme.accent_b, 10.0, 1.6)
+	_glow(Vector3(-12, 3.0, 10), theme.accent_a, 10.0, 1.6)
+
+	_spawns([Vector3(15, 0.1, 11), Vector3(0, 0.1, 12), Vector3(-8, 0.1, 11.8), Vector3(15.5, 2.6, -9)])
+	_pickups([["weapon", Vector3(2.1, 2.0, 2.1)], ["health", Vector3(15.5, 2.5, -5.5)]])
+
+
+# --------------------------------------------------------------------------
+# Layout 2: FROST LINE (large)
+# --------------------------------------------------------------------------
+
+func _layout_frost() -> void:
+	# Central tower with long east/west ramps and a second tier.
+	_box(Vector3(0, 2, 0), Vector3(10, 4, 10), "block_a", false)
+	_box(Vector3(0, 3.6, 0), Vector3(10.1, 0.14, 10.1), "accent_a", false, 0.0, false)
+	_wedge(Vector3(10, 0, 0), Vector3(10, 4, 5), PI, "deck")
+	_box(Vector3(0, 5, 0), Vector3(3.6, 2, 3.6), "block_c", false)
+	_box(Vector3(0, 5.6, 0), Vector3(3.7, 0.12, 3.7), "accent_b", false, 0.0, false)
+	_glow(Vector3(0, 7.5, 0), theme.accent_a, 18.0, 2.6, false)
+
+	# Bridges to the north/south decks; each deck has a ramp at both ends.
+	_box(Vector3(0, 3.8, 11), Vector3(4, 0.4, 12), "deck")
+	_box(Vector3(2.05, 4.45, 11), Vector3(0.15, 0.9, 12), "rail")
+	_box(Vector3(-2.05, 4.45, 11), Vector3(0.15, 0.9, 12), "rail")
+	_box(Vector3(0, 3.8, 21), Vector3(20, 0.4, 8), "deck")
+	for px in [-9.0, 9.0]:
+		for pz in [18.0, 24.0]:
+			_box(Vector3(px, 1.8, pz), Vector3(0.9, 3.6, 0.9), "block_c")
+			_box(Vector3(px, 1.8, pz), Vector3(0.96, 0.12, 0.96), "accent_a", true, 0.0, false)
+	_wedge(Vector3(15, 0, 21), Vector3(10, 4, 4), PI, "deck")
+	_wedge(Vector3(-15, 0, 21), Vector3(10, 4, 4), 0.0, "deck")
+	_box(Vector3(-6.2, 4.45, 17.1), Vector3(8, 0.9, 0.2), "rail")
+	_box(Vector3(6.2, 4.45, 17.1), Vector3(8, 0.9, 0.2), "rail")
+	_box(Vector3(-5, 4.6, 23.5), Vector3(3, 1.2, 0.5), "stripes")
+	_glow(Vector3(0, 2.0, 21), theme.accent_b, 12.0, 1.6)
+
+	# East/west bases: an open-backed hall with a walkable roof and a ramp up.
+	_box(Vector3(28.2, 1.6, -6.25), Vector3(0.4, 3.2, 3.5), "block_b")
+	_box(Vector3(28.2, 1.6, 0), Vector3(0.4, 3.2, 4), "block_b")
+	_box(Vector3(28.2, 1.6, 6.25), Vector3(0.4, 3.2, 3.5), "block_b")
+	_box(Vector3(28.2, 2.85, -3.25), Vector3(0.4, 0.7, 2.5), "block_b")
+	_box(Vector3(28.2, 2.85, 3.25), Vector3(0.4, 0.7, 2.5), "block_b")
+	_box(Vector3(32, 1.6, 7.8), Vector3(8, 3.2, 0.4), "block_b")
+	_box(Vector3(32, 1.6, -7.8), Vector3(8, 3.2, 0.4), "block_b")
+	_box(Vector3(35, 3.4, 0), Vector3(14, 0.4, 16), "block_c")
+	_box(Vector3(35, 3.4, 0), Vector3(14.1, 0.12, 16.1), "accent_b", true, 0.0, false)
+	_wedge(Vector3(35, 0, 11.5), Vector3(7, 3.6, 5), PI / 2, "deck")
+	_box(Vector3(30, 4.2, -5), Vector3(0.5, 1.2, 4), "stripes")
+	_glow(Vector3(34, 2.6, 0), theme.accent_a, 11.0, 2.0)
+
+	# Mid-field cover.
+	_box(Vector3(20, 2, -12), Vector3(1, 4, 10), "block_a")
+	_box(Vector3(20, 4.1, -12), Vector3(1.2, 0.16, 10.2), "accent_a", true, 0.0, false)
+	_box(Vector3(22, 1.5, 13), Vector3(6, 3, 1), "block_a")
+	_box(Vector3(22, 3.1, 13), Vector3(6.2, 0.16, 1.2), "accent_b", true, 0.0, false)
+	_box(Vector3(12, 1.25, -14), Vector3(2.5, 2.5, 2.5), "crate", true, 0.15)
+	_box(Vector3(14.7, 1.0, -13), Vector3(2, 2, 2), "crate", true, -0.3)
+	_box(Vector3(-10, 1.0, -27), Vector3(2, 2, 2), "crate", true, 0.3)
+	_box(Vector3(8, 0.6, -9), Vector3(5, 1.2, 0.6), "stripes")
+	_box(Vector3(-8, 0.6, -12), Vector3(0.6, 1.2, 5), "stripes")
+	_box(Vector3(26, 0.6, -22), Vector3(6, 1.2, 0.6), "stripes")
+	_box(Vector3(30, 0.6, 21), Vector3(0.6, 1.2, 6), "stripes")
+	_barrel(Vector3(40.5, 0, 14))
+	_barrel(Vector3(-22, 0, 30.2))
+	_barrel(Vector3(6, 0, 29.5))
+	_jump_pad(Vector3(7.2, 0, 7.2), 15.5)
+	_jump_pad(Vector3(40, 0, -18), 16.0)
+	_glow(Vector3(22, 4.0, -24), theme.accent_b, 14.0, 1.6)
+	_glow(Vector3(-30, 4.0, 22), theme.accent_a, 14.0, 1.6)
+
+	_spawns([Vector3(41, 0.1, 27), Vector3(41, 0.1, -27), Vector3(24, 0.1, 29), Vector3(39, 0.1, 0),
+		Vector3(30, 0.1, -16), Vector3(-24, 0.1, 29)])
+	_pickups([["weapon", Vector3(3.2, 4.0, 3.2)], ["weapon", Vector3(6.5, 4.0, 22.5)], ["weapon", Vector3(36, 3.6, -4)],
+		["health", Vector3(38, 0.0, 0)], ["health", Vector3(0, 0.0, 11)]])
+
+
 # --------------------------------------------------------------------------
 # Scenery (no gameplay effect)
 # --------------------------------------------------------------------------
 
 func _build_scenery() -> void:
 	var rich: bool = Settings.v("scenery") == 1
-	# Rolling hills on the horizon.
-	for i in 16:
-		var a := TAU * i / 16.0 + _rng.randf_range(-0.12, 0.12)
-		var d := _rng.randf_range(78.0, 120.0)
-		var rad := _rng.randf_range(26.0, 46.0)
-		var hill := _prop(_unit_sphere, "hill_a" if i % 2 == 0 else "hill_b",
-			Vector3(cos(a) * d, -4.0, sin(a) * d), Vector3(rad, rad * _rng.randf_range(0.3, 0.5), rad))
-		hill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-
-	# Trees: a ring outside the walls plus one in each inside corner.
-	var tree_n := 46 if rich else 18
-	for i in tree_n:
-		var a2 := TAU * i / float(tree_n) + _rng.randf_range(-0.05, 0.05)
-		var dir := Vector2(cos(a2), sin(a2))
-		var edge := minf((HALF_X + 4.0) / maxf(absf(dir.x), 0.001), (HALF_Z + 4.0) / maxf(absf(dir.y), 0.001))
-		var d2 := edge + _rng.randf_range(1.0, 16.0)
-		_tree(Vector3(dir.x * d2, 0, dir.y * d2), _rng.randf_range(0.9, 1.5), false)
-	for c in [Vector3(30.3, 0, 22.4), Vector3(-30.3, 0, 22.4)]:
-		_tree(c, 1.0, true)
-		_tree(Vector3(-c.x, 0, -c.z), 1.0, true)
-
-	# Bushes hugging the inside of the walls.
-	for i in (26 if rich else 0):
-		var along := _rng.randf_range(-1.0, 1.0)
-		var pos: Vector3
-		match i % 4:
-			0: pos = Vector3(along * (HALF_X - 2.0), 0, HALF_Z - 0.5)
-			1: pos = Vector3(along * (HALF_X - 2.0), 0, -HALF_Z + 0.5)
-			2: pos = Vector3(HALF_X - 0.5, 0, along * (HALF_Z - 2.0))
-			_: pos = Vector3(-HALF_X + 0.5, 0, along * (HALF_Z - 2.0))
-		var rad2 := _rng.randf_range(0.5, 0.85)
-		var mat := "leaf_c" if i % 7 == 0 else ("leaf_a" if i % 2 == 0 else "leaf_b")
-		_prop(_unit_sphere, mat, pos + Vector3(0, rad2 * 0.45, 0), Vector3(rad2, rad2 * 0.75, rad2))
-
-	# Clouds drifting slowly around the arena.
-	_clouds = Node3D.new()
-	_clouds.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-	add_child(_clouds)
-	for i in (15 if rich else 7):
-		var a3 := TAU * i / 15.0 + _rng.randf_range(-0.2, 0.2)
-		var d3 := _rng.randf_range(55.0, 130.0)
-		var centre := Vector3(cos(a3) * d3, _rng.randf_range(26.0, 48.0), sin(a3) * d3)
-		var big := _rng.randf_range(3.5, 7.0)
-		for j in 5:
-			var off := Vector3((j - 2) * big * 0.75, _rng.randf_range(-0.2, 0.5) * big, _rng.randf_range(-0.4, 0.4) * big)
-			var rr := big * (1.0 - absf(j - 2) * 0.22) * _rng.randf_range(0.85, 1.1)
-			var puff := _prop(_unit_sphere, "cloud", centre + off, Vector3(rr, rr * 0.7, rr), _clouds)
-			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-
+	# Dark apron outside the walls so the horizon is not empty.
+	var apron := PlaneMesh.new()
+	apron.size = Vector2(700, 700)
+	var am := StandardMaterial3D.new()
+	am.albedo_color = theme.ground.darkened(0.5)
+	am.roughness = 0.6
+	_prop(apron, am, Vector3(0, -0.6, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	match theme.scenery:
+		"city": _scenery_city(30 if rich else 14)
+		"rocks": _scenery_spires(46 if rich else 20, theme.block_c, theme.accent_a, false)
+		"ice": _scenery_spires(54 if rich else 22, Color(0.2, 0.34, 0.42), theme.accent_a, true)
 	if rich:
-		_flowers()
-		_grass()
-		_petals()
-
-	# Bunting across the corners and balloons on the roofs.
-	for sgn in [1.0, -1.0]:
-		_bunting(Vector3(-HALF_X, WALL_H + 0.4, sgn * 6.0), Vector3(-12.0, WALL_H + 0.4, sgn * HALF_Z))
-		_bunting(Vector3(HALF_X, WALL_H + 0.4, sgn * 6.0), Vector3(12.0, WALL_H + 0.4, sgn * HALF_Z))
-	for p in [Vector3(-18.6, 3.6, 8.6), Vector3(-27.4, 3.6, 17.4), Vector3(7.6, 3.0, 21.6), Vector3(16, 4.3, -9.2)]:
-		_balloon_bunch(p)
-		_balloon_bunch(Vector3(-p.x, p.y, -p.z))
+		if not theme.grass.is_empty():
+			_grass(theme.grass[0], theme.grass[1])
+		_motes()
 
 
-## True when a ground decoration at `p` would sit on a path or inside a hut.
+func _ring_spot(i: int, n: int, near: float, far: float) -> Vector3:
+	var a := TAU * i / float(n) + _rng.randf_range(-0.08, 0.08)
+	var dir := Vector2(cos(a), sin(a))
+	var edge := minf((half_x + 6.0) / maxf(absf(dir.x), 0.001), (half_z + 6.0) / maxf(absf(dir.y), 0.001))
+	var d := edge + _rng.randf_range(near, far)
+	return Vector3(dir.x * d, 0, dir.y * d)
+
+
+## Night-city skyline: dark towers with glowing window bands and roof beacons.
+func _scenery_city(count: int) -> void:
+	var tower := BoxMesh.new()
+	var body := StandardMaterial3D.new()
+	body.albedo_color = Color(0.03, 0.035, 0.07)
+	body.roughness = 0.5
+	for i in count:
+		var p := _ring_spot(i, count, 6.0, 55.0)
+		var w := _rng.randf_range(7.0, 16.0)
+		var h := _rng.randf_range(10.0, 44.0)
+		var t := _prop(tower, body, p + Vector3(0, h * 0.5, 0), Vector3(w, h, w))
+		t.rotation.y = _rng.randf() * 0.6
+		t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var neon: String = "accent_a" if i % 2 == 0 else "accent_b"
+		var bands := 2 + _rng.randi() % 4
+		for b in bands:
+			var y := h * (0.25 + 0.7 * b / float(bands))
+			var band := _prop(tower, neon, p + Vector3(0, y, 0), Vector3(w + 0.15, 0.22, w + 0.15))
+			band.rotation.y = t.rotation.y
+			band.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## Jagged spires: dark rock for the pit, glowing crystals for the ice field.
+func _scenery_spires(count: int, col: Color, glow: Color, crystal: bool) -> void:
+	var cone := CylinderMesh.new()
+	cone.top_radius = 0.0
+	cone.bottom_radius = 1.0
+	cone.height = 1.0
+	cone.radial_segments = 6
+	var rock := StandardMaterial3D.new()
+	rock.albedo_color = col
+	rock.roughness = 0.35 if crystal else 0.8
+	if crystal:
+		rock.emission_enabled = true
+		rock.emission = glow
+		rock.emission_energy_multiplier = 0.25
+		rock.rim_enabled = true
+	for i in count:
+		var p := _ring_spot(i, count, 2.0, 60.0)
+		var h := _rng.randf_range(5.0, 30.0) * (1.5 if i % 7 == 0 else 1.0)
+		var r := h * _rng.randf_range(0.14, 0.3)
+		var s := _prop(cone, rock, p + Vector3(0, h * 0.5 - 0.6, 0), Vector3(r, h, r))
+		s.rotation = Vector3(_rng.randf_range(-0.12, 0.12), _rng.randf() * TAU, _rng.randf_range(-0.12, 0.12))
+		s.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if i % 3 == 0:
+			# A glowing pool / shard at the foot of some spires.
+			var disc := CylinderMesh.new()
+			disc.top_radius = r * 1.6
+			disc.bottom_radius = r * 1.6
+			disc.height = 0.1
+			_prop(disc, "accent_a" if not crystal else "accent_b", p + Vector3(0, -0.5, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## True when a ground decoration at `p` would sit on a path.
 func _off_lawn(p: Vector3) -> bool:
-	if absf(p.x) < 3.8 or absf(p.z) < 3.8:
-		return true
-	for sgn in [1.0, -1.0]:
-		if absf(p.x - sgn * -23.0) < 4.7 and absf(p.z - sgn * 13.0) < 4.7:
-			return true
-	return false
+	return absf(p.x) < 3.8 or absf(p.z) < 3.8
 
 
 const GRASS_SHADER := """
 shader_type spatial;
 render_mode cull_disabled, diffuse_lambert_wrap, specular_disabled;
-uniform vec3 base : source_color = vec3(0.36, 0.68, 0.3);
-uniform vec3 tip : source_color = vec3(0.58, 0.88, 0.42);
+uniform vec3 base : source_color = vec3(0.03, 0.1, 0.12);
+uniform vec3 tip : source_color = vec3(0.1, 0.4, 0.42);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float bend = 1.0 - UV.y;
@@ -705,7 +916,7 @@ void fragment() {
 ## Tens of thousands of swaying grass blades in one draw call. Each blade is
 ## a single triangle; the vertex shader bends the tips in the wind and forces
 ## the normal upward so the lawn shades like the ground beneath it.
-func _grass() -> void:
+func _grass(base: Color, tip: Color) -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for vtx in [[Vector3(-0.028, 0, 0), Vector2(0, 1)], [Vector3(0.028, 0, 0), Vector2(1, 1)], [Vector3(0, 0.2, 0), Vector2(0.5, 0)]]:
@@ -716,13 +927,15 @@ func _grass() -> void:
 	sh.code = GRASS_SHADER
 	var mat := ShaderMaterial.new()
 	mat.shader = sh
+	mat.set_shader_parameter("base", base)
+	mat.set_shader_parameter("tip", tip)
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = true
 	mm.mesh = st.commit()
 	var spots: Array = []
 	while spots.size() < 60000:
-		var p := Vector3(_rng.randf_range(-HALF_X + 0.3, HALF_X - 0.3), 0, _rng.randf_range(-HALF_Z + 0.3, HALF_Z - 0.3))
+		var p := Vector3(_rng.randf_range(-half_x + 0.3, half_x - 0.3), 0, _rng.randf_range(-half_z + 0.3, half_z - 0.3))
 		if not _off_lawn(p):
 			spots.append(p)
 	mm.instance_count = spots.size()
@@ -730,8 +943,8 @@ func _grass() -> void:
 		var scl := _rng.randf_range(0.6, 1.35)
 		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(scl, scl * _rng.randf_range(0.7, 1.3), scl))
 		mm.set_instance_transform(i, Transform3D(basis, spots[i]))
-		var tone := _rng.randf_range(0.86, 1.08)
-		mm.set_instance_color(i, Color(tone, tone, tone * 0.95))
+		var tone := _rng.randf_range(0.8, 1.15)
+		mm.set_instance_color(i, Color(tone, tone, tone))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	mmi.material_override = mat
@@ -739,160 +952,50 @@ func _grass() -> void:
 	add_child(mmi)
 
 
-## Slow drifting petals for a bit of life in the air.
-func _petals() -> void:
+## Glowing specks in the air: fireflies, embers or snow depending on the theme.
+func _motes() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	mat.vertex_color_use_as_albedo = true
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	mat.billboard_keep_scale = true
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 32
+	tex.height = 32
+	mat.albedo_texture = tex
 	var ramp := Gradient.new()
-	ramp.set_color(0, Color(1.0, 0.75, 0.85))
-	ramp.set_color(1, Color(1.0, 1.0, 0.95))
+	ramp.set_color(0, theme.motes[0] * 1.8)
+	ramp.set_color(1, theme.motes[1] * 1.8)
+	var rise: float = theme.mote_rise
 	var p := CPUParticles3D.new()
 	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	p.mesh = QuadMesh.new()
 	p.material_override = mat
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	p.amount = 110
-	p.lifetime = 11.0
-	p.preprocess = 11.0
+	p.amount = int(half_x * half_z * 0.3)
+	p.lifetime = 10.0
+	p.preprocess = 10.0
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	p.emission_box_extents = Vector3(HALF_X, 3.5, HALF_Z)
-	p.direction = Vector3(1, 0, 0.4)
-	p.spread = 25.0
-	p.initial_velocity_min = 0.3
-	p.initial_velocity_max = 0.9
-	p.gravity = Vector3(0, -0.22, 0)
+	p.emission_box_extents = Vector3(half_x, 4.0, half_z)
+	p.direction = Vector3(0.6, signf(rise), 0.3)
+	p.spread = 40.0
+	p.initial_velocity_min = 0.15
+	p.initial_velocity_max = 0.5 + absf(rise)
+	p.gravity = Vector3(0, rise * 0.4, 0)
 	p.scale_amount_min = 0.05
-	p.scale_amount_max = 0.1
-	p.angle_max = 360.0
-	p.angular_velocity_min = -90.0
-	p.angular_velocity_max = 90.0
+	p.scale_amount_max = 0.14
 	p.color_initial_ramp = ramp
-	p.position = Vector3(0, 5.0, 0)
+	p.position = Vector3(0, 4.5, 0)
 	add_child(p)
-
-
-## Hundreds of little flowers on the grass, drawn in one call with a MultiMesh.
-func _flowers() -> void:
-	var blob := SphereMesh.new()
-	blob.radius = 1.0
-	blob.height = 2.0
-	blob.radial_segments = 8
-	blob.rings = 4
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.roughness = 1.0
-	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = blob
-	var cols := [Color(1, 1, 1), Color(1.0, 0.85, 0.3), Color(1.0, 0.55, 0.7), Color(0.75, 0.6, 1.0), Color(0.36, 0.7, 0.3), Color(0.36, 0.7, 0.3)]
-	var spots: Array = []
-	while spots.size() < 520:
-		var p := Vector3(_rng.randf_range(-HALF_X + 0.6, HALF_X - 0.6), 0, _rng.randf_range(-HALF_Z + 0.6, HALF_Z - 0.6))
-		if _off_lawn(p):
-			continue
-		spots.append(p)
-	mm.instance_count = spots.size()
-	for i in spots.size():
-		var c: Color = cols[i % cols.size()]
-		var tuft: bool = c.g > c.r and c.g > c.b
-		var sz := _rng.randf_range(0.05, 0.09)
-		var scl := Vector3(sz * 0.6, sz * 2.4, sz * 0.6) if tuft else Vector3(sz, sz * 0.6, sz)
-		mm.set_instance_transform(i, Transform3D(Basis.from_scale(scl), spots[i] + Vector3(0, scl.y * 0.6, 0)))
-		mm.set_instance_color(i, c)
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = mat
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mmi)
-
-
-func _tree(pos: Vector3, scl: float, solid: bool) -> void:
-	var trunk := CylinderMesh.new()
-	trunk.top_radius = 0.28 * scl
-	trunk.bottom_radius = 0.4 * scl
-	trunk.height = 3.6 * scl
-	trunk.radial_segments = 10
-	_prop(trunk, "trunk", pos + Vector3(0, 1.8 * scl, 0))
-	var mat := "leaf_c" if _rng.randf() < 0.14 else ("leaf_a" if _rng.randf() < 0.5 else "leaf_b")
-	_prop(_unit_sphere, mat, pos + Vector3(0, 4.6 * scl, 0), Vector3(2.2, 2.0, 2.2) * scl)
-	_prop(_unit_sphere, mat, pos + Vector3(0.9 * scl, 3.9 * scl, 0.5 * scl), Vector3(1.5, 1.3, 1.5) * scl)
-	_prop(_unit_sphere, mat, pos + Vector3(-0.8 * scl, 4.1 * scl, -0.6 * scl), Vector3(1.6, 1.4, 1.6) * scl)
-	if solid:
-		var shape := CylinderShape3D.new()
-		shape.radius = 0.4
-		shape.height = 4.0
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		cs.position = pos + Vector3(0, 2.0, 0)
-		_body.add_child(cs)
-
-
-## A sagging string of little triangular flags between two points.
-func _bunting(from: Vector3, to: Vector3) -> void:
-	var colors := [Color(1.0, 0.4, 0.42), Color(1.0, 0.82, 0.25), Color(0.3, 0.66, 1.0), Color(0.4, 0.85, 0.5), Color(0.75, 0.5, 1.0)]
-	var count := int(from.distance_to(to) / 0.85)
-	var along := (to - from).normalized()
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var line := SurfaceTool.new()
-	line.begin(Mesh.PRIMITIVE_LINE_STRIP)
-	for i in count + 1:
-		var t := float(i) / count
-		var p := from.lerp(to, t) + Vector3(0, -4.0 * 1.6 * t * (1.0 - t), 0)
-		line.set_color(Color(0.3, 0.25, 0.35))
-		line.add_vertex(p)
-		if i < count:
-			var t2 := float(i + 1) / count
-			var q := from.lerp(to, t2) + Vector3(0, -4.0 * 1.6 * t2 * (1.0 - t2), 0)
-			var a := p.lerp(q, 0.12)
-			var b := p.lerp(q, 0.88)
-			var tip := (a + b) * 0.5 + Vector3(0, -0.6, 0)
-			for vtx in [a, b, tip]:
-				st.set_color(colors[i % colors.size()])
-				st.set_normal(along.cross(Vector3.UP).normalized())
-				st.add_vertex(vtx)
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.roughness = 1.0
-	mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
-	mi.material_override = mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
-	var lmat := StandardMaterial3D.new()
-	lmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	lmat.vertex_color_use_as_albedo = true
-	var li := MeshInstance3D.new()
-	li.mesh = line.commit()
-	li.material_override = lmat
-	li.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(li)
-
-
-func _balloon_bunch(anchor: Vector3) -> void:
-	var cols := [Color(1.0, 0.36, 0.4), Color(1.0, 0.82, 0.25), Color(0.3, 0.66, 1.0), Color(0.45, 0.88, 0.5), Color(0.78, 0.5, 1.0)]
-	for i in 3:
-		var holder := Node3D.new()
-		holder.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-		var top := anchor + Vector3(_rng.randf_range(-0.5, 0.5), _rng.randf_range(1.9, 2.7), _rng.randf_range(-0.5, 0.5))
-		holder.position = top
-		add_child(holder)
-		_prop(_unit_sphere, _glossy(cols[_rng.randi() % cols.size()]), Vector3.ZERO, Vector3(0.42, 0.5, 0.42), holder)
-		var string := CylinderMesh.new()
-		string.top_radius = 0.012
-		string.bottom_radius = 0.012
-		string.height = top.y - anchor.y - 0.45
-		string.radial_segments = 4
-		var smi := _prop(string, "wall", Vector3(0, -0.45 - string.height * 0.5, 0), Vector3.ONE, holder)
-		smi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_balloons.append([holder, top.y, _rng.randf() * TAU])
 
 
 # --------------------------------------------------------------------------
@@ -911,10 +1014,10 @@ func build_nav() -> void:
 	await get_tree().physics_frame
 	var points: Array = []            # Vector3
 	var cells := {}                    # Vector2i -> Array of point indices
-	var x := -HALF_X + 1.0
-	while x < HALF_X:
-		var z := -HALF_Z + 1.0
-		while z < HALF_Z:
+	var x := -half_x + 1.0
+	while x < half_x:
+		var z := -half_z + 1.0
+		while z < half_z:
 			var top := 12.0
 			for layer in 4:
 				var hit := _ray(Vector3(x, top, z), Vector3(x, -0.5, z))
@@ -922,7 +1025,7 @@ func build_nav() -> void:
 					break
 				var p: Vector3 = hit.position
 				top = p.y - 0.5
-				if hit.normal.y > 0.7 and p.y < 6.0:
+				if hit.normal.y > 0.7 and p.y < 8.0:
 					# Standing room, and not inside a solid.
 					if _ray(p + Vector3(0, 0.15, 0), p + Vector3(0, 1.9, 0), true).is_empty():
 						var key := Vector2i(roundi(x), roundi(z))
@@ -980,7 +1083,7 @@ func build_nav() -> void:
 		if keep.has(l.x) and keep.has(l.y):
 			nav.connect_points(l.x, l.y)
 	nav_ready = true
-	print("[map] nav graph: %d nodes, %d links" % [best.size(), links.size()])
+	print("[map] %s nav graph: %d nodes, %d links" % [MAPS[map_index].name, best.size(), links.size()])
 
 
 func _walkable(a: Vector3, b: Vector3) -> bool:

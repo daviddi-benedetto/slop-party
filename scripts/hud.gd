@@ -30,7 +30,7 @@ void fragment() {
 	vec3 c = textureLod(screen, SCREEN_UV, amount * 3.2).rgb;
 	float g = dot(c, vec3(0.3, 0.59, 0.11));
 	c = mix(c, vec3(g), amount * 0.5);
-	COLOR = vec4(mix(c, vec3(0.16, 0.1, 0.26), amount * 0.55), 1.0);
+	COLOR = vec4(mix(c, vec3(0.02, 0.025, 0.06), amount * 0.72), 1.0);
 }
 """
 
@@ -102,7 +102,8 @@ func _sig_ammo():
 	var reloading: bool = player.reload_left > 0.0
 	return [size, player.ammo, player.stats.mag_size, player.weapon, player.shield_ready(),
 		int(player.reload_left / player.stats.reload_time * 50.0) if reloading else -1,
-		int(player.dash_cd / player.stats.dash_cooldown * 40.0)]
+		int(player.dash_cd / player.stats.dash_cooldown * 40.0),
+		int(player.block_cd / player.stats.block_cooldown * 40.0)]
 
 
 func _sig_strip():
@@ -172,8 +173,22 @@ func _draw_alive(w: float, h: float) -> void:
 		draw_arc(c, 74 * s, a - 0.27, a + 0.27, 10, Color(1.0, 0.3, 0.35, alpha), 5 * s)
 
 	# Crosshair (spreads with recoil).
-	var gap: float = (6.0 + player.recoil * 7.0) * s
-	var ln := 7.0 * s
+	var aim: float = player.aim_amount
+	var scoped: bool = player.stats.zoom < 0.5 and aim > 0.5
+	if scoped:
+		# Scope: black out everything outside a big ring.
+		var sa := clampf((aim - 0.5) * 2.5, 0.0, 1.0)
+		var rr := h * 0.44
+		draw_rect(Rect2(0, 0, w * 0.5 - rr, h), Color(0, 0, 0, sa))
+		draw_rect(Rect2(w * 0.5 + rr, 0, w * 0.5 - rr, h), Color(0, 0, 0, sa))
+		draw_arc(c, rr + h * 0.18, 0, TAU, 64, Color(0, 0, 0, sa), h * 0.36)
+		draw_arc(c, rr, 0, TAU, 64, Color(player.color, sa * 0.9), 3 * s)
+		draw_line(c - Vector2(rr, 0), c + Vector2(rr, 0), Color(0, 0, 0, sa * 0.8), 1.5 * s)
+		draw_line(c - Vector2(0, rr), c + Vector2(0, rr), Color(0, 0, 0, sa * 0.8), 1.5 * s)
+	if player.block_left > 0.0 or player.block_flash > 0.0:
+		draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(player.color.lerp(Color.WHITE, 0.3 + 0.6 * player.block_flash), 0.75))
+	var gap: float = (6.0 + player.recoil * 7.0 * player.stats.recoil_kick) * s * (1.0 - 0.75 * aim)
+	var ln := 7.0 * s * (1.0 - aim)
 	for d2 in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
 		draw_line(c + d2 * (gap - s), c + d2 * (gap + ln + s), UiKit.INK, 5.0 * s)
 	for d3 in [Vector2.RIGHT, Vector2.LEFT, Vector2.UP, Vector2.DOWN]:
@@ -275,6 +290,17 @@ func _draw_ammo(ci: Control) -> void:
 	if not ready:
 		ci.draw_arc(dc, dr - 3 * s, -PI / 2, -PI / 2 + TAU * df, 24, Color(0.3, 0.85, 1.0), 5 * s)
 	UiKit.icon(ci, "bolt", dc, 9 * s, Color.WHITE if ready else Color(1, 1, 1, 0.5))
+	# Block gauge.
+	var bc := dc - Vector2(44 * s, 0)
+	var bf: float = 1.0 - clampf(player.block_cd / player.stats.block_cooldown, 0.0, 1.0)
+	var bready: bool = bf >= 1.0
+	var bcol: Color = player.color.lerp(Color.WHITE, 0.25)
+	ci.draw_circle(bc + Vector2(0, 3 * s), dr + 3 * s, Color(0.0, 0.0, 0.0, 0.4))
+	ci.draw_circle(bc, dr + 3 * s, UiKit.INK)
+	ci.draw_circle(bc, dr, bcol if bready else Color(0.18, 0.18, 0.26))
+	if not bready:
+		ci.draw_arc(bc, dr - 3 * s, -PI / 2, -PI / 2 + TAU * bf, 24, bcol, 5 * s)
+	UiKit.icon(ci, "shield", bc, 9 * s, Color.WHITE if bready else Color(1, 1, 1, 0.5))
 
 
 # --------------------------------------------------------------------------
@@ -288,7 +314,7 @@ func _draw_dead(w: float, h: float) -> void:
 	var a := clampf(dt * 3.0, 0.0, 1.0)
 
 	# Header: who got you.
-	var head_y := h * 0.15 - (1.0 - UiKit.back_out(a)) * 60 * s
+	var head_y := h * 0.185 - (1.0 - UiKit.back_out(a)) * 60 * s
 	if player.killer != null and is_instance_valid(player.killer):
 		var label := "FRAGGED BY"
 		var lw := UiKit.text_width(label, 20 * s)
@@ -301,16 +327,16 @@ func _draw_dead(w: float, h: float) -> void:
 		_t(Vector2(x + lw + 46 * s, head_y), player.killer.pname, 20, Color(player.killer.color.lerp(Color.WHITE, 0.4), a))
 	else:
 		_t(Vector2(0, head_y), "OOPS!", 26, Color(1.0, 0.5, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, w)
-	_t(Vector2(0, h * 0.15 + 38 * s), "PICK A POWERUP", 24, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	_t(Vector2(0, h * 0.185 + 30 * s), "PICK A POWERUP", 20, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 
 	var n: int = player.card_choices.size()
 	if n == 0:
 		return
-	var cw := minf(w * 0.86 / n - 6 * s, 176.0 * s)
-	var ch := cw * 1.36
+	var cw := minf(minf(w * 0.95 / n - 8 * s, 260.0 * s), h * 0.56 / 1.45)
+	var ch := cw * 1.45
 	var gap := cw * 0.1
 	var x0 := (w - (cw * n + gap * (n - 1))) * 0.5 + cw * 0.5
-	var cy := h * 0.58
+	var cy := h * 0.6
 	var picked: bool = player.respawn_pending
 	# Draw the selected card last so it sits on top.
 	var order: Array = []
@@ -343,7 +369,7 @@ func _draw_dead(w: float, h: float) -> void:
 
 	# Prompts.
 	if not picked and not player.is_bot and dt > 0.85:
-		var py := cy + ch * 0.5 + 44 * s
+		var py := cy + ch * 0.5 + 34 * s
 		var pad: bool = player.brain.device >= 0
 		var l1 := "D-PAD" if pad else "A / D"
 		var l2 := "A" if pad else "SPACE"
@@ -357,35 +383,38 @@ func _draw_dead(w: float, h: float) -> void:
 
 
 func _draw_card(card: Dictionary, centre: Vector2, sz: Vector2, rot: float, scl: float, selected: bool, alpha: float) -> void:
+	# Everything inside the card is laid out in "card units" (u), so text grows
+	# with the card rather than with the HUD scale.
+	var u := sz.x / 176.0
 	draw_set_transform(centre, rot, Vector2(scl, scl))
 	var rc: Color = Cards.RARITY_COLORS[card.rarity]
 	var r := Rect2(-sz * 0.5, sz)
 	if selected:
 		var glow := 0.55 + 0.35 * sin(game.time * 6.0)
-		UiKit.panel(self, r.grow(9 * s), Color(rc.lerp(Color.WHITE, 0.3), glow * 0.55 * alpha), 20 * s)
-		UiKit.panel(self, r.grow(5 * s), Color(1, 1, 1, alpha), 17 * s)
-	var body := UiKit.CREAM if selected else UiKit.CREAM.darkened(0.22)
-	UiKit.panel(self, r, Color(body, alpha), 13 * s, Color(UiKit.INK, alpha), 3 * s, 6 * s)
+		UiKit.panel(self, r.grow(12 * u), Color(rc, glow * 0.35 * alpha), 22 * u)
+		UiKit.panel(self, r.grow(6 * u), Color(rc.lerp(Color.WHITE, 0.35), glow * alpha), 18 * u)
+	var body := Color(0.1, 0.11, 0.18) if selected else Color(0.07, 0.075, 0.12)
+	UiKit.panel(self, r, Color(body, alpha), 13 * u, Color(rc if selected else rc.darkened(0.45), alpha), 3 * u, 6 * u)
 	# Art band.
-	var band := Rect2(r.position + Vector2(7, 7) * s, Vector2(sz.x - 14 * s, sz.y * 0.44))
-	UiKit.panel(self, band, Color(rc if selected else rc.darkened(0.2), alpha), 9 * s)
-	UiKit.panel(self, Rect2(band.position + Vector2(5, 4) * s, Vector2(band.size.x - 10 * s, band.size.y * 0.3)), Color(1, 1, 1, 0.18 * alpha), 7 * s)
-	var ic := band.get_center() + Vector2(0, 2 * s)
+	var band := Rect2(r.position + Vector2(7, 7) * u, Vector2(sz.x - 14 * u, sz.y * 0.4))
+	UiKit.panel(self, band, Color(rc.darkened(0.25) if selected else rc.darkened(0.6), alpha), 9 * u)
+	UiKit.panel(self, Rect2(band.position + Vector2(5, 4) * u, Vector2(band.size.x - 10 * u, band.size.y * 0.3)), Color(1, 1, 1, 0.1 * alpha), 7 * u)
+	var ic := band.get_center() + Vector2(0, 2 * u)
 	var ir := band.size.y * 0.3
-	draw_circle(ic, ir * 1.35, Color(1, 1, 1, 0.25 * alpha))
-	UiKit.icon(self, card.icon, ic + Vector2(0, 2.5 * s), ir, Color(UiKit.INK, 0.5 * alpha))
-	UiKit.icon(self, card.icon, ic, ir, Color(1, 1, 1, alpha))
+	draw_circle(ic, ir * 1.4, Color(rc.lerp(Color.WHITE, 0.2), (0.45 if selected else 0.2) * alpha))
+	UiKit.icon(self, card.icon, ic + Vector2(0, 2.5 * u), ir, Color(0, 0, 0, 0.5 * alpha))
+	UiKit.icon(self, card.icon, ic, ir, Color(1, 1, 1, (1.0 if selected else 0.7) * alpha))
 	# Rarity tag.
 	var tag: String = Cards.RARITY_NAMES[card.rarity]
-	var tw := UiKit.text_width(tag, 9 * s) + 14 * s
-	var tr := Rect2(Vector2(-tw * 0.5, band.end.y - 8 * s), Vector2(tw, 16 * s))
-	UiKit.panel(self, tr, Color(UiKit.INK, alpha), 8 * s)
-	draw_string(UiKit.font(700), tr.position + Vector2(0, 12 * s), tag, HORIZONTAL_ALIGNMENT_CENTER, tw, maxi(8, int(9 * s)), Color(rc.lerp(Color.WHITE, 0.3), alpha))
-	# Name and description.
-	var ink := Color(UiKit.INK, alpha)
-	var name_px := 16.0 if card.name.length() < 14 else 13.5
-	draw_string(UiKit.font(700), Vector2(r.position.x, band.end.y + 30 * s), card.name, HORIZONTAL_ALIGNMENT_CENTER, sz.x, maxi(8, int(name_px * s)), ink)
-	draw_multiline_string(UiKit.font(500), Vector2(r.position.x + 8 * s, band.end.y + 48 * s), card.desc, HORIZONTAL_ALIGNMENT_CENTER, sz.x - 16 * s, maxi(8, int(11.5 * s)), -1, Color(0.32, 0.26, 0.4, alpha))
+	var tw := UiKit.text_width(tag, 10 * u) + 16 * u
+	var tr := Rect2(Vector2(-tw * 0.5, band.end.y - 9 * u), Vector2(tw, 18 * u))
+	UiKit.panel(self, tr, Color(UiKit.INK, alpha), 9 * u, Color(rc, alpha), 1.5 * u)
+	draw_string(UiKit.font(700), tr.position + Vector2(0, 13.5 * u), tag, HORIZONTAL_ALIGNMENT_CENTER, tw, maxi(8, int(10 * u)), Color(rc.lerp(Color.WHITE, 0.3), alpha))
+	# Name and description: large and high-contrast.
+	var dim := 1.0 if selected else 0.72
+	var name_px := 20.0 if card.name.length() < 12 else (17.0 if card.name.length() < 15 else 14.5)
+	draw_string(UiKit.font(700), Vector2(r.position.x, band.end.y + 36 * u), card.name, HORIZONTAL_ALIGNMENT_CENTER, sz.x, maxi(8, int(name_px * u)), Color(1, 1, 1, dim * alpha))
+	draw_multiline_string(UiKit.font(600), Vector2(r.position.x + 9 * u, band.end.y + 62 * u), card.desc, HORIZONTAL_ALIGNMENT_CENTER, sz.x - 18 * u, maxi(8, int(14.5 * u)), -1, Color(0.8, 0.86, 1.0, dim * alpha))
 
 
 # --------------------------------------------------------------------------
@@ -452,6 +481,15 @@ func _big(centre: Vector2, text: String, px: float, color: Color, scl: float, ro
 
 func _draw_banners(w: float, h: float) -> void:
 	var c := Vector2(w * 0.5, h * 0.36)
+	# Weapon pad prompt.
+	if player.pickup_prompt != "" and player.alive and not player.is_bot:
+		var key := "Y" if player.brain.device >= 0 else "E"
+		var tw := UiKit.text_width(player.pickup_prompt, 17 * s) + 44 * s
+		var px := (w - tw) * 0.5
+		var py := h * 0.74
+		UiKit.card(self, Rect2(px - 12 * s, py - 24 * s, tw + 24 * s, 36 * s), UiKit.PANEL, 18 * s, s)
+		px += UiKit.prompt(self, Vector2(px, py), key, 18 * s, player.brain.device < 0) + 10 * s
+		_t(Vector2(px, py), player.pickup_prompt, 17, Color.WHITE)
 	# Short notices (weapon pickup, second wind).
 	if player.notice_t > 0.0 and player.alive:
 		var nt: float = 1.6 - player.notice_t

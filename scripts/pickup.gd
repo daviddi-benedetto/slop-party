@@ -1,9 +1,15 @@
 extends Area3D
 ## A pickup pad placed by game.gd at the spots map.gd lists.
 ##
-## kind "weapon": holds a random non-default weapon; walking over it swaps your
-##                weapon (cards are kept). Re-rolls 16 s after being taken.
-## kind "health": restores 50 health if you are hurt. Returns after 12 s.
+## kind "weapon": holds a random non-default weapon. Nothing happens when you
+##                walk over it: stand on it and press interact (Y / E) to swap
+##                your weapon (cards are kept). Each tick the pad tells every
+##                player standing on it (`player.near_pickup = self`); the
+##                player shows the prompt and calls take(). Bots take one
+##                automatically while they still hold the starting Blaster.
+##                Re-rolls 16 s after being taken.
+## kind "health": restores 50 health automatically if you are hurt. Returns
+##                after 12 s.
 ##
 ## The floating item spins and bobs per rendered frame; the pad itself has no
 ## collision, only this Area3D (mask = players).
@@ -17,6 +23,7 @@ var game
 var weapon_id := 1
 var _holder: Node3D
 var _ring_mat: StandardMaterial3D
+var _light: OmniLight3D
 var _active := true
 var _timer := 0.0
 var _t := 0.0
@@ -26,9 +33,9 @@ var _tint := Color.WHITE
 func _ready() -> void:
 	collision_layer = 0
 	collision_mask = 2
-	_tint = Color(0.74, 0.46, 1.0) if kind == "weapon" else Color(1.0, 0.4, 0.5)
+	_tint = Color(0.74, 0.46, 1.0) if kind == "weapon" else Color(1.0, 0.35, 0.5)
 	var shape := SphereShape3D.new()
-	shape.radius = 1.0
+	shape.radius = 1.15
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	cs.position.y = 0.9
@@ -39,7 +46,8 @@ func _ready() -> void:
 	base.bottom_radius = 0.9
 	base.height = 0.1
 	var base_mat := StandardMaterial3D.new()
-	base_mat.albedo_color = Color(0.24, 0.2, 0.36)
+	base_mat.albedo_color = Color(0.06, 0.06, 0.1)
+	base_mat.roughness = 0.4
 	_mesh(self, base, base_mat, Vector3(0, 0.05, 0))
 	var ring := TorusMesh.new()
 	ring.inner_radius = 0.56
@@ -52,6 +60,12 @@ func _ready() -> void:
 	_ring_mat.emission = _tint
 	_ring_mat.emission_energy_multiplier = 1.8
 	_mesh(self, ring, _ring_mat, Vector3(0, 0.1, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_light = OmniLight3D.new()
+	_light.light_color = _tint
+	_light.light_energy = 1.2
+	_light.omni_range = 4.5
+	_light.position.y = 1.0
+	add_child(_light)
 
 	_holder = Node3D.new()
 	_holder.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
@@ -78,17 +92,17 @@ func _fill() -> void:
 		weapon_id = 1 + randi() % (Weapons.LIST.size() - 1)
 		var model = Viewmodel.new()
 		_holder.add_child(model)
-		model.build(Color(1.0, 0.8, 0.25), 1, weapon_id, false)
+		model.build(Color(1.0, 0.75, 0.25), 1, weapon_id, false)
 		model.position = Vector3(0, 0.05, 0.1)
 		model.scale = Vector3.ONE * 2.2
 	else:
 		var red := StandardMaterial3D.new()
-		red.albedo_color = Color(1.0, 0.3, 0.42)
+		red.albedo_color = Color(1.0, 0.25, 0.4)
 		red.roughness = 0.35
 		red.rim_enabled = true
 		red.emission_enabled = true
-		red.emission = Color(1.0, 0.2, 0.3)
-		red.emission_energy_multiplier = 0.35
+		red.emission = Color(1.0, 0.2, 0.35)
+		red.emission_energy_multiplier = 1.2
 		var ball := SphereMesh.new()
 		ball.radius = 0.2
 		ball.height = 0.4
@@ -103,6 +117,20 @@ func _fill() -> void:
 	_holder.visible = true
 	_active = true
 	_ring_mat.emission_energy_multiplier = 1.8
+	_light.visible = true
+
+
+func prompt() -> String:
+	return "PICK UP %s" % Weapons.LIST[weapon_id].name.to_upper()
+
+
+## Called by a player pressing interact while standing here.
+func take(player) -> void:
+	if not _active or kind != "weapon" or player.weapon == weapon_id:
+		return
+	player.pick_weapon(weapon_id)
+	Sfx.play_at("card", global_position, -6.0)
+	_taken(16.0)
 
 
 func _process(delta: float) -> void:
@@ -124,23 +152,25 @@ func _physics_process(delta: float) -> void:
 		if kind == "weapon":
 			if body.weapon == weapon_id:
 				continue
-			body.pick_weapon(weapon_id)
-			Sfx.play_at("card", global_position, -6.0)
-			_take(16.0)
-		else:
-			if body.health >= body.stats.max_health - 1.0:
-				continue
+			if body.is_bot:
+				if body.weapon == 0:
+					take(body)
+					return
+			else:
+				body.near_pickup = self
+		elif body.health < body.stats.max_health - 1.0:
 			body.heal(50.0)
 			body.say("+50 HEALTH")
 			Sfx.play_at("join", global_position, -4.0)
-			_take(12.0)
-		return
+			_taken(12.0)
+			return
 
 
-func _take(respawn: float) -> void:
+func _taken(respawn: float) -> void:
 	_active = false
 	_timer = respawn
 	_holder.visible = false
-	_ring_mat.emission_energy_multiplier = 0.15
-	Fx.burst(game.world, global_position + Vector3(0, 1.0, 0), _tint.lerp(Color.WHITE, 0.4), 14, 5.0, 0.22, 0.45, -3.0)
+	_light.visible = false
+	_ring_mat.emission_energy_multiplier = 0.25
+	Fx.sparks(game.world, global_position + Vector3(0, 1.0, 0), _tint.lerp(Color.WHITE, 0.4), 16, 6.0, Vector3.UP)
 	Fx.ring(game.world, global_position + Vector3(0, 0.2, 0), Color(_tint, 0.9), 0.4, 1.8, 0.35)

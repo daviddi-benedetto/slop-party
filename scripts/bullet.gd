@@ -6,8 +6,12 @@ extends Node3D
 ##
 ## Behaviours: gravity, homing, bouncing (optionally gaining damage), piercing
 ## through players, exploding on impact, grenades (fuse > 0: bounce until the
-## fuse runs out, or explode on touching a player), smoke trails, and the
-## on-hit effects (poison, frost, knockback).
+## fuse runs out, or explode on touching a player), smoke trails, flame puffs,
+## the on-hit effects (poison, frost, knockback), and being reflected by a
+## player who is blocking (it then belongs to the blocker).
+##
+## Looks: a glowing core plus an additive tapered trail whose length follows
+## the speed, both in the owner's colour.
 
 const Fx = preload("res://scripts/fx.gd")
 
@@ -15,6 +19,8 @@ const WORLD_MASK := 1
 const PLAYER_MASK := 2
 
 static var _mesh: SphereMesh
+static var _cone: CylinderMesh
+static var _flame_mat: StandardMaterial3D
 
 var shooter
 var game
@@ -27,6 +33,7 @@ var pierce := 0
 var explosive := 0.0
 var fuse := 0.0
 var smoke := false
+var flame := false
 var homing := 0.0
 var poison := 0.0
 var frost := 0.0
@@ -34,10 +41,14 @@ var knockback := 0.0
 var giant_slayer := 0.0
 var radius := 0.07
 var life := 4.0
+var age := 0.0
 var can_hit_owner := false
 var color := Color.WHITE
 var _ignore: Array = []        # RIDs of players already pierced
 var _smoke_t := 0.0
+var _direct = null             # player hit directly (skipped by our own explosion)
+var _core: MeshInstance3D
+var _trail: MeshInstance3D
 
 
 ## `damage_mult` carries per-shot bonuses (last round, rampage).
@@ -54,6 +65,7 @@ func setup(p, dir: Vector3, damage_mult := 1.0) -> void:
 	explosive = s.explosive
 	fuse = s.fuse
 	smoke = s.smoke
+	flame = s.flame
 	homing = s.homing
 	poison = s.poison
 	frost = s.frost
@@ -68,14 +80,40 @@ func setup(p, dir: Vector3, damage_mult := 1.0) -> void:
 		_mesh.height = 2.0
 		_mesh.radial_segments = 10
 		_mesh.rings = 5
-	var mi := MeshInstance3D.new()
-	mi.mesh = _mesh
-	mi.material_override = p.bullet_material
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_cone = CylinderMesh.new()
+		_cone.top_radius = 0.0
+		_cone.bottom_radius = 1.0
+		_cone.height = 1.0
+		_cone.radial_segments = 6
+		_cone.rings = 1
+		_flame_mat = StandardMaterial3D.new()
+		_flame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_flame_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_flame_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		_flame_mat.albedo_color = Color(1.4, 0.5, 0.1, 0.22)
+	_core = MeshInstance3D.new()
+	_core.mesh = _mesh
+	_core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_core)
+	if flame:
+		_core.material_override = _flame_mat
+		_core.scale = Vector3.ONE * radius
+		return
+	_core.material_override = p.bullet_material
 	# Fast bullets are streaks; slow, fat ones (rockets, grenades, bubbles) are round.
-	var stretch := clampf(s.bullet_speed / 9.0, 1.0, 9.0)
-	mi.scale = Vector3(radius, radius, radius * stretch)
-	add_child(mi)
+	var speed: float = s.bullet_speed
+	var stretch := clampf(speed / 14.0, 1.0, 5.0)
+	_core.scale = Vector3(radius, radius, radius * stretch)
+	if speed > 28.0:
+		var length := clampf(speed * 0.04, 0.5, 5.0)
+		_trail = MeshInstance3D.new()
+		_trail.mesh = _cone
+		_trail.material_override = p.trail_material
+		_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_trail.rotation.x = PI / 2
+		_trail.position.z = length * 0.5
+		_trail.scale = Vector3(radius * 0.85, length, radius * 0.85)
+		add_child(_trail)
 
 
 func orient() -> void:
@@ -89,6 +127,7 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 		return
 	life -= delta
+	age += delta
 	if life <= 0.0:
 		if fuse > 0.0:
 			_impact(global_position, null)
@@ -96,6 +135,8 @@ func _physics_process(delta: float) -> void:
 			queue_free()
 		return
 
+	if flame:
+		_core.scale = Vector3.ONE * radius * (0.6 + age * 5.0)
 	if homing > 0.0:
 		_steer(delta)
 	vel.y -= gravity * delta
@@ -103,7 +144,7 @@ func _physics_process(delta: float) -> void:
 		_smoke_t -= delta
 		if _smoke_t <= 0.0:
 			_smoke_t = 0.035
-			Fx.puff(game.world, global_position, Color(0.95, 0.95, 1.0, 0.55), 1, radius * 3.5)
+			Fx.puff(game.world, global_position, Color(0.9, 0.9, 1.0, 0.45), 1, radius * 3.5)
 
 	var from := global_position
 	var to := from + vel * delta
@@ -129,6 +170,9 @@ func _physics_process(delta: float) -> void:
 				break
 
 	if victim != null:
+		if victim.is_blocking() and not flame:
+			_reflect(victim)
+			return
 		if _hit_player(victim, end):
 			return
 		# Pierced: carry on along the same path this tick.
@@ -143,12 +187,35 @@ func _physics_process(delta: float) -> void:
 			vel = vel.bounce(hit.normal) * (0.55 if fuse > 0.0 else 0.92)
 			global_position = hit.position + hit.normal * (radius + 0.03)
 			orient()
+			Fx.sparks(game.world, hit.position, color.lerp(Color.WHITE, 0.4), 4, 4.0, hit.normal)
 			Sfx.play_at("bounce", global_position, -10.0, 0.7 if fuse > 0.0 else 1.0)
 			return
-		_impact(hit.position + hit.normal * 0.05, null)
+		_impact(hit.position + hit.normal * 0.05, hit.normal)
 		return
 	global_position = to
 	orient()
+
+
+## A blocking player bats the bullet back at whoever fired it.
+func _reflect(p) -> void:
+	var old = shooter
+	p._blocked(old)
+	var speed := vel.length() * 1.15
+	var dir := -vel.normalized()
+	if is_instance_valid(old) and old.alive:
+		dir = (old.chest_position() - p.chest_position()).normalized()
+	shooter = p
+	color = p.color
+	vel = dir * speed
+	can_hit_owner = false
+	_ignore.clear()
+	life = maxf(life, 1.5)
+	_core.material_override = p.bullet_material
+	if _trail != null:
+		_trail.material_override = p.trail_material
+	global_position = p.chest_position() + dir * 0.9
+	orient()
+	reset_physics_interpolation()
 
 
 func _steer(delta: float) -> void:
@@ -194,16 +261,19 @@ func _hit_player(p, pos: Vector3) -> bool:
 	if pierce > 0 and explosive <= 0.0:
 		pierce -= 1
 		_ignore.append(p.get_rid())
-		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.12, 0.12)
+		Fx.sparks(game.world, pos, color.lerp(Color.WHITE, 0.4), 6, 6.0, -vel.normalized())
 		return false
-	_impact(pos, p)
+	_direct = p
+	_impact(pos, -vel.normalized())
 	return true
 
 
-func _impact(pos: Vector3, direct_victim) -> void:
+## `normal` is the surface normal (or the direction sparks should fly), or null.
+func _impact(pos: Vector3, normal) -> void:
 	if explosive > 0.0:
-		game.explode(pos, explosive, damage * 0.8, shooter, direct_victim)
-	else:
-		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.12, 0.12)
-		Fx.burst(game.world, pos, color.lerp(Color.WHITE, 0.4), 6, 5.0, 0.16, 0.3, -9.0)
+		game.explode(pos, explosive, damage * 0.8, shooter, _direct)
+	elif not flame:
+		var n: Vector3 = normal if normal is Vector3 else Vector3.UP
+		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.14, 0.1)
+		Fx.sparks(game.world, pos, color.lerp(Color.WHITE, 0.4), 7, 7.0, n)
 	queue_free()
