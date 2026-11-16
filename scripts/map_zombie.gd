@@ -29,7 +29,7 @@ static func build(m) -> void:
 	m._slab(Rect2(27, -22, 11, 8), 3.25, "deck",
 		[Rect2(32 - 0.85, -18 - 2.95, 1.7, 5.9)], false, 0.25)
 	m._stairs(Vector3(32, 0, -18), Vector3(5.5, 3.4, 1.35), -PI * 0.5, "deck", false)
-	m._building(Vector3(-40, 0, -22), 19, 14, 2, "house", {
+	m._building(Vector3(-40, 0, -22), 19, 14, 2, "block_b", {
 		"mirror": false, "pitched": true, "roof": "roof_red", "furnish": true})
 
 	# Security checkpoint, perimeter fencing, floodlights, barricades and wrecks.
