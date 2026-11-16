@@ -232,6 +232,62 @@ collision off (the vehicle takes the hits).
   still hand-built (no free model with a separate turret / rotor was found).
 - **Health pad:** the first-aid kit model.
 
+### Physics props, glass and pets (`prop.gd`, `glass.gd`, `pet.gd`)
+
+- **Props** are RigidBody3D on collision layer 4 with mask `1 | 4`: they hit
+  the world and each other but never block characters, and the nav graph
+  ignores them. Things move them explicitly: `Prop.kick_near()` (a small
+  sphere query, called by player / zombie / vehicle while moving), bullets
+  (`bullet.gd` ray mask includes 4 and calls `knock()`; ordinary bullets stop
+  on a prop), and `game.explode` (group "props"). They start asleep, are
+  re-centred on their footprint, are not drawn beyond ~22-48 m and small
+  ones cast no shadow.
+- Placement: `map._prop(path, pos, yaw, scale, mass)`; `map._furnish()` puts
+  a dining room, lounge or office on every storey of `_building`;
+  `map._scatter_props()` drops clutter on random nav points once the nav
+  graph exists (signal `nav_built`).
+- **Glass** (`map._glass`, automatically in every `_building` window) is a
+  StaticBody3D on layer 4: `knock()` shatters it; bullets continue through.
+  Panes share one mesh per size so they instance.
+- **Pets** (`pet.gd`): spawned by `game._spawn_pets` on `nav_built`; they
+  wander along `map.find_path`, and `player.gd` offers "PET THE ..." via
+  `game.pet_near()` (interact). Dev flag `--pets-demo` lines up every kind.
+
+### Buildings and landscape (`map.gd`)
+
+- `_facade()` adds sills, lintels, shutters (pitched houses), porch roofs
+  with posts and steps at both doors and a string course per storey;
+  `_building` adds a foundation band, corner posts, a chimney or roof clutter.
+- `_forest(rect, count)` = dense woodland from light low-poly trees plus a
+  few detailed ones, undergrowth, logs, rocks. `_camp()`, `_sidewalk()`,
+  `_crossing()` dress the open ground; see `map_front._landscape`.
+
+### Special bullets, block perks and body perks
+
+- `stats.gd` fields `chain`, `cluster`, `vortex`, `sticky`, `range_bonus`,
+  `frag` are implemented in `bullet.gd` (`_chain_from`, `_spawn_child`,
+  `_stick`, the vortex pull in `_physics_process`). Weapons 12-19 and several
+  cards use them.
+- Block perks fire when the block starts: `player._start_block(first)`
+  (reload, empower, blink, frost, pull, bullet ring, echo). Add a new one as
+  a `block_*` stat + a card + a few lines there.
+- `stats.size` scales the model, capsule, eye and head heights (Tiny /
+  Giant); `stomp`, `slam`, `martyr`, `corpse_bomb`, `drone`, `speed_dmg`,
+  `air_dmg` live in `player.gd` (search for the stat name).
+
+### Characters (`character.gd`)
+
+- Kinds 0-5: the procedural plush animals, now with a fur shell (an
+  alpha-scissor, grown `next_pass` between body and outline).
+- Kinds 6-13 (`HUMANS`): rigged Quaternius models driven by their own
+  AnimationPlayer (`_animate_human`: Idle_Gun_Pointing, Run_Shoot,
+  Run_Left/Right, Wave). The player's colour is a light overlay; the hit
+  flash swaps the overlay to white; hats ride a BoneAttachment3D on "Head";
+  the gun floats in the aiming pose on the `aim` pivot.
+- Customisation: hat, face (plush only) and the new back accessory
+  (`_build_back`, `ui_kit.BACK_NAMES`); the lobby category list is
+  `lobby.CATEGORIES` / `KEYS`.
+
 ### Game modes and teams (`game.gd`, `zombies.gd`, `frontline.gd`)
 
 - `game.mode` is "rounds", "zombies" or "frontline". Rounds keeps its rules in
@@ -680,6 +736,9 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 - The exported `build\Fragdeck.exe` starts and plays.
 
 **Not verified:**
+- Everything added in v0.10 was only exercised by bots: nobody has kicked a
+  chair, petted a dog, used a block perk or played a human character by hand.
+  The new weapon and card numbers are first guesses.
 - Vehicles have only been driven by bots (who steer like they walk): handling,
   turret speed and weapon numbers in `vehicle.gd` are first guesses. Bots never
   get into vehicles themselves.

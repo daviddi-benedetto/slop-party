@@ -146,6 +146,7 @@ func _ready() -> void:
 		p.kind = part.get("kind", i)
 		p.hat = part.get("hat", 0)
 		p.face = part.get("face", 0)
+		p.back = part.get("back", 0)
 		p.game = self
 		p.is_bot = part.bot
 		p.team = part.get("team", -1)
@@ -668,7 +669,7 @@ func _show_results() -> void:
 	for p in ranked():
 		if p.is_bot and p.index >= 6:
 			continue
-		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size(), "team": p.team})
+		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "back": p.back, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size(), "team": p.team})
 	var title := ""
 	if rules != null:
 		title = rules.results_title()

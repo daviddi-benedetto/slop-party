@@ -28,8 +28,8 @@ const Map = preload("res://scripts/map.gd")
 const MAX_PLAYERS := 6
 const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
-const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "FACE"]
-const KEYS := ["kind", "color", "hat", "face"]
+const CATEGORIES := ["HERO", "COLOR", "HAT", "FACE", "BACK"]
+const KEYS := ["kind", "color", "hat", "face", "back"]
 const TIME_OPTS := ["random", "day", "sunset", "night"]
 const MODES := ["rounds", "zombies", "frontline"]
 const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE"]
@@ -66,7 +66,8 @@ func _ready() -> void:
 		_slot_sig.append("")
 		_slot_char.append(null)
 		_slot_bump.append(1.0)
-		_bot_looks.append({"kind": (i * 5 + 3) % 6, "hat": randi() % UiKit.HAT_NAMES.size(), "face": randi() % UiKit.FACE_NAMES.size()})
+		_bot_looks.append({"kind": (i * 5 + 3) % UiKit.KIND_NAMES.size(), "hat": randi() % UiKit.HAT_NAMES.size(), "face": randi() % UiKit.FACE_NAMES.size(),
+			"back": randi() % UiKit.BACK_NAMES.size()})
 	bots = int(Settings.lobby.get("bots", 0))
 	target_i = clampi(int(Settings.lobby.get("target", 2)), 0, KILL_TARGETS.size() - 1)
 	map_i = clampi(int(Settings.lobby.get("map", 0)), 0, Map.MAPS.size() - 1)
@@ -270,8 +271,10 @@ func _join(device: int, quiet := false) -> void:
 		return
 	var i := seats.size()
 	var saved: Array = Settings.lobby.get("seat%d" % i, [])
-	var seat := {"device": device, "kind": i % 6, "color": i, "hat": 0, "face": 0, "row": 0}
-	if saved.size() == 4:
+	var seat := {"device": device, "kind": i % 6, "color": i, "hat": 0, "face": 0, "back": 0, "row": 0}
+	if saved.size() >= 5:
+		seat.back = posmod(int(saved[4]), UiKit.BACK_NAMES.size())
+	if saved.size() >= 4:
 		seat.kind = posmod(int(saved[0]), UiKit.KIND_NAMES.size())
 		seat.color = posmod(int(saved[1]), UiKit.PLAYER_COLORS.size())
 		seat.hat = posmod(int(saved[2]), UiKit.HAT_NAMES.size())
@@ -299,7 +302,7 @@ func _edit(seat_i: int, dh: int, dv: int) -> void:
 	if dh == 0:
 		return
 	var key: String = KEYS[seat.row]
-	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.FACE_NAMES.size()][seat.row]
+	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.FACE_NAMES.size(), UiKit.BACK_NAMES.size()][seat.row]
 	seat[key] = posmod(seat[key] + dh, count)
 	if key == "color":
 		# Two players never share a colour.
@@ -313,7 +316,7 @@ func _edit(seat_i: int, dh: int, dv: int) -> void:
 func _look(slot: int) -> Dictionary:
 	if slot < seats.size():
 		var s: Dictionary = seats[slot]
-		return {"kind": s.kind, "color": UiKit.PLAYER_COLORS[s.color], "hat": s.hat, "face": s.face}
+		return {"kind": s.kind, "color": UiKit.PLAYER_COLORS[s.color], "hat": s.hat, "face": s.face, "back": s.back}
 	if slot < seats.size() + bots:
 		# CPUs take whatever colours the humans left.
 		var used := _used_colors()
@@ -326,7 +329,7 @@ func _look(slot: int) -> Dictionary:
 					break
 				n -= 1
 		var b: Dictionary = _bot_looks[slot]
-		return {"kind": b.kind, "color": UiKit.PLAYER_COLORS[c], "hat": b.hat, "face": b.face}
+		return {"kind": b.kind, "color": UiKit.PLAYER_COLORS[c], "hat": b.hat, "face": b.face, "back": b.back}
 	return {}
 
 
@@ -357,7 +360,7 @@ func _sync_stage() -> void:
 
 func _remember() -> void:
 	for i in seats.size():
-		Settings.lobby["seat%d" % i] = [seats[i].kind, seats[i].color, seats[i].hat, seats[i].face]
+		Settings.lobby["seat%d" % i] = [seats[i].kind, seats[i].color, seats[i].hat, seats[i].face, seats[i].back]
 	Settings.lobby["bots"] = bots
 	Settings.lobby["target"] = target_i
 	Settings.lobby["map"] = map_i
@@ -375,7 +378,7 @@ func _start() -> void:
 		var look := _look(i)
 		var human := i < seats.size()
 		parts.append({"device": seats[i].device if human else -2, "bot": not human, "view": human,
-			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face})
+			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back})
 	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
 	start.emit({"participants": parts, "kill_target": target, "map": map_i, "time": TIME_OPTS[time_i], "mode": mode,
 		"teams": "versus" if versus else "coop"})
@@ -498,7 +501,7 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 			var on: bool = c == seat.row
 			UiKit.panel(self, tr, col if on else Color(1, 1, 1, 0.08), 12 * s)
 			draw_string(UiKit.font(700), tr.position + Vector2(0, 17 * s), CATEGORIES[c], HORIZONTAL_ALIGNMENT_CENTER, tr.size.x, int(13 * s), UiKit.INK if on else Color(1, 1, 1, 0.6))
-		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.FACE_NAMES[seat.face]][seat.row]
+		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.FACE_NAMES[seat.face], UiKit.BACK_NAMES[seat.back]][seat.row]
 		var wob := sin(_t * 6.0) * 3 * s
 		UiKit.text(self, Vector2(r.position.x + 20 * s - wob, 102 * s), "<", 30 * s, UiKit.GOLD)
 		UiKit.text(self, Vector2(r.position.x, 102 * s), ">", 30 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, pw - 20 * s - wob)

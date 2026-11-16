@@ -19,8 +19,10 @@ const PLAYER_COLORS := [
 	Color(0.7, 0.95, 0.25), Color(0.9, 0.93, 1.0),
 ]
 const COLOR_NAMES := ["ORANGE", "BLUE", "GREEN", "YELLOW", "PURPLE", "PINK", "CYAN", "RED", "LIME", "WHITE"]
-const KIND_NAMES := ["BEAR", "BUNNY", "CAT", "DOG", "FOX", "FROG"]
-const HAT_NAMES := ["NONE", "CAP", "CROWN", "TOP HAT", "PARTY HAT", "HORNS", "HALO", "HEADPHONES", "BOW", "ANTENNA", "MOHAWK"]
+const KIND_NAMES := ["BEAR", "BUNNY", "CAT", "DOG", "FOX", "FROG", "SWAT", "ASTRONAUT", "KING", "WITCH", "PUNK", "ROCKER", "CYBER", "EXPLORER"]
+const HAT_NAMES := ["NONE", "CAP", "CROWN", "TOP HAT", "PARTY HAT", "HORNS", "HALO", "HEADPHONES", "BOW", "ANTENNA", "MOHAWK",
+	"COWBOY", "WIZARD", "CHEF", "VIKING", "PROPELLER"]
+const BACK_NAMES := ["NONE", "CAPE", "BACKPACK", "WINGS", "BALLOON", "KATANA", "FLAG"]
 const FACE_NAMES := ["NORMAL", "ANGRY", "SHADES", "EYE PATCH", "SLEEPY", "MONOCLE", "MUSTACHE"]
 
 static var _fonts := {}
@@ -112,6 +114,26 @@ static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: i
 	var ink := Color(INK, color.a)
 	var light := color.lerp(Color.WHITE, 0.6)
 	var o := r * 0.13
+	if kind >= 6:
+		# Human characters: a face with hair / helmet in the player's colour.
+		var skin := Color(0.96, 0.78, 0.62, color.a)
+		ci.draw_circle(c, r + o, ink)
+		ci.draw_circle(c, r, color)
+		ci.draw_circle(c + Vector2(0, 0.18) * r, r * 0.74, skin)
+		ci.draw_arc(c, r * 0.86, PI * 1.05, PI * 1.95, 16, color.darkened(0.25), r * 0.3)
+		if kind == 6 or kind == 7 or kind == 12:
+			# Helmets / visors.
+			ci.draw_rect(Rect2(c + Vector2(-0.62, -0.12) * r, Vector2(1.24, 0.34) * r), Color(0.15, 0.2, 0.3, color.a))
+		for sx in [-1.0, 1.0]:
+			var eh := c + Vector2(sx * 0.3, 0.08) * r
+			if dead:
+				var dh := r * 0.12
+				ci.draw_line(eh + Vector2(-dh, -dh), eh + Vector2(dh, dh), ink, maxf(1.5, r * 0.1))
+				ci.draw_line(eh + Vector2(-dh, dh), eh + Vector2(dh, -dh), ink, maxf(1.5, r * 0.1))
+			else:
+				ci.draw_circle(eh, r * 0.12, ink)
+		ci.draw_arc(c + Vector2(0, 0.38) * r, r * 0.22, 0.3, PI - 0.3, 8, ink, maxf(1.5, r * 0.08))
+		return
 	# Ears (ink silhouette first, then fill).
 	for pass_i in 2:
 		var col := ink if pass_i == 0 else color

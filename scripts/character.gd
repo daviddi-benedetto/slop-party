@@ -16,8 +16,13 @@ extends Node3D
 const Viewmodel = preload("res://scripts/viewmodel.gd")
 const GUN_SCALE := 1.6
 const Weapons = preload("res://scripts/weapons.gd")
+const Models = preload("res://scripts/models.gd")
 
-const KIND_COUNT := 6
+## Kinds 6+ are rigged human models (Quaternius animated characters) driven
+## by their own animations instead of the procedural plush rig.
+const HUMANS := ["chars/Swat", "chars/Spacesuit", "chars/Male_King", "chars/Femal_Witch", "chars/Male_Punk",
+	"chars/Femal_Punk", "chars/Femal_SciFi", "chars/Male_Adventurer"]
+const KIND_COUNT := 14
 
 var kind := 0
 var color := Color.WHITE
@@ -28,6 +33,15 @@ var _jetpack: Node3D
 var _jet_flames: Array = []
 var hat := 0
 var face := 0
+var back := 0                  # back accessory (ui_kit.BACK_NAMES)
+var _human: Node3D             # the imported model when kind >= 6
+var _anim: AnimationPlayer
+var _human_meshes: Array = []
+var _tint: StandardMaterial3D
+var _white: StandardMaterial3D
+var _gun_scale := GUN_SCALE
+var _with_gun := true
+var _back_node: Node3D
 
 var rig: Node3D                # squash / stretch / lean
 var head: Node3D
@@ -58,11 +72,13 @@ var _eye_pos := Vector3(0.16, 0.07, -0.33)   # right eye, in head space
 var _accent: StandardMaterial3D
 
 
-func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, face_id := 0) -> void:
+func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, face_id := 0, back_id := 0) -> void:
 	kind = posmod(k, KIND_COUNT)
 	color = col
 	hat = hat_id
 	face = face_id
+	back = back_id
+	_with_gun = with_gun
 	if kind == 5:
 		_eye_pos = Vector3(0.2, 0.32, -0.2)
 	_layers = layer_bits
@@ -83,6 +99,15 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 
 	rig = Node3D.new()
 	add_child(rig)
+	if kind >= 6:
+		var scarf_h := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0), false)
+		scarf_h.emission = scarf_h.albedo_color
+		scarf_h.emission_energy_multiplier = 0.9
+		_accent = scarf_h
+		_build_human(with_gun)
+		_build_hat()
+		_build_back()
+		return
 
 	# Body, belly, feet.
 	_ball(rig, _mat_body, Vector3(0, 0.62, 0), Vector3(0.42, 0.5, 0.38))
@@ -91,7 +116,7 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 	_foot_r = _ball(rig, mat_dark, Vector3(0.18, 0.1, -0.03), Vector3(0.15, 0.1, 0.2))
 
 	# Scarf in a contrasting colour hides the neck seam and adds charm.
-	var scarf_mat := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0))
+	var scarf_mat := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0), false)
 	scarf_mat.emission = scarf_mat.albedo_color
 	scarf_mat.emission_energy_multiplier = 0.9
 	_accent = scarf_mat
@@ -199,6 +224,7 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 			_ball(_tail, _mat_light, Vector3(0, 0, 0.5), Vector3(0.1, 0.1, 0.13))
 	_build_hat()
 	_build_face()
+	_build_back()
 
 
 func _cyl(parent: Node3D, mat: Material, top: float, bottom: float, height: float, pos: Vector3, sides := 20) -> MeshInstance3D:
@@ -277,6 +303,31 @@ func _build_hat() -> void:
 			for i in 5:
 				var z := -0.24 + i * 0.12
 				_cyl(head, _accent, 0.0, 0.06, 0.22 - absf(i - 2) * 0.03, Vector3(0, 0.42 - absf(i - 2) * 0.03, z), 8)
+		11:  # cowboy
+			var leather := _plain(Color(0.45, 0.28, 0.14), 0.7)
+			_cyl(head, leather, 0.62, 0.66, 0.03, Vector3(0, 0.3, 0), 24)
+			_cyl(head, leather, 0.24, 0.3, 0.26, Vector3(0, 0.44, 0), 20)
+			_cyl(head, _accent, 0.305, 0.305, 0.05, Vector3(0, 0.35, 0), 20)
+		12:  # wizard
+			var cloth := _plain(Color(0.25, 0.2, 0.6), 0.7)
+			_cyl(head, cloth, 0.5, 0.55, 0.03, Vector3(0, 0.3, 0), 24)
+			_cyl(head, cloth, 0.0, 0.3, 0.7, Vector3(0, 0.66, 0.04), 20).rotation.x = 0.15
+			_ball(head, gold, Vector3(0, 0.5, -0.27), Vector3.ONE * 0.05)
+		13:  # chef
+			_cyl(head, cream, 0.3, 0.3, 0.22, Vector3(0, 0.42, 0), 20)
+			_ball(head, cream, Vector3(0, 0.62, 0), Vector3(0.4, 0.2, 0.4))
+		14:  # viking
+			var steel := _plain(Color(0.6, 0.62, 0.66), 0.3)
+			steel.metallic = 0.8
+			_ball(head, steel, Vector3(0, 0.22, 0), Vector3(0.42, 0.24, 0.4))
+			for sx in [-1.0, 1.0]:
+				_cyl(head, cream, 0.0, 0.07, 0.34, Vector3(sx * 0.42, 0.42, 0), 10).rotation.z = -sx * 0.7
+		15:  # propeller cap
+			_ball(head, _accent, Vector3(0, 0.2, 0.0), Vector3(0.42, 0.2, 0.4))
+			_cyl(head, dark, 0.015, 0.015, 0.14, Vector3(0, 0.46, 0), 6)
+			var blade := BoxMesh.new()
+			blade.size = Vector3(0.5, 0.015, 0.08)
+			_mesh(head, blade, gold, Vector3(0, 0.53, 0)).rotation.y = 0.5
 
 
 func _build_face() -> void:
@@ -368,11 +419,11 @@ func set_weapon(id: int) -> void:
 	_gun.add_child(model)
 	model.build(color, _layers, id, false)
 	model.position = Vector3(0, -0.02, 0.08)
-	model.scale = Vector3.ONE * GUN_SCALE
-	muzzle.position = _gun.position + Vector3(0, 0.0, 0.08 + model.muzzle_z() * GUN_SCALE)
+	model.scale = Vector3.ONE * _gun_scale
+	muzzle.position = _gun.position + Vector3(0, 0.0, 0.08 + model.muzzle_z() * _gun_scale)
 
 
-func _plush(col: Color) -> StandardMaterial3D:
+func _plush(col: Color, furry := true) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = col
 	m.roughness = 0.95
@@ -389,8 +440,42 @@ func _plush(col: Color) -> StandardMaterial3D:
 	m.normal_scale = 0.45
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * 5.0
-	m.next_pass = _outline
+	if not furry:
+		m.next_pass = _outline
+		return m
+	# A fuzzy shell over the surface, then the dark outline: plush fur.
+	var fur := StandardMaterial3D.new()
+	fur.albedo_color = col.lerp(Color.WHITE, 0.06)
+	fur.albedo_texture = _fuzz()
+	fur.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	fur.alpha_scissor_threshold = 0.5
+	fur.roughness = 1.0
+	fur.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	fur.grow = true
+	fur.grow_amount = 0.014
+	fur.uv1_triplanar = true
+	fur.uv1_scale = Vector3.ONE * 7.0
+	fur.next_pass = _outline
+	m.next_pass = fur
 	return m
+
+
+static var _fuzz_tex: ImageTexture
+
+
+## Speckled alpha texture: the tips of the fur shell.
+static func _fuzz() -> ImageTexture:
+	if _fuzz_tex == null:
+		var img := Image.create(96, 96, true, Image.FORMAT_RGBA8)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 11
+		for y in 96:
+			for x in 96:
+				var on := rng.randf() < 0.3
+				img.set_pixel(x, y, Color(1, 1, 1, 1.0 if on else 0.0))
+		img.generate_mipmaps()
+		_fuzz_tex = ImageTexture.create_from_image(img)
+	return _fuzz_tex
 
 
 func _plain(col: Color, rough: float) -> StandardMaterial3D:
@@ -458,6 +543,9 @@ func muzzle_position() -> Vector3:
 ## speed: 0..1+ fraction of run speed. vy: vertical velocity. pitch: view pitch.
 ## strafe: -1..1 sideways speed (leans the body into the turn).
 func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float, recoil := 0.0, strafe := 0.0) -> void:
+	if _human != null:
+		_animate_human(delta, speed, on_floor, pitch, recoil, strafe)
+		return
 	_t += delta
 	speed = clampf(speed, 0.0, 1.5)
 	var run := minf(speed, 1.0)
@@ -528,3 +616,177 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 		_flash = maxf(0.0, _flash - delta * 6.0)
 		_mat_body.emission_energy_multiplier = _flash * 1.6
 		_mat_light.emission_energy_multiplier = _flash * 1.6
+
+
+# --------------------------------------------------------------------------
+# Back accessories (both plush and human characters)
+# --------------------------------------------------------------------------
+
+func _build_back() -> void:
+	if back <= 0:
+		return
+	_back_node = Node3D.new()
+	_back_node.position = Vector3(0, 0.95, 0.36) if _human == null else Vector3(0, 1.2, 0.2)
+	rig.add_child(_back_node)
+	var b := _back_node
+	var dark := _plain(Color(0.08, 0.08, 0.1), 0.5)
+	match back:
+		1:  # cape
+			var cloth := BoxMesh.new()
+			cloth.size = Vector3(0.62, 0.95, 0.04)
+			_mesh(b, cloth, _accent, Vector3(0, -0.3, 0.1)).rotation.x = 0.22
+			_cyl(b, _accent, 0.34, 0.34, 0.07, Vector3(0, 0.18, -0.3), 20)
+		2:  # backpack
+			var pack := BoxMesh.new()
+			pack.size = Vector3(0.44, 0.5, 0.22)
+			_mesh(b, pack, _accent, Vector3(0, -0.05, 0.08))
+			var pocket := BoxMesh.new()
+			pocket.size = Vector3(0.3, 0.2, 0.08)
+			_mesh(b, pocket, dark, Vector3(0, -0.14, 0.22))
+			_cyl(b, dark, 0.06, 0.06, 0.4, Vector3(0, 0.28, 0.08), 10).rotation.z = PI * 0.5
+		3:  # wings
+			var white := _plain(Color(0.97, 0.97, 1.0), 0.6)
+			for sx in [-1.0, 1.0]:
+				for i in 3:
+					var w := _ball(b, white, Vector3(sx * (0.25 + i * 0.17), 0.2 - i * 0.12, 0.08), Vector3(0.2, 0.07, 0.1))
+					w.rotation.z = sx * (0.5 - i * 0.25)
+		4:  # balloon
+			_cyl(b, dark, 0.006, 0.006, 1.2, Vector3(0.15, 0.75, 0.1), 5)
+			var rubber := _plain(color.lerp(Color.WHITE, 0.15), 0.2)
+			rubber.emission_enabled = true
+			rubber.emission = color
+			rubber.emission_energy_multiplier = 0.5
+			_ball(b, rubber, Vector3(0.15, 1.55, 0.1), Vector3(0.24, 0.3, 0.24))
+		5:  # katana
+			var steel := _plain(Color(0.8, 0.82, 0.86), 0.2)
+			steel.metallic = 0.9
+			var blade := BoxMesh.new()
+			blade.size = Vector3(0.05, 1.0, 0.015)
+			_mesh(b, blade, steel, Vector3(0.05, 0.1, 0.1)).rotation.z = 0.6
+			var grip := BoxMesh.new()
+			grip.size = Vector3(0.06, 0.26, 0.04)
+			_mesh(b, grip, dark, Vector3(-0.31, 0.62, 0.1)).rotation.z = 0.6
+		6:  # flag
+			_cyl(b, dark, 0.02, 0.02, 1.5, Vector3(0, 0.55, 0.1), 6)
+			var cloth2 := BoxMesh.new()
+			cloth2.size = Vector3(0.55, 0.34, 0.02)
+			_mesh(b, cloth2, _accent, Vector3(0.29, 1.1, 0.1))
+
+
+# --------------------------------------------------------------------------
+# Human characters (kinds 6+): imported rigged models with real animations
+# --------------------------------------------------------------------------
+
+func _build_human(with_gun: bool) -> void:
+	var path: String = HUMANS[kind - 6]
+	_human = Models.scene(path).instantiate()
+	_human.scale = Vector3.ONE * 0.94
+	_human.rotation.y = PI
+	rig.add_child(_human)
+	# A light wash of the player's colour over the whole model, and a white
+	# overlay used for the hit flash.
+	_tint = StandardMaterial3D.new()
+	_tint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_tint.albedo_color = Color(color, 0.2)
+	_tint.roughness = 0.8
+	_white = StandardMaterial3D.new()
+	_white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_white.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_white.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_white.albedo_color = Color(1, 1, 1, 0.6)
+	for mi in Models.mesh_instances(_human):
+		var m: MeshInstance3D = mi
+		m.layers = _layers
+		# The models carry their own pistol / sword; we give them our guns.
+		if m.name in ["Pistol", "Sword", "Gun", "Weapon", "Staff", "Axe"]:
+			m.visible = false
+			continue
+		m.material_overlay = _tint
+		_human_meshes.append(m)
+	for c in _human.find_children("*", "AnimationPlayer", true, false):
+		_anim = c
+	if _anim != null:
+		for a in _anim.get_animation_list():
+			if a.begins_with("Idle") or a.begins_with("Run") or a == "Walk" or a == "Wave":
+				_anim.get_animation(a).loop_mode = Animation.LOOP_LINEAR
+		_anim.playback_default_blend_time = 0.18
+	# Hats sit on the head bone (scaled down from the plush head size).
+	head = Node3D.new()
+	var skel: Skeleton3D = null
+	for s in _human.find_children("*", "Skeleton3D", true, false):
+		skel = s
+	if skel != null and skel.find_bone("Head") >= 0:
+		var att := BoneAttachment3D.new()
+		att.bone_name = "Head"
+		skel.add_child(att)
+		att.add_child(head)
+		head.rotation.y = PI
+		head.position = Vector3(0, 0.2, 0.02)
+		head.scale = Vector3.ONE * 0.62
+	else:
+		head.position = Vector3(0, 1.62, 0)
+		rig.add_child(head)
+	# The gun floats in the two-handed aiming pose and pitches with the view.
+	aim = Node3D.new()
+	aim.position = Vector3(0, 1.22, 0)
+	rig.add_child(aim)
+	muzzle = Node3D.new()
+	muzzle.position = Vector3(0.12, 0.04, -1.0)
+	aim.add_child(muzzle)
+	_gun_scale = 1.2
+	if with_gun:
+		_gun = Node3D.new()
+		_gun.position = Vector3(0.12, 0.02, -0.42)
+		aim.add_child(_gun)
+		set_weapon(0)
+	_play_h("Idle_Gun_Pointing" if with_gun else "Idle")
+
+
+func _play_h(a: String, speed := 1.0) -> void:
+	if _anim == null:
+		return
+	if not _anim.has_animation(a):
+		a = "Idle"
+	if _anim.current_animation != a:
+		_anim.play(a)
+	_anim.speed_scale = speed
+
+
+func _animate_human(delta: float, speed: float, on_floor: bool, pitch: float, recoil: float, strafe: float) -> void:
+	_t += delta
+	_pop = minf(1.0, _pop + delta * 2.2)
+	var pop := 1.0 if _pop >= 1.0 else maxf(0.001, pow(2.0, -10.0 * _pop) * sin((_pop * 10.0 - 0.75) * TAU / 3.0) + 1.0)
+	rig.scale = Vector3(1.0, 1.0 - crouch * 0.28, 1.0) * pop
+	var hop := 0.0
+	match emote:
+		"cheer":
+			hop = absf(sin(_t * 6.5)) * 0.25
+			_play_h("Wave", 1.6)
+		"sad":
+			_play_h("Idle_Neutral", 0.6)
+		_:
+			if not _with_gun:
+				_play_h("Idle")
+			elif not on_floor:
+				_play_h("Idle_Gun_Pointing")
+			elif speed > 0.15:
+				if strafe > 0.6:
+					_play_h("Run_Right", 0.7 + speed * 0.5)
+				elif strafe < -0.6:
+					_play_h("Run_Left", 0.7 + speed * 0.5)
+				else:
+					_play_h("Run_Shoot", 0.6 + speed * 0.6)
+			else:
+				_play_h("Idle_Gun_Pointing")
+	rig.position.y = hop
+	rig.rotation.z = -strafe * 0.08
+	aim.rotation.x = pitch + recoil * 0.2
+	for f in _jet_flames:
+		f.visible = jetting
+		if jetting:
+			f.scale = Vector3.ONE * (0.8 + randf() * 0.5)
+	if _flash > 0.0:
+		_flash = maxf(0.0, _flash - delta * 6.0)
+		var ov: Material = _white if _flash > 0.35 else _tint
+		for m in _human_meshes:
+			m.material_overlay = ov

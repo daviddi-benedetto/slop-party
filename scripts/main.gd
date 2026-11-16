@@ -56,7 +56,7 @@ func _ready() -> void:
 		var views := int(_args.get("views", "6"))
 		var parts: Array = []
 		for i in 6:
-			parts.append({"device": -2, "bot": true, "view": i < views, "kind": i, "hat": i + 1, "face": i})
+			parts.append({"device": -2, "bot": true, "view": i < views, "kind": i + int(_args.get("kinds", "0")), "hat": i + 1, "face": i, "back": i + 1})
 		if _args.has("kb"):
 			parts[0] = {"device": -1, "bot": false, "view": true, "kind": 0}
 		lobby.visible = false

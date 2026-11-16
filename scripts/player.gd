@@ -68,6 +68,7 @@ var color := Color.WHITE
 var kind := 0
 var hat := 0
 var face := 0
+var back := 0
 var brain
 var is_bot := false
 var has_view := false      # true when a splitscreen cell follows this player
@@ -225,7 +226,7 @@ func _ready() -> void:
 
 	character = Character.new()
 	add_child(character)
-	character.build(kind, color, body_layer_bit(), true, hat, face)
+	character.build(kind, color, body_layer_bit(), true, hat, face, back)
 
 	name_label = Label3D.new()
 	name_label.text = pname

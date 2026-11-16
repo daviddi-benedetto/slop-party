@@ -19,7 +19,22 @@ game modes:
 You play as a customisable plush animal in dark, neon-lit arenas (the look is
 inspired by ROUNDS).
 
-- **12 weapons** that look like real guns (carbine, pump shotgun, revolver,
+- **A lived-in world:** furnished houses, loose physics props you can kick
+  and shoot around (chairs, tables, books, boxes, bottles), window glass that
+  shatters, dense forests, camps, sidewalks and crossings. Props never block
+  you.
+- **Pets:** dogs, cats, a fox and a bunny wander every map. Walk up and press
+  the pick-up button to pet one (it heals you a little).
+- **14 characters:** six plush animals and eight animated humans (Swat,
+  Astronaut, King, Witch, Punk, Rocker, Cyber, Explorer), each with a colour,
+  16 hats, 7 faces and 7 back accessories (cape, backpack, wings, balloon...).
+- **20 weapons**, including Tesla (chain lightning), Cluster, Vortex, Ripper,
+  Sticky, Longshot, Frostbite and the akimbo Twins.
+- **69 powerup cards**, among them block perks that turn your block into a
+  weapon (Blink Guard, Frost Guard, Radiant Guard, Echo Guard, Empower...)
+  and oddities like Tiny, Giant, Goomba Stomp, Ground Slam, Buddy Drone and
+  Chain Reaction.
+- The original 12 weapons look like real guns (carbine, pump shotgun, revolver,
   bolt-action sniper, rocket launcher, minigun...), each with its own sound and
   firing animation: Blaster,
   Scatter, Zapper, Boomer, Rail, Lobber, Bubbler, Tripler, Magnum, Spinner,

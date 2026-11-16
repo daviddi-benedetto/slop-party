@@ -171,7 +171,7 @@ func add_podium(pos: Vector3, height: float, color: Color) -> float:
 func add_character(look: Dictionary, pos: Vector3):
 	var c = Character.new()
 	add_child(c)
-	c.build(look.get("kind", 0), look.color, 1, true, look.get("hat", 0), look.get("face", 0))
+	c.build(look.get("kind", 0), look.color, 1, true, look.get("hat", 0), look.get("face", 0), look.get("back", 0))
 	c.position = pos
 	c.rotation.y = PI
 	c.pop_in()

@@ -32,7 +32,7 @@ func _ready() -> void:
 	for i in mini(rows.size(), spots.size()):
 		var row: Dictionary = rows[i]
 		var top: float = _stage.add_podium(spots[i][0], spots[i][1], row.color)
-		var look := {"kind": row.kind, "color": row.color, "hat": row.get("hat", 0), "face": row.get("face", 0)}
+		var look := {"kind": row.kind, "color": row.color, "hat": row.get("hat", 0), "face": row.get("face", 0), "back": row.get("back", 0)}
 		if i == 0:
 			look.hat = 2      # the winner always wears the crown
 		var c = _stage.add_character(look, Vector3(spots[i][0].x, top, spots[i][0].z))
