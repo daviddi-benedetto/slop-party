@@ -16,6 +16,21 @@ extends Node3D
 ## The "bob" setting scales the walking part.
 
 const Weapons = preload("res://scripts/weapons.gd")
+const Models = preload("res://scripts/models.gd")
+
+## Styles drawn with an imported model: [model path, forward axis of the
+## model ("-x" or "+z"), overall length, extra height offset]. The rest
+## (Spinner, Bubbler, Pinball, Flamer) keep their hand-built sci-fi models.
+const GLB := {
+	"_": ["toon/Weapon/AK", "-x", 0.86, 0.0],
+	"burst": ["zombie/Weapon/Rifle", "+z", 0.92, 0.0],
+	"zapper": ["toon/Weapon/SMG", "-x", 0.62, 0.0],
+	"scatter": ["toon/Weapon/Shotgun", "-x", 0.98, 0.0],
+	"magnum": ["toon/Weapon/Revolver", "-x", 0.5, 0.0],
+	"rail": ["toon/Weapon/Sniper", "-x", 1.2, 0.0],
+	"boomer": ["toon/Weapon/Rocket_Launcher", "-x", 0.95, 0.0],
+	"lobber": ["toon/Weapon/Grenade_Launcher", "-x", 0.78, 0.0],
+}
 
 const HIP := Vector3(0.27, -0.25, -0.58)
 const ADS := Vector3(0.0, -0.155, -0.5)
@@ -152,6 +167,10 @@ func muzzle_z() -> float:
 ## the receiver / furniture, glowing strips mark the sci-fi parts.
 ## _sight_y = height of the iron-sight line (aiming lines it up with the eye).
 func _build_gun(style: String) -> void:
+	var key := style if GLB.has(style) else ("_" if not style in ["spinner", "bubbler", "pinball", "flamer"] else "")
+	if key != "":
+		_build_glb(style, GLB[key])
+		return
 	match style:
 		"burst":
 			# Bullpup assault rifle with a carry handle.
@@ -424,6 +443,68 @@ func _build_gun(style: String) -> void:
 			_muzzle_z = -0.49
 
 
+## An imported gun model, turned so its barrel points down -Z, scaled to
+## `length`, with the rear end behind the grip (z = 0.1) and the top of the
+## gun just above the bore line. Its meshes become our own parts (so they
+## get our layers and merge like the hand-built ones).
+func _build_glb(style: String, spec: Array) -> void:
+	var path: String = spec[0]
+	var rot := Basis(Vector3.UP, -PI * 0.5) if spec[1] == "-x" else Basis(Vector3.UP, PI)
+	var b: AABB = Models.bounds(path)
+	var rb := Transform3D(rot) * b
+	var length: float = spec[2]
+	var k: float = length / rb.size.z
+	var rear: float = 0.36 * length
+	var top: float = 0.055 + float(spec[3])
+	var off := Vector3(-rb.get_center().x * k, top - rb.end.y * k, rear - rb.end.z * k)
+	var xf := Transform3D(rot.scaled(Vector3.ONE * k), off)
+	for part in Models.parts(path):
+		var mi := MeshInstance3D.new()
+		mi.mesh = part[0]
+		mi.transform = xf * part[1]
+		var mesh: Mesh = part[0]
+		for s in mesh.get_surface_count():
+			mi.set_surface_override_material(s, _gunmetal(mesh.surface_get_material(s)))
+		mi.layers = _layer
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if _with_paw else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_target.add_child(mi)
+	_muzzle_z = rear - length
+	_sight_y = top + 0.012
+	# A band of the player's colour on the stock, so guns stay recognisable.
+	var w: float = rb.size.x * k
+	_box(_accent, Vector3(w + 0.006, 0.03, 0.07), Vector3(0, top - 0.04, rear - 0.12))
+	# Sci-fi touches for the energy weapons.
+	if style == "rail":
+		for z in [-0.18, -0.26, -0.34]:
+			_tube(_glow, 0.03, 0.016, Vector3(0, top - 0.06, _muzzle_z * 0.6 + z * 0.5))
+	elif style == "zapper":
+		_box(_glow, Vector3(w + 0.008, 0.01, 0.12), Vector3(0, top - 0.03, -0.1))
+
+
+## The toon guns come with pale flat colours that wash out under the arena
+## lighting: grey parts become darker, slightly metallic gun-metal, coloured
+## parts (wood, tape) keep their hue a little deeper. Cached per material.
+static var _metal_cache := {}
+
+static func _gunmetal(src: Material) -> Material:
+	if not src is StandardMaterial3D:
+		return src
+	if _metal_cache.has(src):
+		return _metal_cache[src]
+	var m: StandardMaterial3D = src.duplicate()
+	var c: Color = m.albedo_color
+	if m.albedo_texture == null and c.s < 0.2:
+		m.albedo_color = Color(c.r * 0.42, c.g * 0.42, c.b * 0.46)
+		m.metallic = 0.55
+		m.roughness = 0.38
+	else:
+		m.albedo_color = c.darkened(0.15)
+		m.roughness = 0.6
+	_metal_cache[src] = m
+	return m
+
+
 ## --- model building helpers --------------------------------------------------
 
 ## Pistol grip, trigger and trigger guard at depth z (top of the grip at y_top).
@@ -485,27 +566,39 @@ func _node(pos: Vector3) -> Node3D:
 ## Merge every static part (direct MeshInstance children) into one mesh with a
 ## surface per material: ~40 parts become ~6 draw calls per view.
 func _merge() -> void:
+	# Group every surface by (material, vertex format): imported meshes carry
+	# their own materials and may have a different vertex layout.
 	var groups := {}
 	var order: Array = []
+	var done: Array = []
 	for c in get_children():
 		if c is MeshInstance3D:
-			var m: Material = c.material_override
-			if not groups.has(m):
-				groups[m] = []
-				order.append(m)
-			groups[m].append(c)
+			var mesh: Mesh = c.mesh
+			for s in mesh.get_surface_count():
+				var m: Material = c.material_override
+				if m == null:
+					m = c.get_surface_override_material(s)
+				if m == null:
+					m = mesh.surface_get_material(s)
+				var key := "%d_%d" % [m.get_instance_id() if m != null else 0, (mesh as ArrayMesh).surface_get_format(s) if mesh is ArrayMesh else -1]
+				if not groups.has(key):
+					groups[key] = [m, []]
+					order.append(key)
+				groups[key][1].append([mesh, s, c.transform])
+			done.append(c)
 	if order.is_empty():
 		return
+	for c in done:
+		remove_child(c)
+		c.queue_free()
 	var am := ArrayMesh.new()
-	for m in order:
+	for key in order:
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for mi in groups[m]:
-			st.append_from(mi.mesh, 0, mi.transform)
-			remove_child(mi)
-			mi.queue_free()
+		for e in groups[key][1]:
+			st.append_from(e[0], e[1], e[2])
 		st.commit(am)
-		am.surface_set_material(am.get_surface_count() - 1, m)
+		am.surface_set_material(am.get_surface_count() - 1, groups[key][0])
 	var merged := MeshInstance3D.new()
 	merged.mesh = am
 	merged.layers = _layer

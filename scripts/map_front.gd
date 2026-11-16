@@ -42,6 +42,7 @@ static func frontline(m) -> void:
 		m.no_grass.append(Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y))
 
 	_town(m)
+	_props(m)
 	_flag_yard(m)
 	_hill_bunker(m, Vector3(36, 0, -54))
 	_farm(m)
@@ -87,10 +88,17 @@ static func _trench(m, x: float, z0: float, z1: float) -> void:
 		m._cyl(Vector3(x - w * 0.5 - 0.1, -d, z0 + 3.0 + i * 6.0), 0.08, d + 0.8, "deck")
 
 
-## Sandbag wall segment (waist high) centred at pos.
+## Sandbag wall (waist high) centred at pos: Sack_Trench models in a row.
 static func _sandbags(m, pos: Vector3, length: float, yaw: float, mirror := true) -> void:
-	m._box(pos + Vector3(0, 0.35, 0), Vector3(length, 0.7, 0.8), "sand", mirror, yaw)
-	m._box(pos + Vector3(0, 0.82, 0), Vector3(length - 0.3, 0.26, 0.7), "sand", mirror, yaw)
+	var n := maxi(1, ceili(length / 3.3))
+	var seg := length / n
+	var rot := Basis(Vector3.UP, yaw)
+	for i in n:
+		var c: Vector3 = pos + rot * Vector3(-length * 0.5 + seg * (i + 0.5), 0, 0)
+		m._model("toon/Wall/Sack_Trench", c, yaw, Vector3(seg / 3.35, 0.78, 0.95), mirror, "none")
+	m._collider(pos + Vector3(0, 0.5, 0), Vector3(length, 1.0, 0.85), yaw)
+	if mirror:
+		m._collider(Vector3(-pos.x, 0.5, -pos.z), Vector3(length, 1.0, 0.85), yaw + PI)
 
 
 ## Czech hedgehog anti-tank obstacle.
@@ -130,6 +138,40 @@ static func _town(m) -> void:
 	m._box(Vector3(18.5, 0.6, -7.8), Vector3(1.2, 1.2, 1.2), "crate", true, 0.1)
 	for x in [10.0, 26.0, 48.0, 62.0]:
 		m._lamp_post(Vector3(x, 0, 5.4))
+
+
+## Battlefield clutter from the model packs: wrecks, barriers, tyres, signs.
+static func _props(m) -> void:
+	# Crossroads by the town: traffic lights and a town sign on the way in.
+	m._model("zombie/Prop/Traffic_Light_1", Vector3(42.5, 0, 5.5), PI, 1.0, true, "none")
+	m._model("zombie/Prop/Traffic_Light_1", Vector3(32.5, 0, -5.5), 0.0, 1.0, true, "none")
+	m._model("zombie/Prop/Town_Sign", Vector3(60.0, 0, 7.5), PI, 0.8, true, "none")
+	m._model("zombie/Prop/Fire_Hydrant", Vector3(15.5, 0, 5.2), 0.0, 1.1)
+	m._model("toon/Prop/Trash_Container", Vector3(26.5, 0, 18.5), PI * 0.5, 1.0)
+	m._model("toon/Prop/Trash_Container", Vector3(-27.5, 0, 22.0), PI * 0.5, 1.0)
+	for p in [Vector3(9.0, 0, -9.0), Vector3(-10.0, 0, 10.5), Vector3(28.0, 0, 9.0)]:
+		m._model("zombie/Prop/Trash_Bag_" + str(1 + m._rng.randi() % 2), p, m._rng.randf() * TAU, 1.3, true, "none")
+	# Wrecked cars and debris on the fields between the lines.
+	m._model("toon/Prop/Debris_Broken_Car", Vector3(52.0, 0, 12.0), 0.7, 1.0)
+	m._model("toon/Prop/Debris_Broken_Car", Vector3(24.0, 0, -36.0), 2.1, 1.0)
+	m._model("toon/Prop/Debris_Broken_Car", Vector3(84.0, 0, 34.0), 1.4, 1.0)
+	m._model("toon/Prop/Debris_Tires", Vector3(56.0, 0, 15.0), 0.3, 1.2)
+	m._model("toon/Prop/Debris_Pile", Vector3(18.0, 0.02, -12.0), 0.5, 1.4, true, "none")
+	m._model("toon/Prop/Debris_Pile", Vector3(-6.0, 0.02, 34.0), 2.0, 1.4, true, "none")
+	m._model("toon/Prop/Gas_Tank", Vector3(64.0, 0, -30.0), 0.0, 1.2)
+	m._model("toon/Prop/Pipes", Vector3(50.0, 0, -44.0), 0.4, 1.2)
+	# Concrete barriers in front of the bases and along the road.
+	for z in [-24.0, -18.0, 18.0, 24.0]:
+		m._model("toon/Wall/Barrier_Large", Vector3(76.5, 0, z), PI * 0.5, Vector3(1.0, 0.6, 1.0))
+	for x in [30.0, 46.0]:
+		m._model("zombie/Prop/Traffic_Barrier_1", Vector3(x, 0, 3.0), 0.0, 1.2)
+		m._model("toon/Prop/Traffic_Cone", Vector3(x + 1.6, 0, 2.6), 0.0, 1.0, true, "none")
+	# Water tower by the farm, water tank at each base.
+	m._model("zombie/Building/Water_Tower", Vector3(62.0, 0, 62.0), 0.0, 1.1)
+	m._model("toon/Building/Water_Tank_Platform", Vector3(95.0, 0, -4.0), 0.0, 1.3)
+	# Boulders and undergrowth.
+	for p in [Vector3(30.0, 0, 52.0), Vector3(88.0, 0, 48.0), Vector3(12.0, 0, -50.0), Vector3(58.0, 0, -62.0), Vector3(-34.0, 0, -58.0)]:
+		m._rock(p, m._rng.randf_range(0.8, 1.4))
 
 
 ## Around flag C: containers, a warehouse with a mezzanine, sandbag nests.
@@ -257,8 +299,11 @@ static func _trees(m) -> void:
 		placed += 1
 		if absf(p.z) > 48.0 and m._rng.randf() < 0.6:
 			m._pine(p, m._rng.randf_range(1.0, 1.5))
+		elif m._rng.randf() < 0.12:
+			m._rock(p, m._rng.randf_range(0.6, 1.1))
 		elif m._rng.randf() < 0.25:
 			m._bush(p, m._rng.randf_range(1.0, 1.6))
+			m._plant(p + Vector3(1.4, 0, 0.6), 1.0)
 		else:
 			m._tree(p, m._rng.randf_range(1.0, 1.6))
 

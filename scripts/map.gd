@@ -47,6 +47,7 @@ extends Node3D
 const SkyKit = preload("res://scripts/sky.gd")
 const Places = preload("res://scripts/map_places.gd")
 const Front = preload("res://scripts/map_front.gd")
+const Models = preload("res://scripts/models.gd")
 
 const DEPTH := 3.6
 const FLOOR_H := 3.4
@@ -834,9 +835,10 @@ static func _tex(kind: String) -> Array:
 ## Queue a static mesh. Meshes sharing a material are merged at _flush().
 ## Primitive meshes and our own ArrayMeshes have different vertex formats, so
 ## they go into separate batches.
-func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true) -> void:
-	var kind := "p" if mesh is PrimitiveMesh else "c"
-	var key := "%d_%s_%s" % [mat.get_instance_id(), kind, shadow]
+func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true, surface := 0, kind := "") -> void:
+	if kind == "":
+		kind = "p" if mesh is PrimitiveMesh else "c"
+	var key := "%d_%s_%s" % [mat.get_instance_id() if mat != null else 0, kind, shadow]
 	# Big maps: batch per 40 m chunk too, so cameras and shadow passes can
 	# cull the parts of the map they cannot see.
 	if half_x > 60.0 and absf(xf.origin.x) < half_x + 2.0 and absf(xf.origin.z) < half_z + 2.0:
@@ -845,7 +847,7 @@ func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true) -> void:
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		_batches[key] = [mat, shadow, st]
-	_batches[key][2].append_from(mesh, 0, xf)
+	_batches[key][2].append_from(mesh, surface, xf)
 
 
 func _flush() -> void:
@@ -868,6 +870,31 @@ func _glows(mat: String) -> bool:
 # Building blocks
 # --------------------------------------------------------------------------
 
+## An imported model (models.gd path, e.g. "toon/Prop/Crate") placed at `pos`
+## (its own origin = the model's ground point) turned by `yaw` and scaled by
+## `scl` (float or Vector3). Its meshes join the material batches like any
+## other static geometry. collide: "box" (its bounding box), "none".
+func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror := true, collide := "box", shadow := true) -> void:
+	var s3: Vector3 = scl if scl is Vector3 else Vector3.ONE * float(scl)
+	var b: AABB = Models.bounds(path)
+	for k in (2 if mirror else 1):
+		var p := pos if k == 0 else Vector3(-pos.x, pos.y, -pos.z)
+		var y := yaw + (PI if k == 1 else 0.0)
+		var rot := Basis(Vector3.UP, y)
+		var xf := Transform3D(rot * Basis.from_scale(s3), p)
+		for part in Models.parts(path):
+			var mesh: Mesh = part[0]
+			for si in mesh.get_surface_count():
+				_add(mesh, mesh.surface_get_material(si), xf * part[1], shadow, si, "g%d" % mesh.surface_get_format(si))
+		if collide == "box":
+			_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
+
+
+## Pick one of several model variants with the map's seeded random generator.
+func _pick(paths: Array) -> String:
+	return paths[_rng.randi() % paths.size()]
+
+
 func _collider(pos: Vector3, size: Vector3, yaw := 0.0) -> void:
 	var shape := BoxShape3D.new()
 	shape.size = size
@@ -885,12 +912,15 @@ func _box(pos: Vector3, size: Vector3, mat: String, mirror := true, yaw := 0.0, 
 	var copies := [[pos, yaw]]
 	if mirror:
 		copies.append([Vector3(-pos.x, pos.y, -pos.z), yaw + PI])
+	var cube := mat == "crate" and maxf(size.x, maxf(size.y, size.z)) < 1.35 * minf(size.x, minf(size.y, size.z))
 	for c in copies:
 		if collide:
 			_collider(c[0], size, c[1])
+		if cube:
+			# Wooden crate model, scaled to the requested size.
+			_model("toon/Prop/Crate", c[0] - Vector3(0, size.y * 0.5, 0), c[1], size / 0.79, false, "none")
+			continue
 		_visual(c[0], size, mat, c[1])
-		if mat == "crate":
-			_visual(c[0], Vector3(size.x + 0.04, 0.1, size.z + 0.04), "accent_a", c[1])
 
 
 ## An upright cylinder (or cone, with top_radius) standing on `base`.
@@ -1363,11 +1393,8 @@ func _basement(r: Rect2, mirror := true) -> void:
 
 ## A shipping container resting on `base` (its floor centre), with dark end frames.
 func _container(base: Vector3, yaw: float, mat: String, length := 6.0, mirror := true) -> void:
-	var c := base + Vector3(0, 1.3, 0)
-	_box(c, Vector3(length, 2.6, 2.5), mat, mirror, yaw)
-	for sgn in [1.0, -1.0]:
-		var off := Basis(Vector3.UP, yaw) * Vector3(sgn * (length * 0.5 - 0.06), 0, 0)
-		_box(c + off, Vector3(0.18, 2.66, 2.56), "dark", mirror, yaw, false)
+	var red := mat.contains("red") or mat == "block_b"
+	_model("zombie/Prop/Container_Red" if red else "zombie/Prop/Container_Green", base, yaw, Vector3(length / 5.71, 1.0, 0.98), mirror)
 
 
 ## A glowing wall sign (visual only) with a matching light.
@@ -1379,10 +1406,15 @@ func _sign(pos: Vector3, size: Vector3, mat: String, mirror := true) -> void:
 
 
 func _barrel(pos: Vector3, mirror := true) -> void:
+	_model("toon/Prop/Exploding_Barrel", pos, _rng.randf() * TAU, Vector3(1.08, 1.18, 1.08), mirror, "none")
 	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
-		_cyl(s, 0.42, 1.2, "block_c", false)
-		_cyl(s + Vector3(0, 0.9, 0), 0.45, 0.08, "accent_b", false, false)
-		_cyl(s + Vector3(0, 0.22, 0), 0.45, 0.08, "accent_b", false, false)
+		var shape := CylinderShape3D.new()
+		shape.radius = 0.42
+		shape.height = 1.2
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position = s + Vector3(0, 0.6, 0)
+		_body.add_child(cs)
 
 
 ## Launches any player that steps on it straight up.
@@ -1475,13 +1507,17 @@ func _lawn(r: Rect2, mirror := true) -> void:
 
 ## A street lamp: pole, glowing head and (scaled by time of day) a light.
 func _lamp_post(pos: Vector3, mirror := true, h := 4.6) -> void:
-	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
-		_cyl(s, 0.09, h, "dark", false)
-		_box(s + Vector3(0, h, 0), Vector3(0.5, 0.18, 0.5), "dark", false, 0.0, false)
-		_box(s + Vector3(0, h - 0.12, 0), Vector3(0.4, 0.06, 0.4), "lamp", false, 0.0, false)
+	var k := h / 5.4
+	for s in ([[pos, 0.0], [Vector3(-pos.x, pos.y, -pos.z), PI]] if mirror else [[pos, 0.0]]):
+		var p: Vector3 = s[0]
+		var rot := Basis(Vector3.UP, s[1])
+		_model("toon/Prop/Street_Light", p, s[1], k, false, "none")
+		_collider(p + Vector3(0, h * 0.5, 0), Vector3(0.25, h, 0.25))
+		var head: Vector3 = p + rot * Vector3(0, 5.25 * k, 1.75 * k)
+		_box(head, Vector3(0.36, 0.05, 0.5), "lamp", false, s[1], false)
 		if night_amount > 0.0:
 			var l := OmniLight3D.new()
-			l.position = s + Vector3(0, h - 0.4, 0)
+			l.position = head - Vector3(0, 0.4, 0)
 			l.light_color = Color(1.0, 0.82, 0.55)
 			l.light_energy = 2.4 * night_amount
 			l.omni_range = 11.0
@@ -1523,65 +1559,46 @@ func _blob(i: int) -> ArrayMesh:
 
 
 ## A broad-leaved tree: tapered trunk, branches and a canopy of leaf clusters.
+## A leafy tree (one of five models) with a collidable trunk.
 func _tree(pos: Vector3, scl := 1.0, mirror := true) -> void:
-	var leaf: String = "leaf%d" % (_rng.randi() % 2)
-	var h := 3.2 * scl
-	var top := pos + Vector3(_rng.randf_range(-0.4, 0.4) * scl, h, _rng.randf_range(-0.4, 0.4) * scl)
-	var clusters: Array = []
-	for i in 6:
-		var a := TAU * i / 6.0 + _rng.randf() * 0.5
-		var r := _rng.randf_range(0.9, 1.5) * scl
-		clusters.append([top + Vector3(cos(a) * r, _rng.randf_range(-0.3, 0.6) * scl, sin(a) * r), _rng.randf_range(0.9, 1.3) * scl, i])
-	clusters.append([top + Vector3(0, 1.0 * scl, 0), 1.4 * scl, 6])
-	for k in (2 if mirror else 1):
-		var sgn := Vector3(1, 1, 1) if k == 0 else Vector3(-1, 1, -1)
-		var s := pos * sgn
-		var t2 := top * sgn
+	var path := _pick(["nature/Tree/Common_Tree_1", "nature/Tree/Common_Tree_2", "nature/Tree/Common_Tree_3", "nature/Tree/Common_Tree_4", "nature/Tree/Common_Tree_5"])
+	_model(path, pos, _rng.randf() * TAU, scl * 0.72, mirror, "none")
+	_trunk(pos, 0.3 * scl, 4.0 * scl, mirror)
+
+
+func _trunk(pos: Vector3, r: float, h: float, mirror: bool) -> void:
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
 		var shape := CylinderShape3D.new()
-		shape.radius = 0.32 * scl
+		shape.radius = r
 		shape.height = h
 		var cs := CollisionShape3D.new()
 		cs.shape = shape
 		cs.position = s + Vector3(0, h * 0.5, 0)
 		_body.add_child(cs)
-		_rod(s, t2, 0.24 * scl, "trunk", false)
-		for c in clusters:
-			var cp: Vector3 = c[0] * sgn
-			_rod(t2 - Vector3(0, 0.6 * scl, 0), cp.lerp(t2, 0.3), 0.07 * scl, "trunk", false)
-			_add(_blob(c[2]), _mats[leaf], Transform3D(Basis(Vector3.UP, c[2] * 1.3).scaled(Vector3.ONE * c[1]), cp))
 
 
 func _bush(pos: Vector3, scl := 1.0, mirror := true) -> void:
-	var leaf: String = "leaf%d" % (_rng.randi() % 2)
-	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
-		for i in 3:
-			var off := Vector3((i - 1) * 0.5, 0, _rng.randf_range(-0.3, 0.3)) * scl
-			_add(_blob(i), _mats[leaf], Transform3D(Basis().scaled(Vector3(0.75, 0.6, 0.7) * scl), s + off + Vector3(0, 0.45 * scl, 0)))
+	var path := "nature/Bush/Bush_Common_Flowers" if _rng.randf() < 0.3 else "nature/Bush/Bush_Common"
+	_model(path, pos, _rng.randf() * TAU, scl * 0.75, mirror, "none")
 
 
-## A pine: collidable trunk, layered cones (with snow caps if the theme has them).
+## A pine (one of five models) with a collidable trunk.
 func _pine(pos: Vector3, scl := 1.0, mirror := true) -> void:
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.0
-	cone.bottom_radius = 1.0
-	cone.height = 1.0
-	cone.radial_segments = 12
-	cone.rings = 2
-	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
-		var shape := CylinderShape3D.new()
-		shape.radius = 0.35
-		shape.height = 4.0
-		var cs := CollisionShape3D.new()
-		cs.shape = shape
-		cs.position = s + Vector3(0, 2.0, 0)
-		_body.add_child(cs)
-		_add(_unit_cyl, _mats["trunk"], Transform3D(Basis.from_scale(Vector3(0.26, 2.0, 0.26) * scl), s + Vector3(0, 1.0 * scl, 0)))
-		for i in 4:
-			var y := (2.0 + i * 1.05) * scl
-			var r := (2.0 - i * 0.42) * scl
-			_add(cone, _mats["pine"] if _mats.has("pine") else _mats["leaf0"], Transform3D(Basis(Vector3.UP, i * 0.7).scaled(Vector3(r, 2.0 * scl, r)), s + Vector3(0, y, 0)))
-			if _mats.has("snowcap"):
-				_add(cone, _mats["snowcap"], Transform3D(Basis(Vector3.UP, i * 0.7).scaled(Vector3(r * 0.55, 1.05 * scl, r * 0.55)), s + Vector3(0, y + 0.5 * scl, 0)))
+	var path := _pick(["nature/Tree/Pine_1", "nature/Tree/Pine_2", "nature/Tree/Pine_3", "nature/Tree/Pine_4", "nature/Tree/Pine_5"])
+	_model(path, pos, _rng.randf() * TAU, scl * 0.85, mirror, "none")
+	_trunk(pos, 0.35 * scl, 4.0 * scl, mirror)
+
+
+## A boulder (visual + box collider).
+func _rock(pos: Vector3, scl := 1.0, mirror := true) -> void:
+	var path := _pick(["nature/Rock/Rock_Medium_1", "nature/Rock/Rock_Medium_2", "nature/Rock/Rock_Medium_3"])
+	_model(path, pos + Vector3(0, -0.15 * scl, 0), _rng.randf() * TAU, scl, mirror)
+
+
+## Ground plants (visual only).
+func _plant(pos: Vector3, scl := 1.0, mirror := true) -> void:
+	var path := _pick(["nature/Plant/Fern_1", "nature/Plant/Plant_1", "nature/Plant/Plant_7", "nature/Plant/Plant_7_Big", "nature/Plant/Plant_1_Big"])
+	_model(path, pos, _rng.randf() * TAU, scl, mirror, "none", false)
 
 
 const GRASS_SHADER := """

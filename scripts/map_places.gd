@@ -413,9 +413,10 @@ static func suburb(m) -> void:
 		m._lamp_post(Vector3(x, 0, 5.6))
 	m._lamp_post(Vector3(5.6, 0, 20.0))
 	m._lamp_post(Vector3(-5.6, 0, 20.0))
-	for p in [Vector3(20.0, 0, 5.8), Vector3(-20.0, 0, 5.8)]:
-		m._cyl(p, 0.18, 0.7, "car_red")
-		m._cyl(p + Vector3(0, 0.7, 0), 0.12, 0.1, "car_red", true, false)
+	m._model("zombie/Prop/Fire_Hydrant", Vector3(20.0, 0, 5.8), 0.0, 1.1)
+	m._model("zombie/Prop/Fire_Hydrant", Vector3(-20.0, 0, 5.8), PI, 1.1, false)
+	m._model("zombie/Prop/Trash_Bag_1", Vector3(24.0, 0, 6.6), 0.4, 1.2, true, "none")
+	m._model("zombie/Prop/Trash_Bag_2", Vector3(24.8, 0, 6.4), 1.2, 1.2, true, "none")
 
 	m._spawns([Vector3(31, 0.1, 9.0), Vector3(34, 0.1, 24.0), Vector3(-36, 0.1, 8.0), Vector3(-29, 0.1, 27.0), Vector3(25.5, 3.5, 12.5),
 		Vector3(17, 3.5, 13.0), Vector3(-33, 3.6, 25.6), Vector3(-15, -DEPTH + 0.1, 0.0)])
@@ -448,19 +449,15 @@ static func _fence_z(m, x: float, z0: float, z1: float) -> void:
 		m._box(Vector3(x + 0.04, 0.6, z0 + length * i / n), Vector3(0.03, 1.2, 0.09), "trim", true, 0.0, false)
 
 
-## A parked car: body, cabin with windows, wheels, lights. Climbable.
+## A parked car (Zombie Apocalypse kit model, chosen by paint colour). Climbable.
 static func _car(m, pos: Vector3, yaw: float, paint: String) -> void:
-	var b := Basis(Vector3.UP, yaw)
-	m._box(pos + Vector3(0, 0.62, 0), Vector3(4.3, 0.8, 1.9), paint, true, yaw)
-	m._box(pos + b * Vector3(-0.25, 1.35, 0), Vector3(2.3, 0.7, 1.72), "window", true, yaw)
-	m._box(pos + b * Vector3(-0.25, 1.72, 0), Vector3(2.2, 0.06, 1.66), paint, true, yaw, false)
-	m._box(pos + b * Vector3(2.16, 0.7, 0), Vector3(0.04, 0.16, 1.5), "lamp", true, yaw, false)
-	var wheel := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, PI * 0.5)
-	for wx in [-1.35, 1.35]:
-		for wz in [-0.92, 0.92]:
-			var p: Vector3 = pos + b * Vector3(wx, 0.36, wz)
-			for s in [p, Vector3(-p.x, p.y, -p.z)]:
-				m._add(m._unit_cyl, m._mats["tyre"], Transform3D(wheel.scaled(Vector3(0.36, 0.26, 0.36)), s))
+	var model := "zombie/Vehicle/Vehicle_Sports"
+	if paint == "car_blue":
+		model = "zombie/Vehicle/Vehicle_Pickup"
+	elif paint == "car_black" or paint == "car_white":
+		model = "zombie/Vehicle/Vehicle_Truck" if paint == "car_white" else "zombie/Vehicle/Vehicle_Sports_Armored"
+	# Model length runs along Z; the old cars ran along X.
+	m._model(model, pos, yaw + PI * 0.5, 0.8)
 
 
 ## A sunken pool with a shallow ramp at its west end, tiled walls and water.
