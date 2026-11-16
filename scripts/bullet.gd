@@ -17,6 +17,7 @@ const Fx = preload("res://scripts/fx.gd")
 
 const WORLD_MASK := 1
 const PLAYER_MASK := 2
+const PROP_MASK := 4             # loose props and glass (prop.gd, glass.gd)
 
 static var _mesh: SphereMesh
 static var _cone: CylinderMesh
@@ -164,12 +165,24 @@ func _physics_process(delta: float) -> void:
 		if Geometry3D.get_closest_point_to_segment(c, from, to).distance_to(c) < BLOCK_RADIUS + radius:
 			_reflect(b)
 			return
-	var q := PhysicsRayQueryParameters3D.create(from, to, WORLD_MASK | PLAYER_MASK)
+	var q := PhysicsRayQueryParameters3D.create(from, to, WORLD_MASK | PLAYER_MASK | PROP_MASK)
 	var exclude: Array = _ignore.duplicate()
 	if not can_hit_owner:
 		exclude.append(shooter.get_rid())
 	q.exclude = exclude
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	# Props get knocked about (and stop ordinary bullets); glass shatters and
+	# the bullet flies on.
+	if hit and hit.collider.has_method("knock"):
+		var prop = hit.collider
+		prop.knock(vel.normalized() * clampf(damage * 0.35, 2.0, 40.0), hit.position)
+		if prop.is_glass or flame or pierce > 0:
+			_ignore.append(prop.get_rid())
+			global_position = hit.position
+			return
+		if explosive <= 0.0 and bounces <= 0 and fuse <= 0.0:
+			_impact(hit.position, hit.normal)
+			return
 	var end: Vector3 = hit.position if hit else to
 
 	# Fat bullets get a swept-sphere test against player chests.

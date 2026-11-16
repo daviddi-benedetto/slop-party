@@ -20,6 +20,7 @@ const Fx = preload("res://scripts/fx.gd")
 const Bullet = preload("res://scripts/bullet.gd")
 const Stats = preload("res://scripts/stats.gd")
 const Models = preload("res://scripts/models.gd")
+const Prop = preload("res://scripts/prop.gd")
 
 const GRAVITY := 22.0
 const SPECS := {
@@ -213,6 +214,8 @@ func _physics_process(delta: float) -> void:
 	match type:
 		"heli": _fly(delta, b)
 		_: _drive(delta, b)
+	if velocity.length() > 2.0 and Engine.get_physics_frames() % 3 == 0:
+		Prop.kick_near(get_world_3d().direct_space_state, chest_position(), hit_radius() + 0.4, velocity, 2.0)
 	if b != null:
 		_aim_and_fire(delta, b)
 	if global_position.y < -25.0:

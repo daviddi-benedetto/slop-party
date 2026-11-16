@@ -804,6 +804,10 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 		if p.alive:
 			var dp: float = p.global_position.distance_to(pos)
 			p.shake = maxf(p.shake, clampf(1.2 - dp / (radius * 4.0), 0.0, 1.0))
+	for prop in get_tree().get_nodes_in_group("props"):
+		var away: Vector3 = prop.global_position - pos
+		if away.length() < radius * 1.6:
+			prop.knock((away.normalized() + Vector3(0, 0.6, 0)) * (1.0 - away.length() / (radius * 1.6)) * 14.0 * minf(prop.mass, 15.0), pos)
 	for p in damageables():
 		if not p.alive or p == direct_victim:
 			continue

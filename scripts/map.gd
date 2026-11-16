@@ -48,6 +48,19 @@ const SkyKit = preload("res://scripts/sky.gd")
 const Places = preload("res://scripts/map_places.gd")
 const Front = preload("res://scripts/map_front.gd")
 const Models = preload("res://scripts/models.gd")
+const Prop = preload("res://scripts/prop.gd")
+const Glass = preload("res://scripts/glass.gd")
+
+signal nav_built
+
+const FURN := 2.15               # scale of the Kenney furniture kit models
+## Loose clutter scattered on walkable spots after the nav graph exists:
+## [model, scale, mass].
+const CLUTTER := [["survival/Box", 3.0, 5.0], ["survival/Barrel", 3.0, 10.0], ["toon/Prop/Traffic_Cone", 1.0, 2.0],
+	["furniture/Cardboard_Box_Closed", 2.4, 2.0], ["survival/Bottle", 2.6, 0.5], ["survival/Bucket", 2.6, 1.5],
+	["furniture/Chair", 2.15, 4.0], ["toon/Prop/Pallet", 0.8, 7.0], ["furniture/Trashcan", 2.15, 3.0],
+	["blaster/Crate_Small", 1.6, 6.0], ["furniture/Books", 2.6, 0.6], ["survival/Tree_Log_Small", 2.4, 9.0],
+	["furniture/Stool_Bar", 2.15, 3.0], ["blaster/Target_Large", 2.5, 1.5]]
 
 const DEPTH := 3.6
 const FLOOR_H := 3.4
@@ -890,6 +903,96 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 			_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
 
 
+## A loose physics prop (prop.gd) standing at `pos`.
+func _prop(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, weight := 4.0, mirror := true) -> void:
+	for k in (2 if mirror else 1):
+		var p = Prop.new()
+		p.setup(path, scl, weight)
+		p.position = pos if k == 0 else Vector3(-pos.x, pos.y, -pos.z)
+		p.rotation.y = yaw + (PI if k == 1 else 0.0)
+		add_child(p)
+
+
+## A breakable glass pane (glass.gd) centred at `pos`, w x h, in a wall that
+## runs along X (or along Z with along_z).
+func _glass(pos: Vector3, w: float, h: float, along_z := false, mirror := true) -> void:
+	for k in (2 if mirror else 1):
+		var g = Glass.new()
+		g.size = Vector3(w, h, 0.05)
+		g.position = pos if k == 0 else Vector3(-pos.x, pos.y, -pos.z)
+		g.rotation.y = PI * 0.5 if along_z else 0.0
+		add_child(g)
+
+
+## Furniture for one storey of a building (loose props): a dining room, a
+## lounge or an office, chosen with the map's seeded random generator.
+## The stairs run along the west / east walls, so the middle is free.
+func _furnish(c: Vector3, sx: float, sz: float, y: float, mirror: bool) -> void:
+	var f := FURN
+	var north := c.z + sz * 0.26
+	var south := c.z - sz * 0.26
+	var top := 0.33 * f + 0.02
+	match _rng.randi() % 3:
+		0:
+			_prop("furniture/Table" if _rng.randf() < 0.5 else "furniture/Table_Cross_Cloth", Vector3(c.x, y, north), 0.0, f, 14.0, mirror)
+			for sgn in [-1.0, 1.0]:
+				_prop("furniture/Chair", Vector3(c.x - 0.45, y, north + sgn * 0.85), 0.0 if sgn > 0 else PI, f, 4.0, mirror)
+				_prop("furniture/Chair_Cushion", Vector3(c.x + 0.45, y, north + sgn * 0.85), 0.0 if sgn > 0 else PI, f, 4.0, mirror)
+			_prop("furniture/Books", Vector3(c.x - 0.4, y + top, north), 0.4, f * 1.2, 0.6, mirror)
+			_prop("survival/Bottle", Vector3(c.x + 0.3, y + top, north + 0.1), 0.0, 2.4, 0.4, mirror)
+			_prop("furniture/Kitchen_Fridge", Vector3(c.x + sx * 0.2, y, c.z + sz * 0.5 - 0.75), PI, f, 30.0, mirror)
+			_prop("furniture/Kitchen_Stove", Vector3(c.x + sx * 0.2 - 1.0, y, c.z + sz * 0.5 - 0.85), PI, f, 25.0, mirror)
+			_prop("furniture/Toaster", Vector3(c.x + sx * 0.2 - 1.0, y + 0.45 * f + 0.02, c.z + sz * 0.5 - 0.85), 0.0, f, 0.8, mirror)
+		1:
+			_prop("furniture/Lounge_Sofa", Vector3(c.x, y, c.z + sz * 0.5 - 0.9), PI, f, 22.0, mirror)
+			_prop("furniture/Pillow_Blue", Vector3(c.x - 0.5, y + 0.25 * f, c.z + sz * 0.5 - 0.9), 0.3, f, 0.3, mirror)
+			_prop("furniture/Table_Coffee_Glass" if _rng.randf() < 0.5 else "furniture/Table_Coffee", Vector3(c.x, y, north - 0.3), 0.0, f, 9.0, mirror)
+			_prop("furniture/Radio", Vector3(c.x + 0.2, y + 0.23 * f + 0.02, north - 0.3), 0.2, f * 0.8, 0.8, mirror)
+			_prop("furniture/Lounge_Chair", Vector3(c.x - 1.9, y, north - 0.3), PI * 0.5, f, 12.0, mirror)
+			_prop("furniture/Lamp_Round_Floor", Vector3(c.x + 1.5, y, c.z + sz * 0.5 - 0.8), 0.0, f, 3.0, mirror)
+			_prop("furniture/Cabinet_Television", Vector3(c.x - sx * 0.2, y, south - 0.2), 0.0, f, 14.0, mirror)
+			_prop("furniture/Television_Vintage" if _rng.randf() < 0.5 else "furniture/Television_Modern", Vector3(c.x - sx * 0.2, y + 0.31 * f + 0.02, south - 0.2), 0.0, f, 5.0, mirror)
+			_prop("furniture/Potted_Plant", Vector3(c.x + sx * 0.2, y, south - 0.4), 0.0, f, 4.0, mirror)
+		_:
+			_prop("furniture/Desk", Vector3(c.x, y, north), 0.0, f, 16.0, mirror)
+			_prop("furniture/Chair_Desk", Vector3(c.x, y, north - 0.9), PI, f, 6.0, mirror)
+			_prop("furniture/Computer_Screen", Vector3(c.x, y + 0.38 * f + 0.02, north + 0.15), 0.0, f, 2.0, mirror)
+			_prop("furniture/Computer_Keyboard", Vector3(c.x, y + 0.38 * f + 0.02, north - 0.2), 0.0, f, 0.4, mirror)
+			_prop("furniture/Bookcase_Open", Vector3(c.x + 1.6, y, c.z + sz * 0.5 - 0.65), PI, f, 18.0, mirror)
+			_prop("furniture/Bookcase_Closed_Wide", Vector3(c.x - 1.9, y, c.z + sz * 0.5 - 0.65), PI, f, 22.0, mirror)
+			_prop("furniture/Trashcan", Vector3(c.x + 1.1, y, north - 0.4), 0.0, f, 2.0, mirror)
+			for i in 3:
+				_prop("furniture/Cardboard_Box_Closed", Vector3(c.x - sx * 0.18 + (i % 2) * 0.55, y + (i / 2) * 0.62, south - 0.3), i * 0.4, 2.3, 2.0, mirror)
+			_prop("furniture/Bear", Vector3(c.x + sx * 0.2, y, south), 2.6, f, 0.8, mirror)
+
+
+## Scatter loose clutter on random walkable spots (called once the nav graph
+## exists), away from spawn points and pickup pads.
+func _scatter_props() -> void:
+	if _nav_ids.is_empty():
+		return
+	var count := clampi(int(half_x * half_z / 26.0), 14, 70)
+	var placed := 0
+	var tries := 0
+	while placed < count and tries < count * 4:
+		tries += 1
+		var p := random_nav_point()
+		var ok := true
+		for s in spawn_points:
+			if (s as Vector3).distance_to(p) < 2.5:
+				ok = false
+		for s in pickup_spots:
+			if (s[1] as Vector3).distance_to(p) < 2.5:
+				ok = false
+		if not ok:
+			continue
+		var c: Array = CLUTTER[randi() % CLUTTER.size()]
+		var n := 1 + (randi() % 3 if float(c[2]) < 6.0 else 0)
+		for i in n:
+			_prop(c[0], p + Vector3(randf_range(-0.6, 0.6), 0.05 + i * 0.02, randf_range(-0.6, 0.6)), randf() * TAU, c[1], c[2], false)
+		placed += 1
+
+
 ## Pick one of several model variants with the map's seeded random generator.
 func _pick(paths: Array) -> String:
 	return paths[_rng.randi() % paths.size()]
@@ -1306,6 +1409,17 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		if f == 0:
 			south = [[c.x, 1.8, 0.0, 2.5]]
 			east = [[c.z, 1.8, 0.0, 2.5]]
+		# Glass in every window (not the doors), furniture on every floor.
+		for w in win_x:
+			_glass(Vector3(w[0], y0 + 1.625, z1 - t * 0.5), 1.4, 1.35, false, mirror)
+			if f > 0:
+				_glass(Vector3(w[0], y0 + 1.625, z0 + t * 0.5), 1.4, 1.35, false, mirror)
+		for w in win_z:
+			_glass(Vector3(x0 + t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
+			if f > 0:
+				_glass(Vector3(x1 - t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
+		if opts.get("furnish", true):
+			_furnish(c, sx, sz, y0, mirror)
 		_wall_x(z0 + t * 0.5, x0, x1, y0, FLOOR_H, mat, south, mirror, t)
 		_wall_x(z1 - t * 0.5, x0, x1, y0, FLOOR_H, mat, win_x, mirror, t)
 		_wall_z(x0 + t * 0.5, z0 + t, z1 - t, y0, FLOOR_H, mat, win_z, mirror, t)
@@ -2143,6 +2257,8 @@ func build_nav() -> void:
 		if keep.has(l.x) and keep.has(l.y):
 			nav.connect_points(l.x, l.y)
 	nav_ready = true
+	_scatter_props()
+	nav_built.emit()
 	print("[map] %s nav graph: %d nodes, %d links" % [MAPS[map_index].name, best.size(), links.size()])
 
 

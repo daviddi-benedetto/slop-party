@@ -16,6 +16,7 @@ extends CharacterBody3D
 
 const Fx = preload("res://scripts/fx.gd")
 const Models = preload("res://scripts/models.gd")
+const Prop = preload("res://scripts/prop.gd")
 
 const GRAVITY := 22.0
 const TYPES := {
@@ -330,6 +331,8 @@ func _physics_process(delta: float) -> void:
 
 	# Shamble: legs swing, body sways, a lunge when attacking.
 	var hs := Vector2(velocity.x, velocity.z).length()
+	if hs > 1.0 and Engine.get_physics_frames() % 6 == 0:
+		Prop.kick_near(get_world_3d().direct_space_state, global_position + Vector3(0, 0.7, 0), 0.7 * _scale, velocity)
 	_action_t = maxf(0.0, _action_t - delta)
 	if _action_t <= 0.0:
 		if hs < 0.3:

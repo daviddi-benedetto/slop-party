@@ -33,6 +33,7 @@ const Fx = preload("res://scripts/fx.gd")
 const Character = preload("res://scripts/character.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
 const Weapons = preload("res://scripts/weapons.gd")
+const Prop = preload("res://scripts/prop.gd")
 
 const EYE_HEIGHT := 1.6
 const GRAVITY := 22.0
@@ -828,6 +829,9 @@ func _physics_process(delta: float) -> void:
 	character.jetting = jetting
 
 	var hspeed := Vector2(velocity.x, velocity.z).length()
+	# Barge through loose props and glass (they never block us).
+	if hspeed > 1.5 and Engine.get_physics_frames() % 3 == index % 3:
+		Prop.kick_near(get_world_3d().direct_space_state, global_position + Vector3(0, 0.7, 0), 0.75, velocity)
 	var strafe: float = (Basis(Vector3.UP, yaw).inverse() * velocity).x / stats.move_speed
 	character.animate(delta, hspeed / stats.move_speed, is_on_floor(), velocity.y, pitch, recoil, clampf(strafe, -1.0, 1.0))
 	if is_on_floor():
