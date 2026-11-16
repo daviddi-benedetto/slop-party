@@ -66,7 +66,7 @@ func prepare(parts: Array) -> Array:
 	for team in 2:
 		while counts[team] < TEAM_SIZE:
 			counts[team] += 1
-			out.append({"device": -2, "bot": true, "view": false, "team": team, "kind": randi() % 6,
+			out.append({"device": -2, "bot": true, "view": false, "team": team, "kind": randi() % 23,
 				"color": TEAM_COLORS[team].lerp(Color(randf(), randf(), randf()), 0.15), "hat": randi() % 6, "face": randi() % 4})
 	# CPU soldiers wear their team colour.
 	for q in out:

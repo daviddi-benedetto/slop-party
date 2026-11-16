@@ -19,7 +19,11 @@ const PLAYER_COLORS := [
 	Color(0.7, 0.95, 0.25), Color(0.9, 0.93, 1.0),
 ]
 const COLOR_NAMES := ["ORANGE", "BLUE", "GREEN", "YELLOW", "PURPLE", "PINK", "CYAN", "RED", "LIME", "WHITE"]
-const KIND_NAMES := ["BEAR", "BUNNY", "CAT", "DOG", "FOX", "FROG", "SWAT", "ASTRONAUT", "KING", "WITCH", "PUNK", "ROCKER", "CYBER", "EXPLORER"]
+const KIND_NAMES := ["BUNNY", "FROG", "DINO", "BIRD", "YETI", "SHARK", "MOOSE", "ALIEN", "ORC", "NINJA", "DEMON", "IMP", "MUSHROOM", "CACTUS", "SHAMAN",
+	"SWAT", "ASTRONAUT", "KING", "WITCH", "PUNK", "ROCKER", "CYBER", "EXPLORER"]
+## Which 2D face ui_kit.portrait() draws for each kind (0-5 = the animal
+## faces: bear, bunny, cat, dog, fox, frog; 6 = human).
+const PORTRAIT := [1, 5, 4, 2, 0, 2, 3, 5, 0, 0, 4, 4, 0, 5, 2, 6, 6, 6, 6, 6, 6, 6, 6]
 const HAT_NAMES := ["NONE", "CAP", "CROWN", "TOP HAT", "PARTY HAT", "HORNS", "HALO", "HEADPHONES", "BOW", "ANTENNA", "MOHAWK",
 	"COWBOY", "WIZARD", "CHEF", "VIKING", "PROPELLER"]
 const BACK_NAMES := ["NONE", "CAPE", "BACKPACK", "WINGS", "BALLOON", "KATANA", "FLAG"]
@@ -114,6 +118,8 @@ static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: i
 	var ink := Color(INK, color.a)
 	var light := color.lerp(Color.WHITE, 0.6)
 	var o := r * 0.13
+	var real_kind := kind
+	kind = PORTRAIT[posmod(kind, PORTRAIT.size())]
 	if kind >= 6:
 		# Human characters: a face with hair / helmet in the player's colour.
 		var skin := Color(0.96, 0.78, 0.62, color.a)
@@ -121,7 +127,7 @@ static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: i
 		ci.draw_circle(c, r, color)
 		ci.draw_circle(c + Vector2(0, 0.18) * r, r * 0.74, skin)
 		ci.draw_arc(c, r * 0.86, PI * 1.05, PI * 1.95, 16, color.darkened(0.25), r * 0.3)
-		if kind == 6 or kind == 7 or kind == 12:
+		if real_kind in [15, 16, 21]:
 			# Helmets / visors.
 			ci.draw_rect(Rect2(c + Vector2(-0.62, -0.12) * r, Vector2(1.24, 0.34) * r), Color(0.15, 0.2, 0.3, color.a))
 		for sx in [-1.0, 1.0]:

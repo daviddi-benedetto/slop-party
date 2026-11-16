@@ -19,3 +19,4 @@ Added later, from the same mirror, all CC0 1.0 (public domain):
   tanks/      Tanks pack - Kenney
   houses/     City Kit (Suburban) - Kenney
   survival/   Survival Kit - Kenney
+  animals/    Ultimate Monsters (bipedal creatures) - Quaternius

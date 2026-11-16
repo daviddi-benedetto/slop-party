@@ -28,8 +28,8 @@ const Map = preload("res://scripts/map.gd")
 const MAX_PLAYERS := 6
 const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
-const CATEGORIES := ["HERO", "COLOR", "HAT", "FACE", "BACK"]
-const KEYS := ["kind", "color", "hat", "face", "back"]
+const CATEGORIES := ["HERO", "COLOR", "HAT", "BACK"]
+const KEYS := ["kind", "color", "hat", "back"]
 const TIME_OPTS := ["random", "day", "sunset", "night"]
 const MODES := ["rounds", "zombies", "frontline"]
 const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE"]
@@ -271,7 +271,7 @@ func _join(device: int, quiet := false) -> void:
 		return
 	var i := seats.size()
 	var saved: Array = Settings.lobby.get("seat%d" % i, [])
-	var seat := {"device": device, "kind": i % 6, "color": i, "hat": 0, "face": 0, "back": 0, "row": 0}
+	var seat := {"device": device, "kind": [0, 15, 2, 18, 4, 19][i % 6], "color": i, "hat": 0, "face": 0, "back": 0, "row": 0}
 	if saved.size() >= 5:
 		seat.back = posmod(int(saved[4]), UiKit.BACK_NAMES.size())
 	if saved.size() >= 4:
@@ -302,7 +302,7 @@ func _edit(seat_i: int, dh: int, dv: int) -> void:
 	if dh == 0:
 		return
 	var key: String = KEYS[seat.row]
-	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.FACE_NAMES.size(), UiKit.BACK_NAMES.size()][seat.row]
+	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.BACK_NAMES.size()][seat.row]
 	seat[key] = posmod(seat[key] + dh, count)
 	if key == "color":
 		# Two players never share a colour.
@@ -501,7 +501,7 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 			var on: bool = c == seat.row
 			UiKit.panel(self, tr, col if on else Color(1, 1, 1, 0.08), 12 * s)
 			draw_string(UiKit.font(700), tr.position + Vector2(0, 17 * s), CATEGORIES[c], HORIZONTAL_ALIGNMENT_CENTER, tr.size.x, int(13 * s), UiKit.INK if on else Color(1, 1, 1, 0.6))
-		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.FACE_NAMES[seat.face], UiKit.BACK_NAMES[seat.back]][seat.row]
+		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back]][seat.row]
 		var wob := sin(_t * 6.0) * 3 * s
 		UiKit.text(self, Vector2(r.position.x + 20 * s - wob, 102 * s), "<", 30 * s, UiKit.GOLD)
 		UiKit.text(self, Vector2(r.position.x, 102 * s), ">", 30 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, pw - 20 * s - wob)

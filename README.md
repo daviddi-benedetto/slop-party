@@ -16,8 +16,8 @@ game modes:
   four-storey towers, warehouses, bunkers and trenches, and vehicles –
   buggies, tanks and helicopters.
 
-You play as a customisable plush animal in dark, neon-lit arenas (the look is
-inspired by ROUNDS).
+You play as a customisable creature or human in neon-lit arenas (the look
+is inspired by ROUNDS).
 
 - **A lived-in world:** furnished houses, loose physics props you can kick
   and shoot around (chairs, tables, books, boxes, bottles), window glass that
@@ -25,9 +25,11 @@ inspired by ROUNDS).
   you.
 - **Pets:** dogs, cats, a fox and a bunny wander every map. Walk up and press
   the pick-up button to pet one (it heals you a little).
-- **14 characters:** six plush animals and eight animated humans (Swat,
-  Astronaut, King, Witch, Punk, Rocker, Cyber, Explorer), each with a colour,
-  16 hats, 7 faces and 7 back accessories (cape, backpack, wings, balloon...).
+- **23 characters**, all fully modelled and animated: 15 creatures (Bunny,
+  Frog, Dino, Bird, Yeti, Shark, Moose, Alien, Orc, Ninja, Demon, Imp,
+  Mushroom, Cactus, Shaman) and 8 humans (Swat, Astronaut, King, Witch, Punk,
+  Rocker, Cyber, Explorer). Each takes a colour, one of 16 hats and one of 7
+  back accessories (cape, backpack, wings, balloon...).
 - **20 weapons**, including Tesla (chain lightning), Cluster, Vortex, Ripper,
   Sticky, Longshot, Frostbite and the akimbo Twins.
 - **69 powerup cards**, among them block perks that turn your block into a

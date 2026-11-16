@@ -277,11 +277,17 @@ collision off (the vehicle takes the hits).
 
 ### Characters (`character.gd`)
 
-- Kinds 0-5: the procedural plush animals, now with a fur shell (an
-  alpha-scissor, grown `next_pass` between body and outline).
-- Kinds 6-13 (`HUMANS`): rigged Quaternius models driven by their own
-  AnimationPlayer (`_animate_human`: Idle_Gun_Pointing, Run_Shoot,
-  Run_Left/Right, Wave). The player's colour is a light overlay; the hit
+- Every character is an imported rigged model: `character.ROSTER[kind]` =
+  [model, "creature" | "human"] (names in `ui_kit.KIND_NAMES`, 2D portrait
+  style in `ui_kit.PORTRAIT`). The old sphere-built plush rig is still in the
+  file but unreachable (the user asked for it to go); delete it when convenient.
+- Creatures (Quaternius Ultimate Monsters, one shared rig, scale 0.53):
+  Idle / Walk / Run / Jump_Idle / Duck (crouch) / Wave / No / HitReact.
+  Meshes off to the side of the body (their own carrot, club...) are hidden.
+- Humans (Quaternius animated characters, scale 0.94): Idle_Gun_Pointing,
+  Run_Shoot, Run_Left/Right, Wave (`_animate_human`).
+- To add a character: drop the .glb in `assets/models`, add a ROSTER row, a
+  KIND_NAMES entry and a PORTRAIT entry, bump `KIND_COUNT`. The player's colour is a light overlay; the hit
   flash swaps the overlay to white; hats ride a BoneAttachment3D on "Head";
   the gun floats in the aiming pose on the `aim` pivot.
 - Customisation: hat, face (plush only) and the new back accessory

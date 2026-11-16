@@ -18,11 +18,22 @@ const GUN_SCALE := 1.6
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
 
-## Kinds 6+ are rigged human models (Quaternius animated characters) driven
-## by their own animations instead of the procedural plush rig.
-const HUMANS := ["chars/Swat", "chars/Spacesuit", "chars/Male_King", "chars/Femal_Witch", "chars/Male_Punk",
-	"chars/Femal_Punk", "chars/Femal_SciFi", "chars/Male_Adventurer"]
-const KIND_COUNT := 14
+## Every character is an imported, rigged model driven by its own animations
+## (the old sphere-built plush rig further down is no longer reachable).
+## ROSTER[kind] = [model, "creature" | "human"]; names are ui_kit.KIND_NAMES.
+##   creatures: Quaternius Ultimate Monsters (one shared rig: Idle, Walk, Run,
+##              Jump_Idle, Duck, Wave, No, HitReact)
+##   humans:    Quaternius animated characters (Idle_Gun_Pointing, Run_Shoot...)
+const ROSTER := [
+	["animals/m_Bunny_14", "creature"], ["animals/m_Frog_14", "creature"], ["animals/m_Dino_14", "creature"],
+	["animals/m_Birb_14", "creature"], ["animals/m_Yeti_14", "creature"], ["animals/m_Fish_14", "creature"],
+	["animals/m_Monkroose_14", "creature"], ["animals/m_Alien_14", "creature"], ["animals/m_Orc_14", "creature"],
+	["animals/m_Ninja_14", "creature"], ["animals/m_Demon_14", "creature"], ["animals/m_BlueDemon_14", "creature"],
+	["animals/m_MushroomKing_14", "creature"], ["animals/m_Cactoro_14", "creature"], ["animals/m_Tribal_14", "creature"],
+	["chars/Swat", "human"], ["chars/Spacesuit", "human"], ["chars/Male_King", "human"], ["chars/Femal_Witch", "human"],
+	["chars/Male_Punk", "human"], ["chars/Femal_Punk", "human"], ["chars/Femal_SciFi", "human"], ["chars/Male_Adventurer", "human"],
+]
+const KIND_COUNT := 23
 
 var kind := 0
 var color := Color.WHITE
@@ -42,6 +53,7 @@ var _white: StandardMaterial3D
 var _gun_scale := GUN_SCALE
 var _with_gun := true
 var _back_node: Node3D
+var _creature := false
 
 var rig: Node3D                # squash / stretch / lean
 var head: Node3D
@@ -99,7 +111,7 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 
 	rig = Node3D.new()
 	add_child(rig)
-	if kind >= 6:
+	if true:
 		var scarf_h := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0), false)
 		scarf_h.emission = scarf_h.albedo_color
 		scarf_h.emission_energy_multiplier = 0.9
@@ -626,7 +638,7 @@ func _build_back() -> void:
 	if back <= 0:
 		return
 	_back_node = Node3D.new()
-	_back_node.position = Vector3(0, 0.95, 0.36) if _human == null else Vector3(0, 1.2, 0.2)
+	_back_node.position = Vector3(0, 1.0, 0.42) if _creature else Vector3(0, 1.2, 0.2)
 	rig.add_child(_back_node)
 	var b := _back_node
 	var dark := _plain(Color(0.08, 0.08, 0.1), 0.5)
@@ -678,16 +690,18 @@ func _build_back() -> void:
 # --------------------------------------------------------------------------
 
 func _build_human(with_gun: bool) -> void:
-	var path: String = HUMANS[kind - 6]
+	var path: String = ROSTER[kind][0]
+	_creature = ROSTER[kind][1] == "creature"
 	_human = Models.scene(path).instantiate()
-	_human.scale = Vector3.ONE * 0.94
+	# Creatures share a rig about 3.3 units tall; humans are about 1.9.
+	_human.scale = Vector3.ONE * (0.53 if _creature else 0.94)
 	_human.rotation.y = PI
 	rig.add_child(_human)
 	# A light wash of the player's colour over the whole model, and a white
 	# overlay used for the hit flash.
 	_tint = StandardMaterial3D.new()
 	_tint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_tint.albedo_color = Color(color, 0.2)
+	_tint.albedo_color = Color(color, 0.26 if _creature else 0.2)
 	_tint.roughness = 0.8
 	_white = StandardMaterial3D.new()
 	_white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -698,7 +712,8 @@ func _build_human(with_gun: bool) -> void:
 		var m: MeshInstance3D = mi
 		m.layers = _layers
 		# The models carry their own pistol / sword; we give them our guns.
-		if m.name in ["Pistol", "Sword", "Gun", "Weapon", "Staff", "Axe"]:
+		var mb: AABB = m.mesh.get_aabb() if m.mesh != null else AABB()
+		if m.name in ["Pistol", "Sword", "Gun", "Weapon", "Staff", "Axe"] or mb.position.x > 0.3 or mb.end.x < -0.3:
 			m.visible = false
 			continue
 		m.material_overlay = _tint
@@ -707,7 +722,7 @@ func _build_human(with_gun: bool) -> void:
 		_anim = c
 	if _anim != null:
 		for a in _anim.get_animation_list():
-			if a.begins_with("Idle") or a.begins_with("Run") or a == "Walk" or a == "Wave":
+			if a.begins_with("Idle") or a.begins_with("Run") or a in ["Walk", "Wave", "Duck", "Jump_Idle", "No"]:
 				_anim.get_animation(a).loop_mode = Animation.LOOP_LINEAR
 		_anim.playback_default_blend_time = 0.18
 	# Hats sit on the head bone (scaled down from the plush head size).
@@ -721,14 +736,18 @@ func _build_human(with_gun: bool) -> void:
 		skel.add_child(att)
 		att.add_child(head)
 		head.rotation.y = PI
-		head.position = Vector3(0, 0.2, 0.02)
-		head.scale = Vector3.ONE * 0.62
+		if _creature:
+			head.position = Vector3(0, 0.42, -0.12)
+			head.scale = Vector3.ONE * 1.25
+		else:
+			head.position = Vector3(0, 0.13, 0.02)
+			head.scale = Vector3.ONE * 0.62
 	else:
 		head.position = Vector3(0, 1.62, 0)
 		rig.add_child(head)
 	# The gun floats in the two-handed aiming pose and pitches with the view.
 	aim = Node3D.new()
-	aim.position = Vector3(0, 1.22, 0)
+	aim.position = Vector3(0, 1.0 if _creature else 1.22, 0)
 	rig.add_child(aim)
 	muzzle = Node3D.new()
 	muzzle.position = Vector3(0.12, 0.04, -1.0)
@@ -736,10 +755,10 @@ func _build_human(with_gun: bool) -> void:
 	_gun_scale = 1.2
 	if with_gun:
 		_gun = Node3D.new()
-		_gun.position = Vector3(0.12, 0.02, -0.42)
+		_gun.position = Vector3(0.3, 0.0, -0.5) if _creature else Vector3(0.12, 0.02, -0.42)
 		aim.add_child(_gun)
 		set_weapon(0)
-	_play_h("Idle_Gun_Pointing" if with_gun else "Idle")
+	_play_h("Idle" if _creature or not with_gun else "Idle_Gun_Pointing")
 
 
 func _play_h(a: String, speed := 1.0) -> void:
@@ -756,8 +775,41 @@ func _animate_human(delta: float, speed: float, on_floor: bool, pitch: float, re
 	_t += delta
 	_pop = minf(1.0, _pop + delta * 2.2)
 	var pop := 1.0 if _pop >= 1.0 else maxf(0.001, pow(2.0, -10.0 * _pop) * sin((_pop * 10.0 - 0.75) * TAU / 3.0) + 1.0)
-	rig.scale = Vector3(1.0, 1.0 - crouch * 0.28, 1.0) * pop
+	rig.scale = Vector3(1.0, 1.0 - (0.0 if _creature else crouch * 0.28), 1.0) * pop
 	var hop := 0.0
+	if _creature:
+		# Creature rig: Idle / Walk / Run / Jump_Idle / Duck / Wave / No.
+		match emote:
+			"cheer":
+				hop = absf(sin(_t * 6.5)) * 0.25
+				_play_h("Wave", 1.5)
+			"sad":
+				_play_h("No", 0.8)
+			_:
+				if _flash > 0.6:
+					_play_h("HitReact", 1.6)
+				elif crouch > 0.5:
+					_play_h("Duck")
+				elif not on_floor:
+					_play_h("Jump_Idle")
+				elif speed > 0.6:
+					_play_h("Run", 0.7 + speed * 0.5)
+				elif speed > 0.12:
+					_play_h("Walk", 0.8 + speed)
+				else:
+					_play_h("Idle")
+		rig.position.y = hop
+		rig.rotation.z = -strafe * 0.1
+		aim.rotation.x = pitch + recoil * 0.2
+		aim.position.y = 1.0 - crouch * 0.4
+		for f in _jet_flames:
+			f.visible = jetting
+		if _flash > 0.0:
+			_flash = maxf(0.0, _flash - delta * 6.0)
+			var ovc: Material = _white if _flash > 0.35 else _tint
+			for m in _human_meshes:
+				m.material_overlay = ovc
+		return
 	match emote:
 		"cheer":
 			hop = absf(sin(_t * 6.5)) * 0.25
