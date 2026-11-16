@@ -9,11 +9,12 @@ extends RefCounted
 ##   fire      RT                          left mouse
 ##   aim       LT (hold)                   right mouse (hold)
 ##   jump      A                           Space
-##   dash      B or left-stick click       Shift
-##   block     LB or RB                    Q
+##   dash      RB or left-stick click      Shift
+##   block     LB                          Q
 ##   reload    X                           R
 ##   interact  Y (pick up weapon)          E
-##   crouch    right-stick click (R3)      C or Ctrl  (slide when running)
+##   crouch    B (hold) or R3              C or Ctrl  (slide when running)
+##   (in a vehicle: interact = get out, jump/crouch = climb/descend)
 ##
 ## Look is applied every rendered frame (update_look) for the lowest latency;
 ## buttons and movement are sampled every physics tick (update_buttons).
@@ -120,9 +121,10 @@ func update_buttons(_player, _delta: float) -> void:
 		aim = Input.get_joy_axis(device, JOY_AXIS_TRIGGER_LEFT) > 0.3
 		jump_held = Input.is_joy_button_pressed(device, JOY_BUTTON_A)
 		jump = _edge("jump", jump_held)
-		crouch = Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_STICK)
-		dash = _edge("dash", Input.is_joy_button_pressed(device, JOY_BUTTON_B) or Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_STICK))
-		block = _edge("block", Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_SHOULDER) or Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER))
+		# B (held) crouches, or slides when running; R3 does the same.
+		crouch = Input.is_joy_button_pressed(device, JOY_BUTTON_B) or Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_STICK)
+		dash = _edge("dash", Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER) or Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_STICK))
+		block = _edge("block", Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_SHOULDER))
 		reload = _edge("reload", Input.is_joy_button_pressed(device, JOY_BUTTON_X))
 		interact = _edge("interact", Input.is_joy_button_pressed(device, JOY_BUTTON_Y))
 		var sx := Input.get_joy_axis(device, JOY_AXIS_LEFT_X)

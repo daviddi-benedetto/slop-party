@@ -13,6 +13,8 @@ extends Node3D
 ##
 ## Local space: feet at y = 0, facing -Z, about 1.75 m tall plus ears.
 
+const Viewmodel = preload("res://scripts/viewmodel.gd")
+const GUN_SCALE := 1.6
 const Weapons = preload("res://scripts/weapons.gd")
 
 const KIND_COUNT := 6
@@ -361,22 +363,13 @@ func set_weapon(id: int) -> void:
 	_weapon = id
 	for c in _gun.get_children():
 		c.queue_free()
-	var tp: Array = Weapons.LIST[id].tp
-	var rad: float = tp[0]
-	var length: float = tp[1]
-	var barrel := CapsuleMesh.new()
-	barrel.radius = rad
-	barrel.height = maxf(length, rad * 2.0)
-	var b := _mesh(_gun, barrel, _plain(color.lerp(Color(1, 1, 1), 0.12), 0.5), Vector3(0, 0, -length * 0.5 + 0.05))
-	b.rotation.x = PI / 2
-	var ring := CylinderMesh.new()
-	ring.top_radius = rad * 1.22
-	ring.bottom_radius = rad * 1.22
-	ring.height = 0.09
-	var rg := _mesh(_gun, ring, _plain(Color(0.95, 0.93, 0.9), 0.5), Vector3(0, 0, -length + 0.14))
-	rg.rotation.x = PI / 2
-	_ball(_gun, _plain(color.lerp(Color.WHITE, 0.3), 0.2), Vector3(0, rad + 0.02, -0.15), Vector3(0.06, 0.06, 0.09))
-	muzzle.position = Vector3(0.4, 0.05, -0.3 - length)
+	# The same model as the first-person gun, scaled up to the plush proportions.
+	var model = Viewmodel.new()
+	_gun.add_child(model)
+	model.build(color, _layers, id, false)
+	model.position = Vector3(0, -0.02, 0.08)
+	model.scale = Vector3.ONE * GUN_SCALE
+	muzzle.position = _gun.position + Vector3(0, 0.0, 0.08 + model.muzzle_z() * GUN_SCALE)
 
 
 func _plush(col: Color) -> StandardMaterial3D:

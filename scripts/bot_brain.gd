@@ -2,9 +2,12 @@ extends RefCounted
 ## AI "input device". Exposes the same fields as input_source.gd, so player.gd
 ## treats bots and humans identically.
 ##
-## Behaviour: pick the nearest living enemy. With line of sight -> aim (with
-## lead, turn-rate limit and wobble), strafe and shoot. Without -> follow an
-## A* path over the map's auto-generated nav graph (map.gd: find_path).
+## Behaviour: pick the nearest living enemy (game.hostiles: other players,
+## zombies, manned enemy vehicles). With line of sight -> aim (with lead,
+## turn-rate limit and wobble), strafe and shoot. Without -> follow an A* path
+## over the map's auto-generated nav graph (map.gd: find_path) towards the
+## enemy, or towards game.bot_goal() (Frontline flags, Zombies: the humans).
+## Bots do not drive vehicles.
 
 var device := -2
 
@@ -110,14 +113,21 @@ func update_buttons(player, delta: float) -> void:
 		_repath -= delta
 		if _repath <= 0.0 or _path_i >= _path.size():
 			_repath = 1.2
-			var goal: Vector3 = _target.global_position if _target != null else game.map.random_nav_point()
+			var goal: Vector3
+			if _target != null:
+				goal = _target.global_position
+			else:
+				var g = game.bot_goal(player)
+				goal = g if g != null else game.map.random_nav_point()
 			_path = game.map.find_path(player.global_position, goal)
 			_path_i = 0
 		if _path_i < _path.size():
 			var wp := _path[_path_i]
 			var d: Vector3 = wp - player.global_position
 			var flat := Vector3(d.x, 0.0, d.z)
-			if flat.length() < 0.9 and absf(d.y) < 1.6:
+			# Reached (a waypoint straight above/below counts too, or the bot
+			# would wait under it forever).
+			if flat.length() < 0.9:
 				_path_i += 1
 			else:
 				world_move = flat.normalized()
@@ -152,10 +162,11 @@ func update_buttons(player, delta: float) -> void:
 func _pick_target(player, game) -> void:
 	var best = null
 	var best_d := 1e9
-	for p in game.players:
-		if p == player or not p.alive:
-			continue
+	var reach := 45.0 * 45.0 if game.mode == "frontline" else 1e12
+	for p in game.hostiles(player):
 		var d: float = p.global_position.distance_squared_to(player.global_position)
+		if d > reach:
+			continue
 		if d < best_d:
 			best_d = d
 			best = p

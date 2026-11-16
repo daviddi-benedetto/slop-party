@@ -1,21 +1,38 @@
 # Fragdeck
 
-Local splitscreen first-person deathmatch for 1–6 players on one PC. Every time
-you die you are dealt three random powerup cards and keep one for the rest of
-the match, so whoever is losing keeps getting stronger.
+Local splitscreen first-person shooter for 1–6 players on one PC, with three
+game modes:
+
+- **Rounds** (default) – free-for-all deathmatch. Every time you die you are
+  dealt three random powerup cards and keep one for the rest of the match, so
+  whoever is losing keeps getting stronger. First to the kill target wins.
+- **Zombies** – co-op survival. Your squad (plus optional CPU allies) holds out
+  against endless, ever-growing waves of walkers, runners, brutes and a boss
+  every fifth wave. Everyone picks a powerup between waves; fallen players
+  return when the wave is cleared. It lasts until the whole squad is down.
+- **Frontline** – Battlefield-inspired team war on a huge 200 × 140 m map:
+  blue vs orange (humans split between the teams, or all together against
+  the CPU), conquest flags A/B/C, tickets, parachute drops, a town with
+  four-storey towers, warehouses, bunkers and trenches, and vehicles –
+  buggies, tanks and helicopters.
 
 You play as a customisable plush animal in dark, neon-lit arenas (the look is
 inspired by ROUNDS).
 
-- **12 weapons**, each with its own sound and firing animation: Blaster,
+- **12 weapons** that look like real guns (carbine, pump shotgun, revolver,
+  bolt-action sniper, rocket launcher, minigun...), each with its own sound and
+  firing animation: Blaster,
   Scatter, Zapper, Boomer, Rail, Lobber, Bubbler, Tripler, Magnum, Spinner,
   Pinball and Flamer. Get them from weapon cards or by pressing the pick-up
   button on a purple weapon pad; your powerups carry over.
 - **49 powerup cards** in three rarities, including live-magnifying 2x/4x
   scopes, a red-dot sight and a jetpack.
-- **Movement inspired by Titanfall:** wall running, wall jumps, sliding,
-  mantling onto ledges, plus dash, block and aim down sights.
-- **6 maps:** Neon Yard, Ember Pit, Frost Line, and three based on real
+- **Movement inspired by Titanfall:** crouch, sliding (crouch while running),
+  wall running, wall jumps and mantling onto ledges, plus dash and aim down
+  sights.
+- **Block** catches and reflects every bullet, rocket, grenade, bubble and
+  flame that comes near you back at whoever fired it.
+- **6 arena maps** for Rounds and Zombies: Neon Yard, Ember Pit, Frost Line, and three based on real
   places: a **Museum** (indoor, balconies, vaults), a **Stadium** (pitch,
   bleachers, floodlights, locker rooms) and a **Suburb** (houses with stairs,
   yards, pools, a treehouse, a storm drain). Two-storey buildings, tunnels and
@@ -43,9 +60,10 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 |---|---|---|
 | Join / leave | A / B | Space / Backspace |
 | Customise | D-pad or left stick | WASD or arrows |
-| Bots | Y | B |
-| Kill target | X | K |
-| Next map | RB | M |
+| Game mode (Rounds / Zombies / Frontline) | RT | G |
+| Bots (Zombies: CPU allies; Frontline: teams versus / co-op) | Y | B |
+| Kill target (Frontline: tickets) | X | K |
+| Next map (Rounds and Zombies) | RB | M |
 | Time of day | LB | T |
 | Options | Back / Select | O |
 | Start | Start | Enter |
@@ -57,14 +75,24 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Fire | RT | Left click |
 | Aim down sights | LT (hold) | Right click (hold) |
 | Jump (hold with jetpack) | A | Space |
-| Dash | B or left-stick click | Shift |
-| Crouch / slide (while running) | Right-stick click | C or Ctrl |
-| Block | LB or RB | Q |
+| Crouch (hold) / slide (while running) | B or right-stick click | C or Ctrl |
+| Dash | RB or left-stick click | Shift |
+| Block | LB | Q |
 | Reload | X | R |
-| Pick up weapon | Y | E |
+| Pick up weapon / get in or out of a vehicle | Y | E |
+| Open parachute (Frontline drop) | A | Space |
 | Wall run | Jump at a wall and keep moving forward | same |
 | Mantle | Move forward into a ledge in the air | same |
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |
+
+| In a vehicle | Gamepad | Keyboard + mouse |
+|---|---|---|
+| Drive / fly | Left stick | WASD |
+| Aim the turret / guns | Right stick | Mouse |
+| Main weapon (MG, tank cannon, nose gun) | RT | Left click |
+| Second weapon (tank MG, helicopter rockets) or zoom | LT | Right click |
+| Helicopter up / down | A / B | Space / C |
+| Get out (bail out of a helicopter = parachute) | Y | E |
 | Pause / options / quit to lobby | Start | Esc |
 | Toggle fullscreen (lobby) | – | F11 |
 

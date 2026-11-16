@@ -8,7 +8,9 @@ extends Control
 ## bot count and kill target are remembered in Settings.lobby (saved to the
 ## settings file), keyed by seat number.
 ##
-## Shared controls: Y / B-key bots, X / K kill target, RB / M next map,
+## Shared controls: RT / G game mode (ROUNDS, ZOMBIES, FRONTLINE), Y / B-key
+## bots (Frontline: teams versus / co-op), X / K kill target (Frontline:
+## tickets), RB / M next map (Frontline has its own), LB / T time of day,
 ## Back / O options, Start / Enter to begin.
 ##
 ## main.gd calls activate() to show it and deactivate() before a match (the
@@ -29,12 +31,19 @@ const KILL_TARGETS := [5, 10, 15, 20, 30]
 const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "FACE"]
 const KEYS := ["kind", "color", "hat", "face"]
 const TIME_OPTS := ["random", "day", "sunset", "night"]
+const MODES := ["rounds", "zombies", "frontline"]
+const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE"]
+const TICKETS := [50, 100, 150, 200, 300]
+const TAGLINES := ["FREE-FOR-ALL  -  EVERY KO DEALS YOU A POWERUP", "CO-OP SURVIVAL  -  ENDLESS WAVES OF ZOMBIES",
+	"TEAM WAR  -  FLAGS, TANKS, HELICOPTERS, PARACHUTES"]
 
 var seats: Array = []        # [{device, kind, color, hat, face, row}] in join order
 var bots := 0
 var target_i := 2
 var map_i := 0
 var time_i := 0
+var mode_i := 0
+var versus := true           # Frontline: humans split between the teams
 var message := ""
 var message_t := 0.0
 
@@ -62,6 +71,9 @@ func _ready() -> void:
 	target_i = clampi(int(Settings.lobby.get("target", 2)), 0, KILL_TARGETS.size() - 1)
 	map_i = clampi(int(Settings.lobby.get("map", 0)), 0, Map.MAPS.size() - 1)
 	time_i = clampi(int(Settings.lobby.get("time", 0)), 0, TIME_OPTS.size() - 1)
+	mode_i = clampi(int(Settings.lobby.get("mode", 0)), 0, MODES.size() - 1)
+	versus = bool(Settings.lobby.get("versus", true))
+	map_i = mini(map_i, Map.FRONTLINE - 1)
 	_options = SettingsMenu.new()
 	add_child(_options)
 	_options.closed.connect(func():
@@ -149,6 +161,7 @@ func _process(delta: float) -> void:
 	var target_step := false
 	var map_step := false
 	var time_step := false
+	var mode_step := false
 
 	# Keyboard seat.
 	var k_seat := _seat_of(KEYBOARD)
@@ -168,6 +181,7 @@ func _process(delta: float) -> void:
 	if _edge("k_target", Input.is_physical_key_pressed(KEY_K)): target_step = true
 	if _edge("k_map", Input.is_physical_key_pressed(KEY_M)): map_step = true
 	if _edge("k_time", Input.is_physical_key_pressed(KEY_T)): time_step = true
+	if _edge("k_mode", Input.is_physical_key_pressed(KEY_G)): mode_step = true
 	if _edge("k_quit", Input.is_physical_key_pressed(KEY_ESCAPE)) and _armed:
 		_remember()
 		get_tree().quit()
@@ -196,6 +210,7 @@ func _process(delta: float) -> void:
 		if _edge(k + "x", Input.is_joy_button_pressed(d, JOY_BUTTON_X)): target_step = true
 		if _edge(k + "rb", Input.is_joy_button_pressed(d, JOY_BUTTON_RIGHT_SHOULDER)): map_step = true
 		if _edge(k + "lb", Input.is_joy_button_pressed(d, JOY_BUTTON_LEFT_SHOULDER)): time_step = true
+		if _edge(k + "rt", Input.get_joy_axis(d, JOY_AXIS_TRIGGER_RIGHT) > 0.6): mode_step = true
 		if _edge(k + "back", Input.is_joy_button_pressed(d, JOY_BUTTON_BACK)): want_options = true
 	var was_armed := _armed
 	_armed = true
@@ -203,23 +218,33 @@ func _process(delta: float) -> void:
 		_options.open()
 		return
 
+	var mode: String = MODES[mode_i]
+	if mode_step:
+		mode_i = (mode_i + 1) % MODES.size()
+		Sfx.play("tick", -6.0, 0.9)
 	if bot_step:
-		var room := MAX_PLAYERS - seats.size()
-		bots = 0 if bots >= room else bots + 1
+		if mode == "frontline":
+			versus = not versus
+		else:
+			var room := MAX_PLAYERS - seats.size()
+			bots = 0 if bots >= room else bots + 1
 		Sfx.play("tick", -8.0)
-	if target_step:
+	if target_step and mode != "zombies":
 		target_i = (target_i + 1) % KILL_TARGETS.size()
 		Sfx.play("tick", -8.0)
 	if time_step:
 		time_i = (time_i + 1) % TIME_OPTS.size()
 		Sfx.play("tick", -6.0, 1.1)
 	if map_step:
-		map_i = (map_i + 1) % Map.MAPS.size()
-		Sfx.play("tick", -6.0, 1.2)
+		if mode == "frontline":
+			_say("Frontline is fought on its own huge map")
+		else:
+			map_i = (map_i + 1) % Map.FRONTLINE
+			Sfx.play("tick", -6.0, 1.2)
 	if want_start:
 		if seats.is_empty():
 			_say("Someone has to join first!")
-		elif seats.size() + bots < 2:
+		elif mode == "rounds" and seats.size() + bots < 2:
 			_say("Need 2 or more fighters - add a player or a bot")
 		else:
 			_start()
@@ -337,17 +362,23 @@ func _remember() -> void:
 	Settings.lobby["target"] = target_i
 	Settings.lobby["map"] = map_i
 	Settings.lobby["time"] = time_i
+	Settings.lobby["mode"] = mode_i
+	Settings.lobby["versus"] = versus
 	Settings.save()
 
 
 func _start() -> void:
 	var parts: Array = []
-	for i in seats.size() + bots:
+	var mode: String = MODES[mode_i]
+	var cpu := 0 if mode == "frontline" else bots
+	for i in seats.size() + cpu:
 		var look := _look(i)
 		var human := i < seats.size()
 		parts.append({"device": seats[i].device if human else -2, "bot": not human, "view": human,
 			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face})
-	start.emit({"participants": parts, "kill_target": KILL_TARGETS[target_i], "map": map_i, "time": TIME_OPTS[time_i]})
+	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
+	start.emit({"participants": parts, "kill_target": target, "map": map_i, "time": TIME_OPTS[time_i], "mode": mode,
+		"teams": "versus" if versus else "coop"})
 
 
 # --------------------------------------------------------------------------
@@ -378,7 +409,7 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(-widths[i] * 0.5, 0), title[i], px, col, HORIZONTAL_ALIGNMENT_CENTER, widths[i], 700, 0.12)
 		x += widths[i]
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	var tag := "SPLITSCREEN ARENA SHOOTER  -  EVERY KO DEALS YOU A POWERUP"
+	var tag: String = TAGLINES[mode_i]
 	var tw := UiKit.text_width(tag, 24 * s) + 60 * s
 	UiKit.card(self, Rect2((w - tw) * 0.5, 190 * s, tw, 44 * s), UiKit.PANEL, 22 * s, s)
 	UiKit.text(self, Vector2(0, 221 * s), tag, 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, w, 600, 0.0)
@@ -393,13 +424,23 @@ func _draw() -> void:
 	# Shared settings + start.
 	var by := h - 162 * s
 	var pad: bool = not Input.get_connected_joypads().is_empty()
-	var map_info: Dictionary = Map.MAPS[map_i]
+	var mode: String = MODES[mode_i]
+	var map_info: Dictionary = Map.MAPS[Map.FRONTLINE if mode == "frontline" else map_i]
+	var bot_chip := ["Y" if pad else "B", "BOTS", str(bots), 200.0]
+	var goal_chip := ["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i], 230.0]
+	if mode == "frontline":
+		bot_chip = ["Y" if pad else "B", "TEAMS", "VERSUS" if versus else "CO-OP", 270.0]
+		goal_chip = ["X" if pad else "K", "TICKETS", "%d" % TICKETS[target_i], 250.0]
+	elif mode == "zombies":
+		bot_chip = ["Y" if pad else "B", "ALLIES", str(bots), 210.0]
+		goal_chip = ["X" if pad else "K", "WAVES", "ENDLESS", 250.0]
 	var chips := [
-		["Y" if pad else "B", "BOTS", str(bots), 210.0],
-		["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i], 250.0],
-		["RB" if pad else "M", "MAP", "%s  %s" % [map_info.name, map_info.size], 500.0],
-		["LB" if pad else "T", "TIME", TIME_OPTS[time_i].to_upper(), 300.0],
-		["BACK" if pad else "O", "OPTIONS", "", 230.0],
+		["RT" if pad else "G", "MODE", MODE_LABELS[mode_i], 300.0],
+		bot_chip,
+		goal_chip,
+		["RB" if pad else "M", "MAP", "%s" % map_info.name, 340.0],
+		["LB" if pad else "T", "TIME", TIME_OPTS[time_i].to_upper(), 260.0],
+		["BACK" if pad else "O", "OPTIONS", "", 210.0],
 	]
 	var total_w := -16.0 * s
 	for chip in chips:
@@ -414,7 +455,7 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(r.position.x, by + 41 * s), chip[2], 28 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 22 * s)
 		cx += chip[3] * s + 16 * s
 
-	var ready := not seats.is_empty() and seats.size() + bots >= 2
+	var ready := not seats.is_empty() and (seats.size() + bots >= 2 or mode != "rounds")
 	var sy := h - 58 * s
 	if ready:
 		var pulse := 1.0 + sin(_t * 5.0) * 0.04
@@ -432,7 +473,7 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(-mw * 0.5, 9 * s), message, 26 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, mw, 700, 0.12)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B dash  -  R3 slide  -  LB block  -  X reload  -  Y pick up          KEYBOARD   LMB  -  RMB  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
+	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B crouch/slide  -  RB dash  -  LB block  -  X reload  -  Y pick up          KEYBOARD   LMB  -  RMB  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
 		16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w, 500, 0.12)
 
 

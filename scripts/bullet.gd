@@ -20,6 +20,7 @@ const PLAYER_MASK := 2
 
 static var _mesh: SphereMesh
 static var _cone: CylinderMesh
+const BLOCK_RADIUS := 1.1   # how close to a blocker's chest a projectile gets caught
 static var _flame_mat: StandardMaterial3D
 
 var shooter
@@ -53,9 +54,15 @@ var _trail: MeshInstance3D
 
 ## `damage_mult` carries per-shot bonuses (last round, rampage).
 func setup(p, dir: Vector3, damage_mult := 1.0) -> void:
+	setup_stats(p, p.stats, dir, damage_mult)
+
+
+## Same, with a stats object other than the shooter's own (vehicle weapons).
+## `ignore` = RIDs this bullet never hits (the vehicle that fired it).
+func setup_stats(p, s, dir: Vector3, damage_mult := 1.0, ignore: Array = []) -> void:
 	shooter = p
 	game = p.game
-	var s = p.stats
+	_ignore = ignore.duplicate()
 	vel = dir * s.bullet_speed
 	damage = s.damage * damage_mult
 	gravity = s.bullet_gravity
@@ -148,6 +155,15 @@ func _physics_process(delta: float) -> void:
 
 	var from := global_position
 	var to := from + vel * delta
+	# A guard catches anything that passes close to the blocker, not only
+	# direct hits: bullets, rockets, grenades, bubbles and flames all bounce.
+	for b in game.damageables():
+		if b == shooter or not b.alive or not b.is_blocking():
+			continue
+		var c: Vector3 = b.chest_position()
+		if Geometry3D.get_closest_point_to_segment(c, from, to).distance_to(c) < BLOCK_RADIUS + radius:
+			_reflect(b)
+			return
 	var q := PhysicsRayQueryParameters3D.create(from, to, WORLD_MASK | PLAYER_MASK)
 	var exclude: Array = _ignore.duplicate()
 	if not can_hit_owner:
@@ -159,18 +175,18 @@ func _physics_process(delta: float) -> void:
 	# Fat bullets get a swept-sphere test against player chests.
 	var victim = hit.collider if (hit and hit.collider.has_method("take_damage")) else null
 	if victim == null and radius > 0.12:
-		for p in game.players:
+		for p in game.damageables():
 			if not p.alive or (p == shooter and not can_hit_owner) or _ignore.has(p.get_rid()):
 				continue
 			var c: Vector3 = p.chest_position()
 			var closest := Geometry3D.get_closest_point_to_segment(c, from, end)
-			if closest.distance_to(c) < radius + 0.5:
+			if closest.distance_to(c) < radius + (p.hit_radius() if p.has_method("hit_radius") else 0.5):
 				victim = p
 				end = closest
 				break
 
 	if victim != null:
-		if victim.is_blocking() and not flame:
+		if victim.is_blocking():
 			_reflect(victim)
 			return
 		if _hit_player(victim, end):
@@ -202,8 +218,11 @@ func _reflect(p) -> void:
 	p._blocked(old)
 	var speed := vel.length() * 1.15
 	var dir := -vel.normalized()
-	if is_instance_valid(old) and old.alive:
+	if is_instance_valid(old) and old.alive and old.has_method("chest_position"):
 		dir = (old.chest_position() - p.chest_position()).normalized()
+	if flame:
+		age = 0.0
+		speed = minf(speed, 22.0)
 	shooter = p
 	color = p.color
 	vel = dir * speed
@@ -213,7 +232,7 @@ func _reflect(p) -> void:
 	_core.material_override = p.bullet_material
 	if _trail != null:
 		_trail.material_override = p.trail_material
-	global_position = p.chest_position() + dir * 0.9
+	global_position = p.chest_position() + dir * (BLOCK_RADIUS + radius + 0.1)
 	orient()
 	reset_physics_interpolation()
 
@@ -222,8 +241,8 @@ func _steer(delta: float) -> void:
 	var best = null
 	var best_score := 0.5   # require the target to be roughly ahead
 	var dir := vel.normalized()
-	for p in game.players:
-		if not p.alive or p == shooter:
+	for p in game.damageables():
+		if not p.alive or p == shooter or not game.is_enemy(shooter, p):
 			continue
 		var to_p: Vector3 = p.chest_position() - global_position
 		var d := to_p.length()
@@ -243,7 +262,7 @@ func _steer(delta: float) -> void:
 func _hit_player(p, pos: Vector3) -> bool:
 	var dmg := damage
 	# The head is the big sphere above the shoulders (see character.gd).
-	var headshot: bool = pos.y - p.global_position.y > 1.12
+	var headshot: bool = pos.y - p.global_position.y > (p.head_height() if p.has_method("head_height") else 1.12)
 	if headshot:
 		dmg *= 1.5
 	if giant_slayer > 0.0 and p == game.leader() and p.kills > 0:

@@ -12,6 +12,7 @@ const UiKit = preload("res://scripts/ui_kit.gd")
 const Fx = preload("res://scripts/fx.gd")
 
 var rows: Array = []
+var title := ""              # set by game.gd for team / co-op modes; default "<winner> WINS!"
 var _stage
 var _t := 0.0
 var _finished := false
@@ -78,11 +79,11 @@ func _draw() -> void:
 	# Winner banner.
 	var pop := UiKit.elastic_out(clampf(_t * 0.9, 0.0, 1.0))
 	draw_set_transform(Vector2(w * 0.5, 120 * s), -0.03 + sin(_t * 2.0) * 0.01, Vector2(pop, pop))
-	var title := "%s WINS!" % win.name
-	var bw := UiKit.text_width(title, 110 * s) + 140 * s
+	var heading: String = title if title != "" else "%s WINS!" % win.name
+	var bw := UiKit.text_width(heading, 110 * s) + 140 * s
 	UiKit.card(self, Rect2(-bw * 0.5, -78 * s, bw, 150 * s), win.color.darkened(0.15), 40 * s, s * 1.6)
 	UiKit.panel(self, Rect2(-bw * 0.5 + 10 * s, -68 * s, bw - 20 * s, 50 * s), Color(1, 1, 1, 0.16), 30 * s)
-	UiKit.text(self, Vector2(-bw * 0.5, 36 * s), title, 110 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, bw, 700, 0.14)
+	UiKit.text(self, Vector2(-bw * 0.5, 36 * s), heading, 110 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, bw, 700, 0.14)
 	UiKit.icon(self, "crown", Vector2(-bw * 0.5 + 8 * s, -74 * s), 44 * s, UiKit.INK)
 	UiKit.icon(self, "crown", Vector2(-bw * 0.5 + 8 * s, -80 * s), 40 * s, UiKit.GOLD)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

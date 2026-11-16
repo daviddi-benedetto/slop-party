@@ -46,10 +46,12 @@ extends Node3D
 
 const SkyKit = preload("res://scripts/sky.gd")
 const Places = preload("res://scripts/map_places.gd")
+const Front = preload("res://scripts/map_front.gd")
 
 const DEPTH := 3.6
 const FLOOR_H := 3.4
 const NAV_STEP := 2.0
+const CHUNK := 40.0             # batch chunk size on big maps (see _add)
 const LAVA_DPS := 26.0
 
 const MAPS := [
@@ -59,7 +61,10 @@ const MAPS := [
 	{"name": "MUSEUM", "size": "MEDIUM", "theme": "museum", "half": Vector2(26, 20), "wall": 11.0},
 	{"name": "STADIUM", "size": "LARGE", "theme": "stadium", "half": Vector2(46, 30), "wall": 3.0},
 	{"name": "SUBURB", "size": "LARGE", "theme": "suburb", "half": Vector2(40, 30), "wall": 1.6},
+	# Frontline mode only (not in the lobby's map list): 200 x 140 m.
+	{"name": "FRONTLINE", "size": "HUGE", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 20.0},
 ]
+const FRONTLINE := 6             # index of the Frontline map; the lobby lists maps below it
 const TIMES := ["day", "sunset", "night"]
 
 const DAY := {
@@ -230,6 +235,43 @@ const THEMES := {
 		"leaf": [Color(0.16, 0.4, 0.15), Color(0.28, 0.5, 0.14)], "grass": [Color(0.12, 0.3, 0.08), Color(0.36, 0.6, 0.2)],
 		"scenery": "suburb", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
 	},
+	"front": {
+		"mats": {
+			"ground": [Color(0.3, 0.42, 0.2), "lawn", 0.08, 0.9, 0.0],
+			"path": [Color(0.55, 0.5, 0.42), "tiles", 0.25, 0.75, 0.0],
+			"road": [Color(0.19, 0.19, 0.21), "asphalt", 0.1, 0.8, 0.0],
+			"dirt": [Color(0.36, 0.28, 0.2), "soft", 0.15, 0.95, 0.0],
+			"wall": [Color(0.5, 0.47, 0.42), "rock", 0.3, 0.9, 0.0],
+			"block_a": [Color(0.6, 0.58, 0.54), "concrete", 0.25, 0.75, 0.0],
+			"block_b": [Color(0.56, 0.3, 0.22), "bricks", 0.4, 0.8, 0.0],
+			"block_c": [Color(0.3, 0.32, 0.3), "corrugated", 0.45, 0.5, 0.5],
+			"house": [Color(0.8, 0.74, 0.6), "plaster", 0.2, 0.85, 0.0],
+			"roof_red": [Color(0.5, 0.22, 0.16), "shingles", 0.4, 0.8, 0.0],
+			"deck": [Color(0.48, 0.34, 0.22), "planks", 0.5, 0.7, 0.0],
+			"crate": [Color(0.42, 0.4, 0.25), "planks", 0.6, 0.7, 0.0],
+			"sand": [Color(0.62, 0.55, 0.4), "soft", 0.6, 0.95, 0.0],
+			"olive": [Color(0.3, 0.34, 0.2), "plates", 0.4, 0.6, 0.3],
+			"metal": [Color(0.55, 0.56, 0.6), "", 1.0, 0.35, 0.8],
+			"trim": [Color(0.88, 0.86, 0.82), "", 1.0, 0.7, 0.0],
+			"line": [Color(0.95, 0.85, 0.3), "", 1.0, 0.8, 0.0],
+			"tyre": [Color(0.04, 0.04, 0.05), "", 1.0, 0.9, 0.0],
+			"car_red": [Color(0.6, 0.1, 0.08), "", 1.0, 0.3, 0.5],
+			"car_white": [Color(0.85, 0.85, 0.86), "", 1.0, 0.3, 0.5],
+			"car_blue": [Color(0.12, 0.25, 0.5), "", 1.0, 0.3, 0.5],
+			"hay": [Color(0.78, 0.64, 0.32), "soft", 0.5, 0.95, 0.0],
+			"pine": [Color(0.12, 0.3, 0.16), "leaves", 1.2, 0.9, 0.0],
+			"soil": [Color(0.3, 0.22, 0.15), "soft", 0.3, 0.9, 0.0],
+			"team0": [Color(0.2, 0.45, 0.95), "", 1.0, 0.5, 0.1],
+			"team1": [Color(0.95, 0.42, 0.15), "", 1.0, 0.5, 0.1],
+		},
+		"accent_a": Color(1.0, 0.75, 0.4), "accent_b": Color(0.6, 0.85, 1.0), "neon": false, "paths": false,
+		"night": {"sky": {"top": Color(0.01, 0.02, 0.06), "horizon": Color(0.1, 0.12, 0.22), "ground": Color(0.02, 0.02, 0.05),
+			"sun": Color(0.85, 0.9, 1.0), "cloud_color": Color(0.12, 0.13, 0.22), "clouds": 0.5, "stars": 1.0, "aurora": 0.0},
+			"sun_color": Color(0.6, 0.72, 1.0), "sun_energy": 0.8, "ambient": 0.55, "fog": Color(0.05, 0.06, 0.12), "fog_density": 0.0035},
+		"sun_yaw": 35.0, "weathers": ["clear", "clear", "rain", "fog"],
+		"leaf": [Color(0.16, 0.38, 0.14), Color(0.3, 0.46, 0.14)], "grass": [Color(0.14, 0.3, 0.08), Color(0.42, 0.6, 0.22)],
+		"scenery": "front", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
+	},
 }
 
 static var _tex_cache := {}       # texture kind -> [albedo, normal, emission]
@@ -246,6 +288,11 @@ var light_scale := 1.0            # point-light multiplier for the time of day
 var neon_scale := 1.0             # emission multiplier for the time of day
 var night_amount := 1.0           # 0 day, 0.45 sunset, 1 night (windows, street lamps)
 var indoor := false
+var nav_step := NAV_STEP          # nav grid spacing (bigger on the Frontline map)
+var nav_top := 14.0               # highest walkable surface the nav graph samples
+var flags: Array = []             # Frontline: capture point positions (A, B, C)
+var bases: Array = []             # Frontline: team 0 / team 1 base centres
+var vehicle_spots: Array = []     # Frontline: [type, Transform3D, team]
 
 var spawn_points: Array = []      # Array of Vector3
 var pickup_spots: Array = []      # [["weapon" | "health", Vector3], ...] read by game.gd
@@ -280,6 +327,8 @@ func build(index := 0, time_of_day := "night", weather_kind := "clear") -> void:
 	half_x = info.half.x
 	half_z = info.half.y
 	wall_h = info.wall
+	nav_step = info.get("nav_step", NAV_STEP)
+	nav_top = info.get("nav_top", 14.0)
 	_rng.seed = 20240607 + map_index
 	_body = StaticBody3D.new()
 	_body.collision_layer = 1
@@ -305,6 +354,7 @@ func build(index := 0, time_of_day := "night", weather_kind := "clear") -> void:
 		3: Places.museum(self)
 		4: Places.stadium(self)
 		5: Places.suburb(self)
+		6: Front.frontline(self)
 		_: _layout_yard()
 	_build_floor()
 	_build_scenery()
@@ -326,6 +376,11 @@ func _physics_process(delta: float) -> void:
 			if body.has_method("take_damage") and body.alive:
 				body.take_damage(LAVA_DPS * delta, null, true)
 				body.hurt_flash = maxf(body.hurt_flash, 0.6)
+
+
+## Song for this map (a key of sfx.gd TRACKS).
+func music_key() -> String:
+	return "frontline" if map_index == FRONTLINE else "map%d" % map_index
 
 
 func label() -> String:
@@ -782,6 +837,10 @@ static func _tex(kind: String) -> Array:
 func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true) -> void:
 	var kind := "p" if mesh is PrimitiveMesh else "c"
 	var key := "%d_%s_%s" % [mat.get_instance_id(), kind, shadow]
+	# Big maps: batch per 40 m chunk too, so cameras and shadow passes can
+	# cull the parts of the map they cannot see.
+	if half_x > 60.0 and absf(xf.origin.x) < half_x + 2.0 and absf(xf.origin.z) < half_z + 2.0:
+		key += "_%d_%d" % [floori(xf.origin.x / CHUNK), floori(xf.origin.z / CHUNK)]
 	if not _batches.has(key):
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -1816,7 +1875,7 @@ func _build_scenery() -> void:
 	var rich: bool = Settings.v("scenery") == 1
 	if not indoor:
 		var apron := PlaneMesh.new()
-		apron.size = Vector2(700, 700)
+		apron.size = Vector2.ONE * maxf(700.0, half_x * 16.0)
 		var ground_col: Color = theme.mats.ground[0]
 		var am := StandardMaterial3D.new()
 		am.albedo_color = ground_col.darkened(0.4)
@@ -1827,6 +1886,7 @@ func _build_scenery() -> void:
 		"rocks": _scenery_spires(46 if rich else 20, Color(0.2, 0.13, 0.11), theme.accent_a, false)
 		"ice": _scenery_spires(54 if rich else 22, Color(0.25, 0.42, 0.52), theme.accent_a, true)
 		"suburb": _scenery_suburb(rich)
+		"front": Front.scenery(self, rich)
 		"stadium":
 			_scenery_city(22 if rich else 10, 40.0)
 			_scenery_trees(30 if rich else 12, 4.0, 30.0)
@@ -2003,14 +2063,14 @@ func build_nav() -> void:
 	while x < half_x:
 		var z := -half_z + 1.0
 		while z < half_z:
-			var top := 14.0
+			var top := nav_top
 			for layer in 7:
 				var hit := _ray(Vector3(x, top, z), Vector3(x, -DEPTH - 1.5, z))
 				if hit.is_empty():
 					break
 				var p: Vector3 = hit.position
 				top = p.y - 0.5
-				if hit.normal.y > 0.7 and p.y < 10.0:
+				if hit.normal.y > 0.7 and p.y < nav_top - 4.0:
 					if _ray(p + Vector3(0, 0.15, 0), p + Vector3(0, 1.9, 0), true).is_empty():
 						var key := Vector2i(roundi(x), roundi(z))
 						if not cells.has(key):
@@ -2019,12 +2079,12 @@ func build_nav() -> void:
 						points.append(p)
 				if top < -DEPTH - 1.0:
 					break
-			z += NAV_STEP
-		x += NAV_STEP
+			z += nav_step
+		x += nav_step
 
 	var links: Array = []
 	var adj := {}
-	var step := int(NAV_STEP)
+	var step := int(nav_step)
 	for key in cells:
 		for off in [Vector2i(step, 0), Vector2i(0, step), Vector2i(step, step), Vector2i(step, -step)]:
 			var other: Vector2i = key + off
@@ -2097,7 +2157,7 @@ func _closest_node(pos: Vector3) -> int:
 	var near: Array = []
 	for id in _nav_ids:
 		var d := nav.get_point_position(id).distance_squared_to(pos)
-		if d < 12.0:
+		if d < 12.0 * (nav_step / NAV_STEP) * (nav_step / NAV_STEP):
 			near.append([d, id])
 	near.sort_custom(func(a, b): return a[0] < b[0])
 	var up := Vector3(0, 0.8, 0)

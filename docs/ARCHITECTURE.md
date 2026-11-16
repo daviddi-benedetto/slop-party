@@ -7,7 +7,12 @@ has not been verified.
 ## 1. What the game is
 
 - Local splitscreen FPS, 1–6 humans plus optional bots, one PC, one screen.
-- One mode: free-for-all deathmatch, first to N KOs (5/10/15/20/30).
+- Three modes (lobby MODE chip, `config.mode`):
+  - **Rounds** (default): free-for-all deathmatch, first to N KOs
+    (5/10/15/20/30). Rules in `game.gd`.
+  - **Zombies**: co-op against endless waves (`zombies.gd`, `zombie.gd`).
+  - **Frontline**: two teams, conquest flags, tickets, vehicles, parachute
+    spawns on its own huge map (`frontline.gd`, `vehicle.gd`, `map_front.gd`).
 - Six maps, each with its own theme and song (see `map.gd`, `map_places.gd`,
   `sfx.gd`): Neon Yard, Ember Pit, Frost Line, Museum, Stadium, Suburb.
   Every match also rolls a time of day (day / sunset / night, or the lobby's
@@ -18,8 +23,8 @@ has not been verified.
 - Twelve weapons (everyone starts with the Blaster). Weapons come from weapon
   cards in the deck and from pickup pads (press interact); health pads too.
 - Abilities everyone has: jump, dash, block (short guard that negates damage
-  and reflects bullets; 4 s cooldown), aim down sights, crouch, slide, wall
-  run, wall jump and mantle.
+  and reflects every projectile passing within 1.1 m; 4 s cooldown), aim down
+  sights, crouch, slide, wall run, wall jump and mantle.
 - Art direction: dark, moody arenas with neon trims, coloured point lights and
   heavy bloom, after ROUNDS. Plush animal characters (animal, colour, hat and
   face chosen per player). Chunky UI with the Fredoka font on near-black
@@ -54,7 +59,12 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `--views=N` gives the first N bots a splitscreen cell (0 = spectator only).
 - `--kb` makes player 1 a keyboard/mouse human.
 - `--target=K` sets the kill target (`--target=1` reaches the podium quickly).
-- `--map=N` picks the arena (0 Neon Yard, 1 Ember Pit, 2 Frost Line).
+- `--map=N` picks the arena (0 Neon Yard, 1 Ember Pit, 2 Frost Line, 3 Museum,
+  4 Stadium, 5 Suburb).
+- `--mode=rounds|zombies|frontline` and `--teams=versus|coop` pick the mode.
+- `--wave=N` (Zombies) starts at wave N; `--drive=buggy|tank|heli`
+  (Frontline) puts player 1 in that vehicle. A finished match prints
+  `[match] over at ... s: <result>`.
 - `--force-aim` makes everyone aim down sights (to check the sight picture).
 - `--seed=N` seeds the random generator so runs are comparable.
 - `--time=day|sunset|night`, `--weather=clear|rain|fog|snow` fix the conditions.
@@ -88,14 +98,19 @@ parse error in one script.
 | `scripts/ui_kit.gd` | Shared UI look: colours, font, panels, bars, text with outline, icons, 2D animal portraits, button prompts, easing. |
 | `scripts/lobby.gd` | Join screen: 3D stage with podiums, per-player character customisation, map / bots / kill-target selection. Emits `start(config)`. |
 | `scripts/stage.gd` | Small sunny 3D "showroom" (sky, hills, podiums, camera) behind the lobby and results. |
-| `scripts/game.gd` | One match: world, splitscreen viewports, cameras, countdown, scoring, respawn, explosions, pause menu, aim assist, hand-over to results. |
+| `scripts/game.gd` | One match: world, splitscreen viewports, cameras (incl. the vehicle chase camera), countdown, Rounds scoring, the mode hooks, teams (`is_enemy`, `damageables`, `hostiles`), respawn, explosions, pause menu, aim assist, hand-over to results. |
+| `scripts/zombies.gd` | Zombies mode rules: endless waves, spawning, intermission card picks, revival, game over. |
+| `scripts/zombie.gd` | One zombie (walker / runner / brute / boss): model, nav pathing, melee, damage interface. |
+| `scripts/frontline.gd` | Frontline mode rules: teams and CPU fill, flags, tickets, parachute spawns, vehicle respawns, bot goals, flag HUD. |
+| `scripts/vehicle.gd` | Buggy, tank and helicopter: models, driving / flying, turrets, weapons, damage, destruction. |
+| `scripts/map_front.gd` | Layout 6 (FRONTLINE): town, towers, warehouse, bunkers, trenches, farms, bases, vehicle spots, flags. |
 | `scripts/results.gd` | Victory screen: podium, crown, confetti, results table. |
 | `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day/weather lighting, procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. |
 | `scripts/map_places.gd` | Layouts 3-5 (Museum, Stadium, Suburb) built with the map.gd helpers. |
 | `scripts/player.gd` | `CharacterBody3D`: movement, weapon, health, status effects, feedback values, death → card pick → respawn. |
 | `scripts/character.gd` | The plush animal model (6 species, 11 hats, 7 faces) and its procedural animation. |
 | `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
-| `scripts/viewmodel.gd` | Toy gun model per weapon style; first-person sway/recoil/reload animation; also used as the pickup prop. |
+| `scripts/viewmodel.gd` | Gun model per weapon style (receiver, barrel, magazine, stock, sights; merged into one mesh per material), first-person sway/recoil/reload/pump/cylinder animation; also used as the pickup prop and, scaled up, as the third-person gun (`character.gd::set_weapon`). |
 | `scripts/pickup.gd` | Weapon and health pickup pads. |
 | `scripts/sky.gd` | Sky shader (gradient, sun halo, painted clouds) shared by the arena and the stage. |
 | `scripts/stats.gd` | Per-player stats, rebuilt from defaults + weapon + cards. |
@@ -105,7 +120,7 @@ parse error in one script.
 | `scripts/bot_brain.gd` | AI that exposes the same interface as `input_source.gd`. |
 | `scripts/hud.gd` | Per-viewport HUD and the animated card picker. |
 | `scripts/fx.gd` | Particles, flashes, rings, confetti, floating damage numbers. |
-| `scripts/sfx.gd` | Autoload. Synthesises all sound effects, composes and renders the two music loops in a thread, distance-attenuated playback. |
+| `scripts/sfx.gd` | Autoload. Synthesises all sound effects, composes and renders the music loops (one per map, lobby, zombies, frontline) in a thread, distance-attenuated playback. |
 | `scripts/settings.gd` | Autoload. The list of user options, their values, saving/loading, and applying display/AA/audio settings. |
 | `scripts/settings_menu.gd` | The Options screen (opened from the lobby and the pause menu). |
 
@@ -124,6 +139,8 @@ root (Window)
    │  ├─ world (Node3D, pausable)
    │  │  ├─ Map (map.gd)    StaticBody3D + meshes + lights + Area3D jump pads
    │  │  ├─ Player × N      CharacterBody3D → Character, name tag, health bar
+   │  │  ├─ rules           zombies.gd / frontline.gd (not in Rounds)
+   │  │  ├─ Zombie / Vehicle  CharacterBody3D, listed in game.actors
    │  │  └─ bullets, fx     added/removed at runtime
    │  ├─ _ui (Control)
    │  │  └─ SubViewportContainer × cells
@@ -176,11 +193,70 @@ and floods the log with rendering errors.
 | 0 | World, bullets, effects |
 | 1 + i | Player i's character, name tag and health bar. Player i's camera masks it out. |
 | 8 + i | Player i's first-person blaster and the damage numbers player i causes. Only player i's camera includes it. |
+| 7 | Bodies of players with index 6+ (Frontline fills teams to 12; only players 0-5 can have a camera). |
 
 ### Collision layers
 
-1 = world static geometry, 2 = players. Bullets are not physics bodies; they
-ray-cast against `1 | 2`.
+1 = world static geometry, 2 = players, zombies and vehicles. Bullets are not
+physics bodies; they ray-cast against `1 | 2`. A player inside a vehicle has
+collision off (the vehicle takes the hits).
+
+### Game modes and teams (`game.gd`, `zombies.gd`, `frontline.gd`)
+
+- `game.mode` is "rounds", "zombies" or "frontline". Rounds keeps its rules in
+  `game.gd`; the other modes create a rules node (`game.rules`) under `world`.
+  game.gd calls its hooks: `prepare(parts)` (assign teams, add CPU players),
+  `start()` (spawn), `on_died(victim, attacker)`, `respawn(p)`,
+  `cards_on_death()`, `bot_goal(p)`, `results_title()`, and for the HUD
+  `strip_sig()` / `draw_strip()` / `draw_markers()` plus `banner` /
+  `banner_t`. Rules end a match with `game.end_match()`.
+- `player.team` (-1 = free-for-all). `game.is_enemy(a, b)` decides friendly
+  fire; `player.take_damage` ignores allies. `game.damageables()` = players on
+  foot + `game.actors` (zombies, vehicles), cached per physics frame; bullets,
+  explosions and the block catch use it. `game.hostiles(who)` = living enemies
+  (manned vehicles only) for bots, homing and aim assist.
+- Anything damageable implements: `alive`, `team`, `pname`, `color`, `kind`,
+  `take_damage(amount, attacker, silent, crit)`, `chest_position()`,
+  `is_blocking()`, `apply_poison()`, `apply_slow()`, optional `hit_radius()`
+  and `head_height()`. Code that needs the shooter's stats checks
+  `game.is_player(x)` first (zombies and vehicles have none).
+- Kill feed entries are copies (`_feed_entry`) because zombies are freed.
+
+### Zombies (`zombies.gd`, `zombie.gd`)
+
+- Wave n spawns `(6 + 4n) * (0.7 + 0.3 * squad)` zombies a few at a time,
+  max 26 + 2 per player alive. Runners from wave 3, brutes from wave 5, a boss
+  every 5th wave. Health ×(1 + 0.13(n-1) + 0.004(n-1)²), speed up to ×1.55,
+  damage +4%/wave: unbounded, so it always ends eventually.
+- Zombies spawn on random nav nodes 15–45 m from the players, chase the nearest
+  player (straight line when close and visible, A* path otherwise), hop and
+  skip waypoints when stuck, and stragglers are teleported back after 18 s.
+- Between waves (9 s, shorter once everyone has picked): dead players respawn
+  next to a teammate and every player gets `offer_cards()` (`player.picking`:
+  stands still, the HUD shows the card picker, picking refills health/ammo).
+- Dying shows "YOU'RE DOWN" (no card); all down = "SURVIVED N WAVES".
+
+### Frontline (`frontline.gd`, `vehicle.gd`, `map_front.gd`)
+
+- Map index `Map.FRONTLINE` (6), hidden from the lobby's map list. Point
+  symmetric: built for +X and mirrored, team colours placed unmirrored. Data
+  for the rules: `map.flags`, `map.bases`, `map.vehicle_spots`.
+- Teams fill to 6 each with CPU soldiers (bots wear the team colour; name tags
+  are tinted). Tickets = lobby value; a death costs 1; holding more flags
+  bleeds the other team every 4 s. Flags swing neutral → captured while only
+  one team stands in the 9 m circle (faster with more people).
+- Spawning: `_drop()` puts players 40–80 m up with `player.skydive`; jump (or
+  24 m above ground) opens the parachute (`player._skydive_tick`). Respawns
+  drop over the most forward owned flag (else land on the base).
+- Vehicles: `player.enter_vehicle` hides the player and turns off its
+  collision; `vehicle.control()` keeps it in the seat and handles exit;
+  the vehicle reads the driver's brain in its own `_physics_process`. The
+  view becomes a chase camera (`game._vehicle_camera`); the vehicle aims where
+  that camera looks (`vehicle._aim_point`). Vehicle weapons fire normal
+  bullets with their own stats (`bullet.setup_stats`, the vehicle's RID
+  ignored). Destroyed vehicles respawn at home after 30 s. Bots do not drive.
+- Big maps batch static geometry per 40 m chunk (`map._add`) so cameras and
+  shadow passes can cull it; the nav grid is 3 m there (`MAPS[].nav_step`).
 
 ### Input model
 
@@ -297,9 +373,13 @@ screen at once.
 ### Abilities (`player.gd`, `input_source.gd`)
 
 - **Block:** `block_left` (0.38 s window) and `block_cd` (`stats.block_cooldown`).
-  `take_damage` returns 0 while blocking; `bullet.gd::_reflect` hands the
-  bullet to the blocker and sends it back at the shooter. Cards hook in via
-  `_blocked()` (heal, shockwave).
+  `take_damage` returns 0 while blocking. Every tick each bullet checks whether
+  its path passes within `BLOCK_RADIUS` (1.1 m) of a blocking enemy's chest;
+  if so `bullet.gd::_reflect` hands it to the blocker and sends it back at the
+  shooter – bullets, rockets, grenades, bubbles and flames alike. Cards hook in
+  via `_blocked()` (heal, shockwave). A blocked zombie is shoved back.
+- **Crouch / slide:** B (held) or R3 on a gamepad, C / Ctrl on the keyboard;
+  pressed while running it becomes a slide. Dash moved to RB / L3, block to LB.
 - **Aim down sights:** `aim_amount` (0–1, smoothed). It narrows the camera FOV
   by `stats.zoom` (`game.gd::_update_cameras`), scales look sensitivity
   (`zoom_factor`), tightens spread, slows movement, and slides the gun to the
@@ -545,6 +625,14 @@ re-path when stuck. Bots cannot use the jump pads or roofs deliberately.
 ## 7. Verified vs not verified
 
 Verified by automated runs on an RTX 2070 at 1920×1080:
+- Zombies: waves spawn, zombies path to and attack the squad, waves clear,
+  everyone picks a card between waves, the dead come back, a wiped squad ends
+  the match with "SURVIVED N WAVES".
+- Frontline: teams fill to 6 v 6, parachute drops, flag captures and ticket
+  bleed, buggy / tank / helicopter driven by a bot with the chase camera and
+  vehicle HUD, a match ending with "BLUE WINS!". Six views about 86 FPS
+  uncapped (four views about 100).
+- Gun models render in first and third person for all 12 weapons.
 - Lobby, Options screen, matches on all six maps in day, sunset and night,
   rain/fog/snow, card picker, pause menu and victory podium render with no
   script errors. The live scope lens shows a correct magnified view.
@@ -558,6 +646,10 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 - The exported `build\Fragdeck.exe` starts and plays.
 
 **Not verified:**
+- Vehicles have only been driven by bots (who steer like they walk): handling,
+  turret speed and weapon numbers in `vehicle.gd` are first guesses. Bots never
+  get into vehicles themselves.
+- Zombies and Frontline balance (wave growth, ticket counts, flag speed).
 - Whether it now *feels* smooth: the pacing and latency changes are sound in
   principle but were made on a 30 Hz remote display with no controller, so
   nobody has felt them.
@@ -594,5 +686,6 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
   rigged characters would be the biggest visual step up from here.
 - If performance is a problem, use the Low or Medium quality preset in
   Options.
-- Possible next steps: more maps, health/ammo pickups, team mode, per-player
-  control options and rebinding, kill-cam.
+- Possible next steps: more maps, per-player control options and rebinding,
+  kill-cam, bots that use vehicles, a Frontline spawn-point chooser, more
+  Frontline maps.

@@ -70,6 +70,8 @@ var face := 0
 var brain
 var is_bot := false
 var has_view := false      # true when a splitscreen cell follows this player
+var wants_view := false    # set by game.gd from the participant entry
+var team := -1             # -1 free-for-all; 0/1 in team modes (see game.is_enemy)
 var game
 
 # State
@@ -124,6 +126,12 @@ var _mantle_cd := 0.0
 var _jump_held_t := 0.0
 var _jet_t := 0.0
 var pickup_prompt := ""           # what the HUD offers to pick up
+var prompt_key := ""              # button shown with the prompt ("" = interact)
+var vehicle = null                # vehicle.gd we are driving / flying (or null)
+var picking := false              # choosing a card while alive (zombies intermission)
+var skydive := false              # dropped from the sky (Frontline spawn)
+var chute_open := false
+var _chute: Node3D
 
 # Card selection while dead
 var card_choices: Array = []
@@ -172,12 +180,14 @@ var _flash_light: OmniLight3D
 var _aura: OmniLight3D
 
 
+## Players 0-5 each get a private layer; extra bots (Frontline fills teams
+## to 12) share bit 7, since only the first six can have a camera.
 func body_layer_bit() -> int:
-	return 1 << (index + 1)
+	return 1 << (index + 1) if index < 6 else 1 << 7
 
 
 func viewmodel_layer_bit() -> int:
-	return 1 << (index + 8)
+	return 1 << (index + 8) if index < 6 else 1 << 14
 
 
 func _ready() -> void:
@@ -265,7 +275,50 @@ func _ready() -> void:
 	_aura.omni_range = 4.0
 	add_child(_aura)
 
+	_build_chute()
 	_set_alive_visuals(false)
+
+
+## Parachute canopy above the player (world layer: everyone sees it).
+func _build_chute() -> void:
+	_chute = Node3D.new()
+	_chute.position.y = 4.4
+	_chute.visible = false
+	add_child(_chute)
+	var cloth := StandardMaterial3D.new()
+	cloth.albedo_color = color.lerp(Color.WHITE, 0.15)
+	cloth.roughness = 0.8
+	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var dome := SphereMesh.new()
+	dome.radius = 1.0
+	dome.height = 1.0
+	dome.is_hemisphere = true
+	dome.radial_segments = 16
+	dome.rings = 6
+	var canopy := MeshInstance3D.new()
+	canopy.mesh = dome
+	canopy.material_override = cloth
+	canopy.scale = Vector3(2.4, 1.0, 1.8)
+	_chute.add_child(canopy)
+	var cord := StandardMaterial3D.new()
+	cord.albedo_color = Color(0.1, 0.1, 0.12)
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			var line := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.015
+			cm.bottom_radius = 0.015
+			cm.height = 1.0
+			line.mesh = cm
+			line.material_override = cord
+			var a := Vector3(sx * 2.1, 0.05, sz * 1.5)
+			var b := Vector3(sx * 0.25, -2.9, sz * 0.15)
+			var d := b - a
+			var y := d.normalized()
+			var x := y.cross(Vector3.FORWARD).normalized()
+			line.transform = Transform3D(Basis(x, y * d.length(), x.cross(y)), (a + b) * 0.5)
+			line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_chute.add_child(line)
 
 
 func _shell(mesh: Mesh, albedo: Color, glow: Color, energy: float) -> MeshInstance3D:
@@ -482,6 +535,13 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 	wallrun = 0.0
 	jet_fuel = stats.jetpack
 	_set_crouch(false)
+	picking = false
+	skydive = false
+	chute_open = false
+	_chute.visible = false
+	if vehicle != null and is_instance_valid(vehicle):
+		vehicle.eject(self)
+	vehicle = null
 	alive = true
 	spawn_time = 0.0
 	_was_floor = true
@@ -571,6 +631,17 @@ func _physics_process(delta: float) -> void:
 	if not alive:
 		_dead_tick(delta)
 		return
+	if picking:
+		# Between zombie waves: stand still and choose a card.
+		_dead_tick(delta)
+		velocity = Vector3(0, minf(velocity.y, 0.0) - GRAVITY * delta, 0)
+		move_and_slide()
+		character.animate(delta, 0.0, is_on_floor(), 0.0, pitch)
+		return
+	if vehicle != null:
+		pickup_prompt = ""
+		vehicle.control(self, delta)
+		return
 
 	# --- timers / status effects ---
 	fire_cd = maxf(0.0, fire_cd - delta)
@@ -594,12 +665,19 @@ func _physics_process(delta: float) -> void:
 			return
 
 	# --- interact: the pad we stood on last tick told us about itself ---
+	prompt_key = ""
 	if near_pickup != null and is_instance_valid(near_pickup):
 		pickup_prompt = near_pickup.prompt()
 		if brain.interact:
 			near_pickup.take(self)
 	else:
 		pickup_prompt = ""
+		var car = game.vehicle_near(self) if not game.vehicles.is_empty() else null
+		if car != null:
+			pickup_prompt = "GET IN " + car.label
+			if brain.interact:
+				car.enter(self)
+				return
 	near_pickup = null
 
 	# --- block ---
@@ -613,6 +691,10 @@ func _physics_process(delta: float) -> void:
 	var input: Vector2 = brain.move
 	var flat := Basis(Vector3.UP, yaw)
 	var wish := flat * Vector3(input.x, 0.0, -input.y)
+	if skydive:
+		_skydive_tick(delta, wish)
+		_weapon_tick(delta, rush)
+		return
 	var speed: float = stats.move_speed * (1.0 + rush) * (1.0 - 0.3 * aim_amount) * (1.0 - (slow_amount if slow_left > 0.0 else 0.0))
 	var on_floor := is_on_floor()
 	var horiz := Vector3(velocity.x, 0.0, velocity.z)
@@ -760,8 +842,70 @@ func _physics_process(delta: float) -> void:
 	if global_position.y < -25.0:
 		take_damage(99999.0, null, true)
 		return
+	_weapon_tick(delta, rush)
 
-	# --- weapon ---
+
+## Free fall, then a parachute (opened with jump, or automatically near the
+## ground). The player can steer and shoot all the way down.
+func _skydive_tick(delta: float, wish: Vector3) -> void:
+	if is_on_floor():
+		skydive = false
+		chute_open = false
+		_chute.visible = false
+		pickup_prompt = ""
+		land_dip = 0.8
+		Fx.puff(game.world, global_position + Vector3(0, 0.1, 0), Color(1, 1, 1, 0.5), 10, 0.7)
+		Sfx.play_at("land", global_position, -6.0)
+		return
+	if not chute_open:
+		var ground := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3(0, -24.0, 0), WORLD_MASK)
+		if brain.jump or not get_world_3d().direct_space_state.intersect_ray(ground).is_empty():
+			chute_open = true
+			_chute.visible = true
+			_chute.scale = Vector3(0.2, 0.2, 0.2)
+			create_tween().tween_property(_chute, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			Sfx.play_at("dash", global_position, -4.0, 0.6)
+	pickup_prompt = "" if chute_open else "OPEN PARACHUTE"
+	prompt_key = "A" if brain.device >= 0 else "SPACE"
+	var horiz := Vector3(velocity.x, 0.0, velocity.z)
+	if chute_open:
+		horiz = horiz.move_toward(wish * 9.0, 10.0 * delta)
+		velocity.y = maxf(velocity.y - GRAVITY * delta, -4.5)
+		_chute.rotation.z = lerpf(_chute.rotation.z, -wish.dot(Basis(Vector3.UP, yaw).x) * 0.25, clampf(delta * 3.0, 0.0, 1.0))
+	else:
+		horiz = horiz.move_toward(wish * 16.0, 14.0 * delta)
+		velocity.y = maxf(velocity.y - GRAVITY * delta, -34.0)
+	velocity.x = horiz.x
+	velocity.z = horiz.z
+	move_and_slide()
+	rotation.y = yaw
+	fall_amount = clampf(velocity.y, -14.0, 10.0)
+	character.animate(delta, 0.0, false, velocity.y, pitch, recoil)
+
+
+func enter_vehicle(v) -> void:
+	vehicle = v
+	sliding = 0.0
+	wallrun = 0.0
+	aim_amount = 0.0
+	character.visible = false
+	name_label.visible = false
+	health_bar.visible = false
+	_aura.visible = false
+	collision_layer = 0
+	_shape.set_deferred("disabled", true)
+
+
+func exit_vehicle(pos: Vector3) -> void:
+	vehicle = null
+	global_position = pos
+	velocity = Vector3.ZERO
+	reset_physics_interpolation()
+	if alive:
+		_set_alive_visuals(true)
+
+
+func _weapon_tick(delta: float, rush: float) -> void:
 	if burst_left > 0:
 		burst_t -= delta
 		if ammo <= 0:
@@ -851,7 +995,7 @@ func _blocked(attacker) -> void:
 	shake = maxf(shake, 0.3)
 	Sfx.play_at("block", global_position, 0.0, 1.5)
 	Fx.sparks(game.world, chest_position(), color.lerp(Color.WHITE, 0.5), 12, 7.0, Vector3.UP)
-	if attacker != null and is_instance_valid(attacker) and attacker != self:
+	if attacker != null and is_instance_valid(attacker) and attacker != self and game.is_player(attacker):
 		attacker.hit_marker = 0.5
 	if not is_bot and brain.device >= 0 and Settings.v("rumble"):
 		Input.start_joy_vibration(brain.device, 0.6, 0.2, 0.12)
@@ -865,6 +1009,8 @@ func _blocked(attacker) -> void:
 func take_damage(amount: float, attacker, silent := false, crit := false) -> float:
 	if not alive or game.frozen:
 		return 0.0
+	if attacker != null and is_instance_valid(attacker) and attacker != self and not game.is_enemy(attacker, self):
+		return 0.0              # no friendly fire in team modes
 	var lethal_zone: bool = amount >= 9999.0      # falling out of the world
 	if spawn_protect > 0.0 and not lethal_zone:
 		return 0.0
@@ -879,13 +1025,14 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 		Fx.ring(game.world, chest_position(), Color(0.5, 0.9, 1.0, 0.9), 0.4, 1.8, 0.3)
 		Fx.sparks(game.world, chest_position(), Color(0.6, 0.9, 1.0), 10, 5.0, Vector3.UP)
 		Sfx.play_at("bounce", global_position, -4.0, 0.6)
-		if attacker != null and is_instance_valid(attacker):
+		if game.is_player(attacker):
 			attacker.hit_marker = 0.6
 		return 0.0
 	amount *= stats.damage_taken
 	health -= amount
 	since_damage = 0.0
 	var has_attacker: bool = attacker != null and is_instance_valid(attacker) and attacker != self
+	var by_player: bool = has_attacker and game.is_player(attacker)
 	if not silent:
 		hurt_flash = 1.0
 		shake = maxf(shake, clampf(amount / 60.0, 0.25, 0.9))
@@ -897,7 +1044,7 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 			damage_dirs.append([attacker.global_position, 1.2])
 			if stats.thorns > 0.0:
 				attacker.take_damage(amount * stats.thorns, self, true)
-	if has_attacker:
+	if by_player:
 		if not silent:
 			attacker.hit_marker = 1.0
 			attacker.hit_crit = crit
@@ -939,7 +1086,10 @@ func _die(attacker) -> void:
 	_set_alive_visuals(false)
 	velocity = Vector3.ZERO
 	killer = attacker if (attacker != null and is_instance_valid(attacker) and attacker != self) else null
-	card_choices = Cards.draw(stats.card_draw, weapon)
+	card_choices = Cards.draw(stats.card_draw, weapon) if (game.rules == null or game.rules.cards_on_death()) else []
+	skydive = false
+	chute_open = false
+	_chute.visible = false
 	card_sel = mini(1, card_choices.size() - 1)
 	dead_time = 0.0
 	pick_time = 0.0
@@ -989,8 +1139,28 @@ func _pick_card(i: int) -> void:
 	cards.append(card.name)
 	card_icons.append([card.icon, card.rarity])
 	card_sel = i
-	respawn_pending = true
-	pick_time = 0.0
 	if not is_bot:
 		Sfx.play("card", -6.0)
+	if picking:
+		picking = false
+		card_choices = []
+		health = stats.max_health
+		ammo = stats.mag_size
+		jet_fuel = stats.jetpack
+		return
+	respawn_pending = true
+	pick_time = 0.0
 	game.respawn_later(self, 0.7)
+
+
+## Offer a card while alive (zombies: after each wave).
+func offer_cards() -> void:
+	if not alive:
+		return
+	card_choices = Cards.draw(stats.card_draw, weapon)
+	card_sel = mini(1, card_choices.size() - 1)
+	dead_time = 0.0
+	picking = true
+	respawn_pending = false
+	burst_left = 0
+	aim_amount = 0.0

@@ -1,5 +1,20 @@
 extends Node
-## One deathmatch, from the 3-2-1 countdown to the victory podium.
+## One match in any mode, from the 3-2-1 countdown to the results screen.
+##
+## Modes (config.mode):
+##   "rounds"    free-for-all deathmatch with a powerup pick after every
+##               death; first to kill_target wins. Rules live in this file.
+##   "zombies"   co-op survival against endless waves (zombies.gd).
+##   "frontline" two teams, conquest flags, tickets, vehicles and parachute
+##               drops on a large map (frontline.gd, vehicle.gd).
+## A mode other than Rounds puts a rules node in `rules`; this file calls its
+## hooks (prepare, start, on_died, respawn, bot_goal, draw_strip,
+## results_title...) when present.
+##
+## Teams: every player has `team` (-1 = free-for-all). is_enemy() decides
+## friendly fire; damageables() is everything a bullet or explosion can hurt
+## (players on foot, zombies, vehicles); hostiles() what bots, homing bullets
+## and aim assist go for.
 ##
 ## Owns: the 3D world (map + players + bullets), the splitscreen layout, the
 ## rules (scoring, respawns, win condition), area damage, the pause menu and
@@ -25,7 +40,8 @@ extends Node
 ##   bit 8 + i    player i's first-person gun and the damage numbers they cause
 ##
 ## config = { "participants": [ { "device": int, "bot": bool, "view": bool,
-##            "kind": int } ], "kill_target": int }
+##            "kind": int, ... } ], "kill_target": int, "mode": String,
+##            "map": int, "time": String, "teams": "versus" | "coop" }
 
 signal finished
 
@@ -41,6 +57,11 @@ const Results = preload("res://scripts/results.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
 const Pickup = preload("res://scripts/pickup.gd")
 const Cards = preload("res://scripts/cards.gd")
+const Zombies = preload("res://scripts/zombies.gd")
+const Frontline = preload("res://scripts/frontline.gd")
+
+const MODES := ["rounds", "zombies", "frontline"]
+const MODE_NAMES := {"rounds": "ROUNDS", "zombies": "ZOMBIES", "frontline": "FRONTLINE"}
 
 var config := {}
 var world: Node3D
@@ -56,6 +77,12 @@ var countdown := 3.8
 var go_flash := 0.0
 var end_real_time := 0.0      # real seconds since the winning kill
 var feed: Array = []          # [{killer, victim, t}] newest first
+var mode := "rounds"
+var rules = null              # zombies.gd / frontline.gd node (null in Rounds)
+var actors: Array = []        # other damageable things: zombies, vehicles
+var vehicles: Array = []
+var _dmg_cache: Array = []
+var _dmg_frame := -1
 
 var _ui: Control
 var _views: Array = []        # [{container, viewport, camera, gun, player, fov}]
@@ -76,6 +103,9 @@ var _lightning_t := 8.0
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	kill_target = config.get("kill_target", 15)
+	mode = config.get("mode", "rounds")
+	if not mode in MODES:
+		mode = "rounds"
 	debug_aim = "--force-aim" in OS.get_cmdline_user_args()
 	world = Node3D.new()
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
@@ -83,6 +113,14 @@ func _ready() -> void:
 	map = Map.new()
 	world.add_child(map)
 	var map_i: int = config.get("map", 0)
+	if mode == "frontline":
+		map_i = Map.FRONTLINE
+	elif map_i >= Map.FRONTLINE:
+		map_i = 0
+	if mode == "zombies":
+		rules = Zombies.new()
+	elif mode == "frontline":
+		rules = Frontline.new()
 	var tod: String = config.get("time", "random")
 	if not tod in Map.TIMES:
 		tod = Map.TIMES[randi() % Map.TIMES.size()]
@@ -93,6 +131,10 @@ func _ready() -> void:
 	map.build(map_i, tod, wx)
 
 	var parts: Array = config.participants
+	if rules != null:
+		rules.game = self
+		world.add_child(rules)
+		parts = rules.prepare(parts)
 	var bot_n := 0
 	for i in parts.size():
 		var part: Dictionary = parts[i]
@@ -104,6 +146,7 @@ func _ready() -> void:
 		p.face = part.get("face", 0)
 		p.game = self
 		p.is_bot = part.bot
+		p.team = part.get("team", -1)
 		if part.bot:
 			bot_n += 1
 			p.pname = "CPU %d" % bot_n
@@ -115,6 +158,7 @@ func _ready() -> void:
 			p.brain = InputSource.new(part.device)
 			if part.device == InputSource.KEYBOARD:
 				_kb_brain = p.brain
+		p.wants_view = part.get("view", not part.bot)
 		players.append(p)
 		world.add_child(p)
 
@@ -139,15 +183,18 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_layout)
 	Settings.changed.connect(_on_settings)
 	Input.joy_connection_changed.connect(_on_joy_changed)
-	Sfx.music("map%d" % map.map_index)
+	Sfx.music("zombies" if mode == "zombies" else map.music_key())
 	if _kb_brain != null:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-	var spots: Array = map.spawn_points.duplicate()
-	spots.shuffle()
-	for i in players.size():
-		var pos: Vector3 = spots[i % spots.size()]
-		players[i].spawn(pos, _yaw_to_centre(pos))
+	if rules != null:
+		rules.start()
+	else:
+		var spots: Array = map.spawn_points.duplicate()
+		spots.shuffle()
+		for i in players.size():
+			var pos: Vector3 = spots[i % spots.size()]
+			players[i].spawn(pos, _yaw_to_centre(pos))
 	map.build_nav()
 	for spot in map.pickup_spots:
 		var pk = Pickup.new()
@@ -227,7 +274,7 @@ func _build_views() -> void:
 
 	var viewers: Array = []
 	for i in players.size():
-		if config.participants[i].get("view", not players[i].is_bot):
+		if players[i].wants_view:
 			viewers.append(players[i])
 	var cells := _grid(viewers.size()).x * _grid(viewers.size()).y
 	for i in cells:
@@ -388,7 +435,9 @@ func _update_cameras(delta: float) -> void:
 			else:
 				cam.look_at_from_position(Vector3(cos(a) * map.half_x * 1.2, map.half_x * 0.55, sin(a) * map.half_z * 1.35), Vector3(0, 1.5, 0))
 			continue
-		if p.alive:
+		if p.alive and p.vehicle != null:
+			_vehicle_camera(v, p, delta)
+		elif p.alive:
 			# Head bob, strafe lean and recoil kick on top of the raw view.
 			var hip: float = 1.0 - p.aim_amount
 			var amt: float = p.bob_amount * bob_scale * (0.25 + 0.75 * hip)
@@ -421,8 +470,31 @@ func _update_cameras(delta: float) -> void:
 			cam.global_position += Vector3(0, delta * 0.5, 0)
 			cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
 		v.gun.update(delta, p)
+		if p.vehicle != null or p.picking:
+			v.gun.visible = false
 		ears.append(cam.global_position)
 	Sfx.listeners = ears
+
+
+## Third-person chase camera while driving or flying; the view direction is
+## the player's yaw/pitch (the vehicle aims where the camera looks).
+func _vehicle_camera(v: Dictionary, p, delta: float) -> void:
+	var veh = p.vehicle
+	var cam: Camera3D = v.camera
+	var pivot: Vector3 = veh.get_global_transform_interpolated().origin + Vector3(0, veh.cam_height, 0)
+	var pitch: float = p.pitch * 0.85 - 0.12
+	var basis := Basis.from_euler(Vector3(pitch, p.yaw, 0.0))
+	var want: Vector3 = pivot + basis * Vector3(0, 0.4, veh.cam_dist)
+	var q := PhysicsRayQueryParameters3D.create(pivot, want, 1)
+	var hit := cam.get_world_3d().direct_space_state.intersect_ray(q)
+	if hit:
+		want = hit.position + (pivot - want).normalized() * 0.4
+	var sh: float = p.shake * p.shake * 0.05 * Settings.v("shake")
+	cam.global_transform = Transform3D(Basis.from_euler(Vector3(pitch + sin(time * 61.0) * sh, p.yaw, 0.0)), want)
+	var zoom: float = 0.55 if p.brain.aim and veh.can_zoom else 1.0
+	cam.fov = lerpf(cam.fov, rad_to_deg(2.0 * atan(tan(deg_to_rad(v.fov + 6.0) * 0.5) * zoom)), clampf(delta * 10.0, 0.0, 1.0))
+	if v.weather != null:
+		v.weather.global_position = want + Vector3(0, 8.0, 0)
 
 
 # --------------------------------------------------------------------------
@@ -591,7 +663,12 @@ func _show_results() -> void:
 	Engine.time_scale = 1.0
 	var rows: Array = []
 	for p in ranked():
-		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size()})
+		if p.is_bot and p.index >= 6:
+			continue
+		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size(), "team": p.team})
+	var title := ""
+	if rules != null:
+		title = rules.results_title()
 	_views.clear()
 	players.clear()
 	_ui.queue_free()
@@ -600,6 +677,7 @@ func _show_results() -> void:
 	Sfx.listeners = []
 	_results = Results.new()
 	_results.rows = rows
+	_results.title = title
 	add_child(_results)
 	move_child(_results, 0)
 	_results.done.connect(func(): finished.emit())
@@ -614,7 +692,17 @@ func _yaw_to_centre(pos: Vector3) -> float:
 
 
 func on_player_died(victim, attacker) -> void:
-	var credited: bool = attacker != null and is_instance_valid(attacker) and attacker != victim
+	var credited: bool = attacker != null and is_instance_valid(attacker) and attacker != victim and is_player(attacker)
+	if rules != null:
+		if credited and is_enemy(attacker, victim):
+			_credit(attacker, victim)
+		else:
+			var k = attacker if attacker != null and is_instance_valid(attacker) and attacker != victim else null
+			feed.push_front(_feed_entry(k, victim))
+			if feed.size() > 5:
+				feed.pop_back()
+		rules.on_died(victim, attacker)
+		return
 	if credited:
 		attacker.kills += 1
 		attacker.kill_flash = 1.0
@@ -623,7 +711,7 @@ func on_player_died(victim, attacker) -> void:
 		attacker.shake = maxf(attacker.shake, 0.4)
 		if not attacker.is_bot and attacker.brain.device >= 0 and Settings.v("rumble"):
 			Input.start_joy_vibration(attacker.brain.device, 0.2, 0.9, 0.25)
-		feed.push_front({"killer": attacker, "victim": victim, "t": time})
+		feed.push_front(_feed_entry(attacker, victim))
 		if attacker.kills >= kill_target:
 			match_over = true
 			frozen = true
@@ -634,9 +722,50 @@ func on_player_died(victim, attacker) -> void:
 	else:
 		# Falling out of the world or blowing yourself up costs a point.
 		victim.kills = maxi(0, victim.kills - 1)
-		feed.push_front({"killer": null, "victim": victim, "t": time})
+		feed.push_front(_feed_entry(null, victim))
 	if feed.size() > 5:
 		feed.pop_back()
+
+
+## Feed entries keep copies of the names/colours: zombies are freed soon after.
+func _feed_entry(killer, victim) -> Dictionary:
+	var k = null
+	if killer != null and is_instance_valid(killer):
+		k = {"pname": killer.pname, "color": killer.color, "kind": killer.kind}
+	return {"killer": k, "victim": {"pname": victim.pname, "color": victim.color, "kind": victim.kind}, "t": time}
+
+
+## Kill bookkeeping shared by the team modes (score, feed, rumble).
+func _credit(attacker, victim) -> void:
+	attacker.kills += 1
+	attacker.kill_flash = 1.0
+	attacker.kill_name = victim.pname
+	attacker.on_kill()
+	attacker.shake = maxf(attacker.shake, 0.4)
+	if not attacker.is_bot and attacker.brain.device >= 0 and Settings.v("rumble"):
+		Input.start_joy_vibration(attacker.brain.device, 0.2, 0.9, 0.25)
+	feed.push_front(_feed_entry(attacker, victim))
+	if feed.size() > 5:
+		feed.pop_back()
+
+
+## A zombie (or any non-player actor) was destroyed by `attacker`.
+func on_actor_killed(victim, attacker) -> void:
+	if attacker != null and is_instance_valid(attacker) and is_player(attacker):
+		_credit(attacker, victim)
+
+
+## End the match now (rules call this): slow motion, then results.
+func end_match(win = null) -> void:
+	if match_over:
+		return
+	match_over = true
+	frozen = true
+	winner = win
+	end_real_time = 0.0
+	Engine.time_scale = 0.3
+	Sfx.play("go", -2.0, 0.7)
+	print("[match] over at %.0f s: %s" % [time, rules.results_title() if rules != null else "winner"])
 
 
 func respawn_later(p, delay: float) -> void:
@@ -647,6 +776,9 @@ func respawn_later(p, delay: float) -> void:
 
 ## Spawn as far from living enemies as possible (random among the best three).
 func respawn(p) -> void:
+	if rules != null:
+		rules.respawn(p)
+		return
 	var scored: Array = []
 	for spot in map.spawn_points:
 		var nearest := 1e9
@@ -669,15 +801,19 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 	Fx.light(world, pos, Color(1.0, 0.65, 0.3), 8.0, radius * 4.0, 0.4)
 	Sfx.play_at("boom", pos, -1.0)
 	for p in players:
-		if not p.alive:
+		if p.alive:
+			var dp: float = p.global_position.distance_to(pos)
+			p.shake = maxf(p.shake, clampf(1.2 - dp / (radius * 4.0), 0.0, 1.0))
+	for p in damageables():
+		if not p.alive or p == direct_victim:
 			continue
 		var to_p: Vector3 = p.chest_position() - pos
 		var d := to_p.length()
-		p.shake = maxf(p.shake, clampf(1.2 - d / (radius * 4.0), 0.0, 1.0))
-		if p == direct_victim or d > radius + 0.5:
+		if d > radius + (p.hit_radius() if p.has_method("hit_radius") else 0.5):
 			continue
 		var f := 1.0 - 0.6 * clampf(d / radius, 0.0, 1.0)
-		p.velocity += (to_p.normalized() + Vector3(0, 0.4, 0)) * 9.0 * f
+		if not p.has_method("seat_count"):
+			p.velocity += (to_p.normalized() + Vector3(0, 0.4, 0)) * 9.0 * f
 		p.take_damage(damage * f * (0.5 if p == shooter else 1.0), shooter)
 
 
@@ -699,9 +835,7 @@ func leader():
 func aim_friction(player) -> float:
 	var eye: Vector3 = player.eye_position()
 	var fwd: Vector3 = -player.aim_basis().z
-	for p in players:
-		if p == player or not p.alive:
-			continue
+	for p in hostiles(player):
 		var to_p: Vector3 = p.chest_position() - eye
 		var d := to_p.length()
 		if d < 1.0 or d > 60.0:
@@ -709,3 +843,71 @@ func aim_friction(player) -> float:
 		if fwd.angle_to(to_p) < atan(0.9 / d) + 0.015:
 			return 0.45
 	return 1.0
+
+
+# --------------------------------------------------------------------------
+# Teams and targets (used by bullets, explosions, bots, aim assist)
+# --------------------------------------------------------------------------
+
+func is_player(x) -> bool:
+	return x != null and x.has_method("rebuild_stats")
+
+
+## True when a and b may hurt each other. Team -1 is free-for-all.
+func is_enemy(a, b) -> bool:
+	if a == null or b == null or not is_instance_valid(a) or not is_instance_valid(b):
+		return true
+	if a == b:
+		return false
+	var ta: int = a.team
+	var tb: int = b.team
+	return ta < 0 or tb < 0 or ta != tb
+
+
+## Everything bullets and explosions can hit: players on foot, zombies,
+## vehicles. Cached for the physics frame.
+func damageables() -> Array:
+	var f := Engine.get_physics_frames()
+	if f != _dmg_frame:
+		_dmg_frame = f
+		_dmg_cache = []
+		for p in players:
+			if p.vehicle == null:
+				_dmg_cache.append(p)
+		for a in actors:
+			if is_instance_valid(a):
+				_dmg_cache.append(a)
+	return _dmg_cache
+
+
+## Living things `who` should shoot at (empty vehicles are not threats).
+func hostiles(who) -> Array:
+	var out: Array = []
+	for d in damageables():
+		if d == who or not d.alive or not is_enemy(who, d):
+			continue
+		if d.has_method("seat_count") and d.driver == null:
+			continue
+		out.append(d)
+	return out
+
+
+## Where a bot should head when it has nobody to fight (null = wander).
+func bot_goal(p):
+	if rules != null:
+		return rules.bot_goal(p)
+	return null
+
+
+## The closest free vehicle within reach of `p`, or null.
+func vehicle_near(p):
+	var best = null
+	var best_d := 1.2
+	for v in vehicles:
+		if not is_instance_valid(v) or not v.alive or v.driver != null:
+			continue
+		var d: float = v.global_position.distance_to(p.global_position) - v.enter_radius
+		if d < best_d:
+			best_d = d
+			best = v
+	return best

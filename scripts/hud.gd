@@ -74,7 +74,7 @@ func _add_layer(draw_fn: Callable, sig_fn: Callable) -> void:
 
 func _process(delta: float) -> void:
 	var want := 0.0
-	if player != null and not player.alive and not game.match_over:
+	if player != null and (not player.alive or player.picking) and not game.match_over:
 		want = 1.0
 	_blur_amount = move_toward(_blur_amount, want, delta * 3.5)
 	_blur.visible = _blur_amount > 0.01
@@ -90,14 +90,14 @@ func _process(delta: float) -> void:
 
 
 func _sig_status():
-	if not player.alive:
+	if not player.alive or player.vehicle != null or player.picking:
 		return [0]
 	return [size, ceili(player.health), roundi(player.health_ghost), player.stats.max_health, player.card_icons.size(),
 		int(game.time * 10.0) if player.spawn_protect > 0.0 else -1]
 
 
 func _sig_ammo():
-	if not player.alive:
+	if not player.alive or player.vehicle != null or player.picking:
 		return [0]
 	var reloading: bool = player.reload_left > 0.0
 	return [size, player.ammo, player.stats.mag_size, player.weapon, player.shield_ready(),
@@ -107,6 +107,8 @@ func _sig_ammo():
 
 
 func _sig_strip():
+	if game.rules != null:
+		return [size, game.rules.strip_sig()]
 	var sig: Array = [size, game.kill_target]
 	for p in game.players:
 		sig.append(p.kills)
@@ -135,7 +137,7 @@ func _draw() -> void:
 	if player == null:
 		_draw_spectator(w, h)
 		return
-	if player.alive:
+	if player.alive and not player.picking:
 		_draw_alive(w, h)
 	else:
 		_draw_dead(w, h)
@@ -149,6 +151,11 @@ func _draw() -> void:
 func _draw_alive(w: float, h: float) -> void:
 	var c := Vector2(w, h) * 0.5
 	var frac: float = clampf(player.health / player.stats.max_health, 0.0, 1.0)
+	if game.rules != null and game.rules.has_method("draw_markers"):
+		game.rules.draw_markers(self, s)
+	if player.vehicle != null:
+		_draw_vehicle(w, h)
+		return
 
 	# Screen-edge feedback.
 	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.1, 0.05, 0.2, 0.22))
@@ -218,7 +225,7 @@ func _draw_alive(w: float, h: float) -> void:
 
 
 func _draw_status(ci: Control) -> void:
-	if not player.alive:
+	if not player.alive or player.vehicle != null or player.picking:
 		return
 	var h := size.y
 	var w := size.x
@@ -254,7 +261,7 @@ func _draw_status(ci: Control) -> void:
 
 
 func _draw_ammo(ci: Control) -> void:
-	if not player.alive:
+	if not player.alive or player.vehicle != null or player.picking:
 		return
 	var w := size.x
 	var h := size.y
@@ -326,7 +333,14 @@ func _draw_dead(w: float, h: float) -> void:
 
 	# Header: who got you.
 	var head_y := h * 0.185 - (1.0 - UiKit.back_out(a)) * 60 * s
-	if player.killer != null and is_instance_valid(player.killer):
+	if player.picking:
+		_t(Vector2(0, head_y), "WAVE CLEARED!", 26, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, w)
+	elif player.card_choices.is_empty() and not player.respawn_pending:
+		# Zombies: no card while down; back when the wave is cleared.
+		_t(Vector2(0, head_y), "YOU'RE DOWN!", 30, Color(1.0, 0.5, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+		_t(Vector2(0, head_y + 34 * s), "BACK IN THE FIGHT WHEN THE WAVE IS CLEARED", 15, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+		return
+	elif player.killer != null and is_instance_valid(player.killer):
 		var label := "FRAGGED BY"
 		var lw := UiKit.text_width(label, 20 * s)
 		var nw := UiKit.text_width(player.killer.pname, 20 * s)
@@ -393,6 +407,53 @@ func _draw_dead(w: float, h: float) -> void:
 		_t(Vector2(x, py), "PICK", 15, Color.WHITE)
 
 
+## In a vehicle: crosshair, armour bar, weapon status and the exit prompt.
+func _draw_vehicle(w: float, h: float) -> void:
+	var v = player.vehicle
+	var c := Vector2(w, h) * 0.5
+	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.05, 0.05, 0.1, 0.3))
+	if player.hurt_flash > 0.0:
+		draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(1.0, 0.2, 0.1, player.hurt_flash * 0.5))
+	draw_arc(c, 16 * s, 0, TAU, 32, Color(UiKit.INK, 0.7), 4 * s)
+	draw_arc(c, 16 * s, 0, TAU, 32, Color(1, 1, 1, 0.9), 2 * s)
+	draw_circle(c, 2.5 * s, Color.WHITE)
+	if player.hit_marker > 0.0:
+		var hm: float = player.hit_marker
+		for k in 4:
+			var a := PI * 0.25 + k * PI * 0.5
+			var d := Vector2(cos(a), sin(a))
+			draw_line(c + d * 10 * s, c + d * 20 * s, Color(1, 1, 1, hm), 3 * s)
+	var bw := 300.0 * s
+	var r := Rect2(16 * s, h - 66 * s, bw, 50 * s)
+	UiKit.card(self, r, UiKit.PANEL, 20 * s, s)
+	_t(Vector2(r.position.x + 16 * s, r.position.y + 22 * s), v.label, 15, UiKit.GOLD)
+	var frac: float = clampf(v.health / v.max_health, 0.0, 1.0)
+	var bar := Rect2(r.position.x + 16 * s, r.position.y + 30 * s, bw - 32 * s, 10 * s)
+	UiKit.panel(self, bar, Color(0, 0, 0, 0.5), 5 * s)
+	UiKit.panel(self, Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), Color(1.0, 0.35, 0.3).lerp(Color(0.4, 0.95, 0.5), frac), 5 * s)
+	var pad: bool = player.brain.device >= 0
+	var lines: Array = []
+	match v.type:
+		"tank":
+			lines = [["RT" if pad else "LMB", "CANNON" if v.main_cd <= 0.0 else "RELOADING"], ["LT" if pad else "RMB", "MACHINE GUN"]]
+		"heli":
+			lines = [["RT" if pad else "LMB", "NOSE GUN"], ["LT" if pad else "RMB", "ROCKETS %d" % v.rockets if v.alt_cd < 0.5 else "RELOADING"],
+				["A" if pad else "SPACE", "UP"], ["B" if pad else "C", "DOWN"]]
+		_:
+			lines = [["RT" if pad else "LMB", "MACHINE GUN"], ["LT" if pad else "RMB", "ZOOM"]]
+	lines.append(["Y" if pad else "E", "GET OUT"])
+	var y := h - 26 * s
+	var x := w - 16 * s
+	for i in range(lines.size() - 1, -1, -1):
+		var ln: Array = lines[i]
+		var tw := UiKit.text_width(ln[1], 13 * s)
+		x -= tw
+		_t(Vector2(x, y), ln[1], 13, Color.WHITE)
+		x -= 46 * s
+		UiKit.prompt(self, Vector2(x, y), ln[0], 15 * s, not pad)
+		x -= 24 * s
+
+
 func _draw_card(card: Dictionary, centre: Vector2, sz: Vector2, rot: float, scl: float, selected: bool, alpha: float) -> void:
 	# Everything inside the card is laid out in "card units" (u), so text grows
 	# with the card rather than with the HUD scale.
@@ -433,6 +494,9 @@ func _draw_card(card: Dictionary, centre: Vector2, sz: Vector2, rot: float, scl:
 # --------------------------------------------------------------------------
 
 func _draw_score_strip(ci: Control) -> void:
+	if game.rules != null:
+		game.rules.draw_strip(self, ci, s)
+		return
 	var w := size.x
 	var n: int = game.players.size()
 	var chip := 46.0 * s
@@ -494,7 +558,7 @@ func _draw_banners(w: float, h: float) -> void:
 	var c := Vector2(w * 0.5, h * 0.36)
 	# Weapon pad prompt.
 	if player.pickup_prompt != "" and player.alive and not player.is_bot:
-		var key := "Y" if player.brain.device >= 0 else "E"
+		var key: String = player.prompt_key if player.prompt_key != "" else ("Y" if player.brain.device >= 0 else "E")
 		var tw := UiKit.text_width(player.pickup_prompt, 17 * s) + 44 * s
 		var px := (w - tw) * 0.5
 		var py := h * 0.74
@@ -511,6 +575,11 @@ func _draw_banners(w: float, h: float) -> void:
 		var a := clampf(player.kill_flash * 5.0, 0.0, 1.0)
 		var scl := UiKit.back_out(clampf(t * 7.0, 0.0, 1.0))
 		_big(Vector2(w * 0.5, h * 0.27), "FRAGGED %s!" % player.kill_name, 24, Color(UiKit.GOLD, a), scl, sin(t * 20.0) * 0.02)
+	# Mode announcements (wave start, flag captured...).
+	if game.rules != null and game.rules.banner_t < 3.0 and game.countdown <= 0.0:
+		var bt: float = game.rules.banner_t
+		var ba := clampf((3.0 - bt) * 2.0, 0.0, 1.0)
+		_big(Vector2(w * 0.5, h * 0.3), game.rules.banner, 30, Color(UiKit.GOLD, ba), UiKit.back_out(clampf(bt * 5.0, 0.0, 1.0)))
 	# 3-2-1.
 	if game.countdown > 0.0:
 		var num := ceili(game.countdown)
@@ -519,7 +588,7 @@ func _draw_banners(w: float, h: float) -> void:
 			_big(c, str(num), 110, Color(1, 1, 1, clampf(f * 3.0, 0.0, 1.0)), 0.8 + f * 0.6)
 		else:
 			_big(c, "GET READY", 40, Color.WHITE, 1.0 + sin(game.time * 6.0) * 0.03)
-		_big(c + Vector2(0, 52 * s), game.map.label(), 15, Color(1, 1, 1, 0.85), 1.0)
+		_big(c + Vector2(0, 52 * s), (game.map.label() if game.mode == "frontline" else game.MODE_NAMES[game.mode] + "  -  " + game.map.label()), 15, Color(1, 1, 1, 0.85), 1.0)
 	elif game.go_flash > 0.0:
 		var g: float = game.go_flash
 		_big(c, "FIGHT!", 84, Color(UiKit.GOLD, clampf(g * 3.0, 0.0, 1.0)), 0.7 + UiKit.back_out(clampf((1.0 - g) * 4.0, 0.0, 1.0)) * 0.5, -0.04)

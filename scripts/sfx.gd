@@ -8,7 +8,8 @@ extends Node
 ##                       the nearest entry of `listeners` (game.gd keeps that
 ##                       list filled with the human players' positions). With
 ##                       several players on one screen there is no stereo pan.
-## music(name)           a key of TRACKS ("lobby", "map0", "map1", "map2") or
+## music(name)           a key of TRACKS ("lobby", "map0".."map5", "zombies",
+##                       "frontline") or
 ##                       "" - cross-fades. A track that is not rendered yet
 ##                       jumps the queue and starts as soon as it is done.
 ##
@@ -38,6 +39,21 @@ const TRACKS := {
 	# Frost Line: spacious half-time funk with bells.
 	"map2": {"bpm": 96.0, "bass": "slap", "keys": "bell", "drums": "half", "lead": 0.17, "pad": 0.055, "lead_shift": 5,
 		"chords": [[30, 57, 61, 66, 69], [26, 57, 62, 66, 69], [33, 57, 61, 64, 69], [28, 56, 59, 64, 68]]},
+	# Museum: smooth late-night funk with bells.
+	"map3": {"bpm": 104.0, "bass": "funk", "keys": "bell", "drums": "funk", "lead": 0.16, "pad": 0.05, "lead_shift": 7,
+		"chords": [[29, 57, 60, 64, 67], [31, 58, 62, 65, 69], [33, 57, 60, 64, 67], [28, 56, 59, 62, 67]]},
+	# Stadium: big four-on-the-floor anthem.
+	"map4": {"bpm": 124.0, "bass": "pump", "keys": "arp", "drums": "four", "lead": 0.2, "pad": 0.06, "lead_shift": 0,
+		"chords": [[36, 60, 64, 67, 72], [31, 59, 62, 67, 71], [33, 57, 60, 64, 69], [29, 57, 60, 65, 69]]},
+	# Suburb: sunny slap-bass groove.
+	"map5": {"bpm": 108.0, "bass": "slap", "keys": "stab", "drums": "funk", "lead": 0.17, "pad": 0.0, "lead_shift": 5,
+		"chords": [[31, 59, 62, 66, 69], [36, 60, 64, 67, 71], [28, 59, 62, 67, 71], [33, 57, 61, 64, 69]]},
+	# Zombies: dark, tense half-time.
+	"zombies": {"bpm": 92.0, "bass": "pump", "keys": "bell", "drums": "half", "lead": 0.12, "pad": 0.07, "lead_shift": 3,
+		"chords": [[28, 55, 59, 64, 67], [24, 55, 60, 64, 67], [26, 57, 62, 65, 69], [23, 54, 59, 62, 66]]},
+	# Frontline: driving battle synthwave.
+	"frontline": {"bpm": 122.0, "bass": "drive", "keys": "arp", "drums": "hard", "lead": 0.2, "pad": 0.06, "lead_shift": 0,
+		"chords": [[26, 57, 62, 65, 69], [22, 58, 62, 65, 70], [24, 55, 60, 64, 67], [21, 57, 61, 64, 69]]},
 }
 
 var listeners: Array = []          # Vector3 world positions of human players
@@ -189,6 +205,14 @@ func _build_effects() -> void:
 	# Movement and weather.
 	_streams["slide"] = _make(0.45, 0.3, func(t, d): return _noise() * 0.5 * sin(PI * t / d))
 	_streams["jet"] = _make(0.16, 0.25, func(t, d): return _noise() * 0.7 * sin(PI * t / d))
+	# Zombies and vehicles.
+	_streams["zombie"] = _make(0.9, 0.12, func(t, d): return (sin(TAU * (95.0 + 25.0 * sin(t * 9.0)) * t) * 0.6 + _noise() * 0.35) * sin(PI * t / d) * (0.7 + 0.3 * sin(t * 31.0)))
+	_streams["engine"] = _make(0.3, 0.2, func(t, d): return ((1.0 if fmod(t * 55.0, 1.0) < 0.35 else -0.6) * 0.4 + _noise() * 0.25) * sin(PI * t / d))
+	_streams["rotor"] = _make(0.3, 0.15, func(t, d): return _noise() * (0.3 + 0.6 * pow(absf(sin(PI * t * 13.0)), 6.0)) * sin(PI * t / d))
+	_streams["cannon"] = _make(0.9, 0.15, func(t, _d): return _noise() * 1.4 * exp(-t * 9.0) + _sweep(t, 90.0, 30.0, 6.0) * 1.0 * exp(-t * 4.0))
+	_streams["capture"] = _make(0.8, 1.0, func(t, _d): return (_bell(t, 784.0, 6.0) + _bell(t - 0.1, 988.0, 6.0) + _bell(t - 0.2, 1175.0, 5.0)) * 0.25)
+	_streams["lost"] = _make(0.8, 1.0, func(t, _d): return (_bell(t, 659.0, 6.0) + _bell(t - 0.12, 523.0, 6.0) + _bell(t - 0.24, 415.0, 5.0)) * 0.25)
+	_streams["wave"] = _make(1.6, 0.5, func(t, _d): return (sin(TAU * 110.0 * t) + 0.5 * sin(TAU * 116.0 * t) + 0.3 * sin(TAU * 165.0 * t)) * 0.35 * minf(t * 4.0, 1.0) * exp(-t * 1.6))
 	_streams["thunder"] = _make(2.2, 0.06, func(t, _d): return _noise() * (1.4 * exp(-t * 2.2) + 0.5 * exp(-absf(t - 0.6) * 4.0)))
 	_streams["tick"] = _make(0.06, 1.0, func(t, _d): return _bell(t, 1245.0, 90.0) * 0.4)
 	_streams["bounce"] = _make(0.1, 1.0, func(t, _d): return _sweep(t, 1500.0, 900.0, 40.0) * 0.35 * exp(-t * 45.0))
