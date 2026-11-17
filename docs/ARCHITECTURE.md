@@ -122,6 +122,7 @@ parse error in one script.
 | `scripts/fp_arm.gd` | First-person plush arms for viewmodel.gd: paw (fist or open with toe beans), wrist band in the player colour, furry forearm, in the animal's plush.gd SPEC limb / paw colours with the character's felt + fur shell + outline materials scaled for close range. `viewmodel._arm()` places one; `viewmodel.kind` must be set before `build()`. |
 | `scripts/gore.gd` | Blood and gibs: `hit()` (spray + splatter decals behind and below the victim, called from player / zombie `take_damage`), `death()` (big spray, a ring of splatter, gibs: meat, bone, guts, arm, leg, head; `how` = normal / head (skull, eyes, brains) / blast (body apart; set by `game.explode` through the victim's "blast_t" meta) / slice (melee)). Splats pooled (`MAX_SPLATS` 150, about 50 s), gibs capped (`MAX_GIBS` 90) and bleed where they land. |
 | `scripts/outline.gd` | Ink outlines per view camera (option "outlines"): full-screen quad, edges from the depth and normal-roughness buffers, faded with distance. |
+| `scripts/surface.gd` | Level surfaces with depth (option "parallax"): a spatial shader doing world triplanar on the dominant axis plus parallax occlusion mapping from the procedural height map (`map._tex()[3]`), cavity shading, fade beyond 30 m. `DEPTH` lists the groove depth per texture kind; `map._mat()` uses it for those kinds (not for containers, crates or cars, which keep object-space StandardMaterial3D). Measured at six views, uncapped: within 0.5 ms of the plain material. |
 | `scripts/wipe.gd` | Screen transition: a theme-coloured slanted curtain driven like a fading ColorRect (`color:a` 0 to 1 covers, back to 0 reveals). Used by `main.gd` and `game.gd`. |
 | `scripts/lobby.gd` | Join screen: 3D backyard with six seats in two rows of three (P1-P3 on rugs on a raised deck, P4-P6 on tree stumps, `_slot_pos` / `_slot_h`), each seat's plate drawn beside its character, per-player character customisation (category name + dots, value between arrows, shrunk to fit), and a row of option chips sized to their own text (`_chip_w`; the whole row scales down if the window is too narrow). Emits `start(config)`. |
 | `scripts/stage.gd` | Small 3D backyard behind the lobby and results: striped lawn, picket fence with flower beds, trees, hills and snow-capped mountains (or a neon skyline when the theme's stage has `city`), party-light strings in the theme's colours, pumpkins in Spooky; seats are tree stumps (`add_podium`) or rugs on a wooden deck (`add_deck`). Repeated pieces are MultiMeshes. Coloured coloured by the visual theme (`build(..., look)`; the lobby rebuilds it when the theme changes, results use the match's theme). |
@@ -683,6 +684,11 @@ across the UI.
   `bullet._impact` on level hits, scorch marks from `game.explode`) that
   project only onto layer 1 and fade out; `map._ground_decals` scatters
   10-44 dirt and crack decals on the floor. Option "decals" turns both off.
+- **Relief** (`map._perimeter_dressing`, `_facade`, `_building`):
+  pilasters every ~6 m on the perimeter walls, coping and skirting (not in
+  neon themes, which have light strips there), rubble at their foot (own
+  RNG so layouts do not shift), window jambs, and a cornice on flat roofs.
+  All visual only.
 - **Boundary** (`map._build_walls`): the invisible perimeter is its own
   StaticBody3D (`map.boundary`), 8 m thick and 500 m tall; `player._find_wall`
   ignores it above the visible `wall_h` (no wall runs on the invisible

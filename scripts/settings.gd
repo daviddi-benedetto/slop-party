@@ -38,6 +38,8 @@ const ITEMS := [
 	# SDFGI too: it cost over 10 ms a frame and stalled for seconds, so no.
 	# Ink lines along silhouettes and creases (outline.gd): shapes stand
 	# apart even with flat colours.
+	# Grooves with real depth on bricks, tiles, planks, stone... (surface.gd).
+	{"key": "parallax", "label": "Surface depth", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "outlines", "label": "Outlines", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "gi", "label": "Bounce light", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# Light shafts through the haze (volumetric fog), one or two views only.
@@ -70,7 +72,7 @@ const ITEMS := [
 
 ## preset index -> {key: choice index}
 const PRESETS := {
-	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0, "outlines": 0},
+	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0, "outlines": 0, "parallax": 0},
 	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0, "gi": 0, "volfog": 0, "decals": 1},
 	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 0, "decals": 1},
 	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 1, "decals": 1},
@@ -83,6 +85,7 @@ var lobby := {}            # free-form values the lobby remembers (loadouts, map
 var _items := {}           # key -> item dictionary (with opts/vals filled in)
 var rows: Array = []       # ITEMS with ranges expanded; what the menu shows
 var _path := ""
+var _saved_idx := {}       # --set-<key> overrides: the real value, which is what gets saved
 var _uncapped := false
 var _keep_window := false
 
@@ -121,6 +124,7 @@ func _ready() -> void:
 		if a.begins_with("--set-") and "=" in a:
 			var kv := a.substr(6).split("=")
 			if _items.has(kv[0]):
+				_saved_idx[kv[0]] = idx[kv[0]]
 				idx[kv[0]] = clampi(int(kv[1]), 0, _items[kv[0]].opts.size() - 1)
 	apply()
 
@@ -232,7 +236,7 @@ func apply_environment(env: Environment, sun: DirectionalLight3D) -> void:
 func save() -> void:
 	var cfg := ConfigFile.new()
 	for key in idx:
-		cfg.set_value("settings", key, idx[key])
+		cfg.set_value("settings", key, _saved_idx.get(key, idx[key]))
 	for key in lobby:
 		cfg.set_value("lobby", key, lobby[key])
 	cfg.save(_path)

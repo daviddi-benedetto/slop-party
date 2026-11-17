@@ -59,6 +59,7 @@ const Door = preload("res://scripts/door.gd")
 const Rubble = preload("res://scripts/rubble.gd")
 const Looks = preload("res://scripts/looks.gd")
 const Fx = preload("res://scripts/fx.gd")
+const Surface = preload("res://scripts/surface.gd")
 
 signal nav_built
 
@@ -838,11 +839,14 @@ func _make_materials() -> void:
 	var wet: bool = weather == "rain" and not indoor
 	for key in theme.mats:
 		var d: Array = theme.mats[key]
-		var m := _mat(d[0], d[1], d[2], d[3], d[4])
-		if wet:
-			m.roughness *= 0.45
-		if key.begins_with("c_") or key == "crate" or key.begins_with("car_"):
-			m.uv1_world_triplanar = false
+		# Containers, crates and cars keep object-space mapping (no parallax).
+		var local: bool = key.begins_with("c_") or key == "crate" or key.begins_with("car_")
+		var m: Material = _mat(d[0], d[1], d[2], d[3], d[4], not local)
+		if m is StandardMaterial3D:
+			if wet:
+				m.roughness *= 0.45
+			if local:
+				m.uv1_world_triplanar = false
 		_mats[key] = m
 	if not _mats.has("lava"):
 		_mats["lava"] = _mat(Color(0.32, 0.11, 0.05), "lava", 0.18, 0.6, 0.0)
@@ -914,10 +918,15 @@ func _make_materials() -> void:
 ## wrapped lighting and a faint rim sheen; the procedural textures are
 ## flattened (_soft) and their normal maps turned down so walls read as
 ## painted clay rather than gritty photo-noise.
-func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float) -> StandardMaterial3D:
+func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float, depth_ok := true) -> Material:
 	var m := StandardMaterial3D.new()
 	tint = Looks.grade(look, tint)
 	var toy := Color.from_hsv(tint.h, minf(1.0, tint.s * 1.12), minf(1.0, tint.v * 1.06 + 0.03), tint.a)
+	if depth_ok and Surface.DEPTH.has(kind) and Settings.v("parallax"):
+		# Parallax occlusion surfaces (surface.gd): grooves with real depth.
+		var tx: Array = _tex(kind)
+		return Surface.make(toy.lerp(Color.WHITE, 0.06), _soft(kind, tx[0]) if tx[2] == null else tx[0], tx[1], tx[3], tx[2],
+			uv_scale, Surface.DEPTH[kind], maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6)
 	m.albedo_color = toy.lerp(Color.WHITE, 0.06)
 	m.roughness = maxf(rough, 0.62) if metal < 0.5 else rough
 	m.metallic = metal * 0.6
@@ -1182,6 +1191,12 @@ static func _tex(kind: String) -> Array:
 			img.set_pixel(px, py, Color(val, val, val))
 			himg.set_pixel(px, py, Color(hgt, hgt, hgt))
 	img.generate_mipmaps()
+	# The height field itself, for parallax (surface.gd), before it becomes
+	# the normal map.
+	var hcopy: Image = himg.duplicate()
+	hcopy.convert(Image.FORMAT_L8)
+	hcopy.generate_mipmaps()
+	var height := ImageTexture.create_from_image(hcopy)
 	var normal: ImageTexture = null
 	if kind != "stripes":
 		himg.bump_map_to_normal_map(2.5 if kind in ["snow", "concrete", "plaster", "lawn", "turf"] else 5.0)
@@ -1191,7 +1206,7 @@ static func _tex(kind: String) -> Array:
 	if eimg != null:
 		eimg.generate_mipmaps()
 		emission = ImageTexture.create_from_image(eimg)
-	var out := [ImageTexture.create_from_image(img), normal, emission]
+	var out := [ImageTexture.create_from_image(img), normal, emission, height]
 	_tex_cache[kind] = out
 	return out
 
@@ -1842,11 +1857,49 @@ func _build_walls() -> void:
 			boundary.add_child(cs)
 	_box(Vector3(0, wall_h * 0.5, half_z + 0.5), Vector3(w + 2, wall_h, 1), "wall", true, 0.0, false)
 	_box(Vector3(half_x + 0.5, wall_h * 0.5, 0), Vector3(1, wall_h, d + 2), "wall", true, 0.0, false)
+	_perimeter_dressing()
 	if theme.neon:
 		_box(Vector3(0, wall_h + 0.04, half_z + 0.08), Vector3(w + 0.3, 0.1, 0.16), "accent_a", true, 0.0, false)
 		_box(Vector3(half_x + 0.08, wall_h + 0.04, 0), Vector3(0.16, 0.1, d + 0.3), "accent_a", true, 0.0, false)
 		_box(Vector3(0, 0.12, half_z + 0.02), Vector3(w, 0.16, 0.14), "accent_b", true, 0.0, false)
 		_box(Vector3(half_x + 0.02, 0.12, 0), Vector3(0.14, 0.16, d), "accent_b", true, 0.0, false)
+
+
+## Relief on the long perimeter walls so they are not one flat plane:
+## pilasters every few metres, a coping along the top, a skirting at the
+## foot and a little fallen rubble against it. Visual only (no colliders).
+func _perimeter_dressing() -> void:
+	if wall_h < 1.3 or indoor and wall_h > 8.0:
+		return
+	# Its own random numbers, so the rest of the layout stays as it was.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242 + map_index
+	var trim := "trim" if _mats.has("trim") else ("block_a" if _mats.has("block_a") else "wall")
+	var step := 6.0
+	for axis in 2:
+		var half_len: float = half_x if axis == 0 else half_z
+		var n := int(half_len * 2.0 / step)
+		for i in range(1, n):
+			var u := -half_len + i * (half_len * 2.0 / n)
+			# Pilaster.
+			if axis == 0:
+				_box(Vector3(u, wall_h * 0.5, half_z - 0.07), Vector3(0.55, wall_h, 0.14), trim, true, 0.0, false)
+			else:
+				_box(Vector3(half_x - 0.07, wall_h * 0.5, u), Vector3(0.14, wall_h, 0.55), trim, true, 0.0, false)
+			# Rubble at the foot now and then.
+			if rng.randf() < 0.35:
+				for k in rng.randi_range(2, 4):
+					var off := rng.randf_range(-1.2, 1.2)
+					var sz := Vector3(rng.randf_range(0.18, 0.4), rng.randf_range(0.1, 0.22), rng.randf_range(0.18, 0.35))
+					var inset := rng.randf_range(0.15, 0.5)
+					var pos := Vector3(u + off, sz.y * 0.5, half_z - inset) if axis == 0 else Vector3(half_x - inset, sz.y * 0.5, u + off)
+					_box(pos, sz, "wall" if rng.randf() < 0.6 else trim, true, rng.randf() * TAU, false)
+	if not theme.neon:
+		# Coping and skirting.
+		_box(Vector3(0, wall_h + 0.06, half_z + 0.02), Vector3(half_x * 2.0 + 0.4, 0.14, 0.34), trim, true, 0.0, false)
+		_box(Vector3(half_x + 0.02, wall_h + 0.06, 0), Vector3(0.34, 0.14, half_z * 2.0 + 0.4), trim, true, 0.0, false)
+		_box(Vector3(0, 0.13, half_z - 0.05), Vector3(half_x * 2.0, 0.26, 0.1), trim, true, 0.0, false)
+		_box(Vector3(half_x - 0.05, 0.13, 0), Vector3(0.1, 0.26, half_z * 2.0), trim, true, 0.0, false)
 
 
 ## The ground slab with every hole cut out, and the painted paths.
@@ -2009,6 +2062,13 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		if sx > 11.0:
 			_model("toon/Building/Water_Tank_Floor", Vector3(c.x + sx * 0.1, ry2, c.z - sz * 0.3), PI * 0.5, 0.8, mirror)
 	if not pitched:
+		# A cornice round the roof line, standing proud of the walls.
+		var cy := c.y + floors * FLOOR_H - 0.12
+		_box(Vector3(c.x, cy, z0 - 0.06), Vector3(sx + 0.36, 0.24, 0.16), trim, mirror, 0.0, false)
+		_box(Vector3(c.x, cy, z1 + 0.06), Vector3(sx + 0.36, 0.24, 0.16), trim, mirror, 0.0, false)
+		_box(Vector3(x0 - 0.06, cy, c.z), Vector3(0.16, 0.24, sz + 0.04), trim, mirror, 0.0, false)
+		_box(Vector3(x1 + 0.06, cy, c.z), Vector3(0.16, 0.24, sz + 0.04), trim, mirror, 0.0, false)
+	if not pitched:
 		var y := c.y + floors * FLOOR_H
 		# Stop parapet runs at their corner joints so rounded segments do not
 		# intersect through each other at the outside edges.
@@ -2041,6 +2101,8 @@ func _facade(c: Vector3, sx: float, sz: float, y0: float, f: int, win_x: Array, 
 			var z: float = side[0] + side[1] * 0.05
 			_box(Vector3(w[0], y0 + 0.9, z), Vector3(1.7, 0.1, 0.22), trim, mirror, 0.0, false)
 			_box(Vector3(w[0], y0 + 2.36, z), Vector3(1.6, 0.12, 0.14), trim, mirror, 0.0, false)
+			for sgn in [-1.0, 1.0]:
+				_box(Vector3(w[0] + sgn * 0.74, y0 + 1.63, z), Vector3(0.1, 1.38, 0.14), trim, mirror, 0.0, false)
 			if pitched:
 				for sgn in [-1.0, 1.0]:
 					_box(Vector3(w[0] + sgn * 0.92, y0 + 1.63, z), Vector3(0.36, 1.35, 0.06), shut, mirror, 0.0, false)
@@ -2049,6 +2111,8 @@ func _facade(c: Vector3, sx: float, sz: float, y0: float, f: int, win_x: Array, 
 			var x: float = side[0] + side[1] * 0.05
 			_box(Vector3(x, y0 + 0.9, w[0]), Vector3(0.22, 0.1, 1.7), trim, mirror, 0.0, false)
 			_box(Vector3(x, y0 + 2.36, w[0]), Vector3(0.14, 0.12, 1.6), trim, mirror, 0.0, false)
+			for sgn in [-1.0, 1.0]:
+				_box(Vector3(x, y0 + 1.63, w[0] + sgn * 0.74), Vector3(0.14, 1.38, 0.1), trim, mirror, 0.0, false)
 			if pitched:
 				for sgn in [-1.0, 1.0]:
 					_box(Vector3(x, y0 + 1.63, w[0] + sgn * 0.92), Vector3(0.06, 1.35, 0.36), shut, mirror, 0.0, false)

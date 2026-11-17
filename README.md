@@ -123,6 +123,12 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Scenery:** dense wind-blown grass and flowers over rolling mounds, a
   horizon of hills and mountains on every map, warm lamps indoors, sun rays,
   and pets (dogs, cats, a fox, a bunny) you can pet for a little health.
+- **Surfaces with depth:** brick, stone, cobbles, tiles, planks, siding,
+  shingles, metal panels and corrugated sheet have grooves you can see into
+  (parallax occlusion mapping, option **Surface depth**): mortar lines and
+  seams sink in, shift as you move and sit in their own shadow. Buildings
+  have window jambs and roof cornices, and perimeter walls have pilasters,
+  a coping, a skirting and fallen rubble at their foot.
 - **Depth:** strong ambient occlusion (soft shadows in corners and under
   things, even in sunlight) and ink outlines along silhouettes and creases
   (option **Outlines**), so simple shapes and flat colours read in depth.
@@ -230,7 +236,7 @@ Q / E to turn them):
   **Display**: frames are paced by your screen's own refresh rate, which is
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing, motion blur,
-  render scale, shadows, ambient occlusion, outlines, bounce light, light shafts in
+  render scale, shadows, ambient occlusion, surface depth, outlines, bounce light, light shafts in
   the air (Ultra; used with one or two views), bullet holes and scorch
   marks, bloom, scenery, soft focus, sun rays, and **auto resolution** (on
   by default): a busy moment lowers the 3D resolution briefly instead of
