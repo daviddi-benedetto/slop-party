@@ -428,6 +428,14 @@ func _draw() -> void:
 	var tw := UiKit.text_width(tag, 24 * s) + 60 * s
 	UiKit.card(self, Rect2((w - tw) * 0.5, 190 * s, tw, 44 * s), UiKit.PANEL, 22 * s, s)
 	UiKit.text(self, Vector2(0, 221 * s), tag, 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, w, 600, 0.0)
+	# A screen running below 50 Hz (a 4K TV left in a 30 Hz mode) can never
+	# show a smooth game, whatever we render: say so.
+	var hz := DisplayServer.screen_get_refresh_rate()
+	if hz > 1.0 and hz < 50.0:
+		var warn := "YOUR SCREEN IS SET TO %d Hz - THE GAME CAN ONLY SHOW %d FPS.  WINDOWS: SETTINGS > DISPLAY > ADVANCED DISPLAY > REFRESH RATE 60 Hz" % [int(round(hz)), int(round(hz))]
+		var ww := UiKit.text_width(warn, 19 * s) + 50 * s
+		UiKit.card(self, Rect2((w - ww) * 0.5, 242 * s, ww, 36 * s), Color(0.75, 0.16, 0.14), 18 * s, s)
+		UiKit.text(self, Vector2(0, 267 * s), warn, 19 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.0)
 
 	# Seat plates, positioned under the 3D podiums.
 	if _stage != null and _stage.camera != null and not _options.visible:

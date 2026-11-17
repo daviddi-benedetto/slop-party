@@ -495,7 +495,7 @@ func _build_environment() -> void:
 	# Keep map silhouettes and player colours readable in every time/weather
 	# combination; the atmosphere comes from hue and lights rather than crushed
 	# shadows.
-	p.ambient = maxf(p.ambient, 0.78)
+	p.ambient = maxf(p.ambient, 1.0)
 	fog_density = minf(fog_density, 0.012)
 	# A slight distance haze gives the large outdoor arenas more depth without
 	# obscuring players or landmarks.
@@ -514,20 +514,22 @@ func _build_environment() -> void:
 	env.tonemap_exposure = p.exposure
 	env.tonemap_white = 4.0
 	env.ssao_enabled = true
-	env.ssao_radius = 1.4
-	env.ssao_intensity = 1.6
+	env.ssao_radius = 2.2
+	env.ssao_intensity = 1.1
+	env.ssao_power = 1.2
 	env.glow_enabled = true
-	env.glow_intensity = 0.5
+	env.glow_intensity = 0.55
 	env.glow_strength = 1.0
-	env.glow_bloom = 0.0
+	env.glow_bloom = 0.06
 	env.glow_hdr_threshold = p.glow
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env.set_glow_level(2, 1.0)
 	env.set_glow_level(4, 0.7)
 	env.set_glow_level(6, 0.25)
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.12
-	env.adjustment_contrast = 1.06
+	env.adjustment_saturation = 1.24
+	env.adjustment_contrast = 1.0
+	env.adjustment_brightness = 1.04
 	env.fog_enabled = true
 	env.fog_light_color = fog_col
 	env.fog_density = fog_density
@@ -541,7 +543,8 @@ func _build_environment() -> void:
 	sun.light_color = p.sun_color
 	sun.light_energy = p.sun_energy
 	sun.shadow_enabled = true
-	sun.shadow_blur = 1.6
+	sun.shadow_blur = 2.6
+	sun.shadow_opacity = 0.72
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	sun.directional_shadow_max_distance = 90.0
 	sun.shadow_bias = 0.06
@@ -642,28 +645,62 @@ func _make_materials() -> void:
 	_mats["stripes"] = stripes
 
 
+## Toy-diorama surfaces: clean, slightly pastel colours, matte, with soft
+## wrapped lighting and a faint rim sheen; the procedural textures are
+## flattened (_soft) and their normal maps turned down so walls read as
+## painted clay rather than gritty photo-noise.
 func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
-	m.albedo_color = tint
-	m.roughness = rough
-	m.metallic = metal
+	var toy := Color.from_hsv(tint.h, minf(1.0, tint.s * 1.12), minf(1.0, tint.v * 1.06 + 0.03), tint.a)
+	m.albedo_color = toy.lerp(Color.WHITE, 0.06)
+	m.roughness = maxf(rough, 0.62) if metal < 0.5 else rough
+	m.metallic = metal * 0.6
 	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	m.rim_enabled = true
+	m.rim = 0.22
+	m.rim_tint = 0.6
 	if kind == "":
 		return m
 	var t: Array = _tex(kind)
-	m.albedo_texture = t[0]
+	m.albedo_texture = _soft(kind, t[0]) if t[2] == null else t[0]
 	m.uv1_triplanar = true
 	m.uv1_world_triplanar = true
 	m.uv1_scale = Vector3.ONE * uv_scale
 	if t[1] != null:
 		m.normal_enabled = true
 		m.normal_texture = t[1]
-		m.normal_scale = 1.1
+		m.normal_scale = 0.5
 	if t[2] != null:
 		m.emission_enabled = true
 		m.emission_texture = t[2]
 		m.emission_energy_multiplier = 2.4
 	return m
+
+
+static var _soft_cache := {}
+
+## A lower-contrast copy of a generated albedo texture: every pixel is pulled
+## 45 % of the way to the texture's average colour.
+static func _soft(kind: String, tex: Texture2D) -> Texture2D:
+	if _soft_cache.has(kind):
+		return _soft_cache[kind]
+	var img: Image = tex.get_image()
+	if img == null:
+		return tex
+	img = img.duplicate()
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	var tiny: Image = img.duplicate()
+	tiny.resize(1, 1, Image.INTERPOLATE_LANCZOS)
+	var avg := tiny.get_pixel(0, 0)
+	var flat := Image.create(img.get_width(), img.get_height(), false, Image.FORMAT_RGBA8)
+	flat.fill(Color(avg.r, avg.g, avg.b, 0.45))
+	img.blend_rect(flat, Rect2i(0, 0, img.get_width(), img.get_height()), Vector2i.ZERO)
+	img.generate_mipmaps()
+	var out := ImageTexture.create_from_image(img)
+	_soft_cache[kind] = out
+	return out
 
 
 func _leaf_mat(col: Color) -> StandardMaterial3D:

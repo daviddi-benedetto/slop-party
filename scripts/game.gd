@@ -88,6 +88,10 @@ var rules = null              # zombies.gd / frontline.gd node (null in Rounds)
 var actors: Array = []        # other damageable things: zombies, vehicles
 var vehicles: Array = []
 var pets: Array = []
+var _res_measuring := false
+var _res_gpu := 0.0           # smoothed GPU + CPU render time of all views (ms)
+var _res_frame := 16.0        # smoothed real frame time (ms)
+var _res_t := 2.0
 var melee_strike := false     # true while a melee swing is dealing its damage
 var _dmg_cache: Array = []
 var _dmg_frame := -1
@@ -241,6 +245,7 @@ func _prewarm() -> void:
 
 
 func _exit_tree() -> void:
+	Settings.res_factor = 1.0
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Sfx.listeners = []
 	Sfx.duck(false)
@@ -251,6 +256,7 @@ func _exit_tree() -> void:
 func _on_settings() -> void:
 	for v in _views:
 		Settings.apply_viewport(v.viewport)
+		(v.camera.attributes as CameraAttributesPractical).dof_blur_far_enabled = Settings.v("dof")
 	_layout()
 
 
@@ -331,6 +337,13 @@ func _add_view(player) -> void:
 	cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	cam.near = 0.06
 	cam.far = 400.0
+	# Soft focus in the distance: the toy-diorama look (option "dof").
+	var lens := CameraAttributesPractical.new()
+	lens.dof_blur_far_enabled = Settings.v("dof")
+	lens.dof_blur_far_distance = 34.0
+	lens.dof_blur_far_transition = 70.0
+	lens.dof_blur_amount = 0.045
+	cam.attributes = lens
 	var all_bodies := 0
 	for p in players:
 		all_bodies |= p.body_layer_bit()
@@ -636,6 +649,7 @@ func _process(delta: float) -> void:
 			Sfx.play("go", -3.0)
 	go_flash = maxf(0.0, go_flash - delta * 0.9)
 	_update_cameras(delta)
+	_auto_resolution(real_delta)
 
 	if match_over:
 		end_real_time += real_delta
@@ -645,6 +659,47 @@ func _process(delta: float) -> void:
 			tw.tween_property(_fade, "color:a", 1.0, 0.35)
 			tw.tween_callback(_show_results)
 			tw.tween_property(_fade, "color:a", 0.0, 0.4)
+
+
+## Auto resolution (option "auto_res"): hold the frame rate by trading 3D
+## resolution. It watches the GPU time of every splitscreen view (and the
+## real frame time as a back-stop); when a frame is in danger of missing
+## 60 FPS the internal resolution of the 3D views drops a step (FSR 1
+## upscales it back; HUD and text stay sharp), and it climbs back when
+## there is headroom again. Settings.res_factor carries the result.
+func _auto_resolution(real_delta: float) -> void:
+	if not Settings.v("auto_res"):
+		if Settings.res_factor != 1.0:
+			Settings.res_factor = 1.0
+			_on_settings()
+		return
+	if not _res_measuring:
+		_res_measuring = true
+		for v in _views:
+			RenderingServer.viewport_set_measure_render_time(v.viewport.get_viewport_rid(), true)
+	var gpu := 0.0
+	for v in _views:
+		var rid: RID = v.viewport.get_viewport_rid()
+		gpu += RenderingServer.viewport_get_measured_render_time_gpu(rid)
+	_res_gpu = lerpf(_res_gpu, gpu, 0.12)
+	_res_frame = lerpf(_res_frame, minf(real_delta, 0.1) * 1000.0, 0.12)
+	_res_t -= real_delta
+	if _res_t > 0.0 or _paused:
+		return
+	_res_t = 0.3
+	# GPU budget for the 3D views: 14 of the 16.7 ms a 60 FPS frame has.
+	var budget := 14.0
+	var refresh := DisplayServer.screen_get_refresh_rate()
+	var late: bool = _res_frame > 18.2 and (refresh <= 0.0 or refresh >= 55.0) and Engine.max_fps != 30
+	var f: float = Settings.res_factor
+	if _res_gpu > budget or late:
+		f = maxf(0.5, f - (0.1 if _res_gpu > budget * 1.4 else 0.05))
+	elif _res_gpu < budget * 0.62 and f < 1.0:
+		f = minf(1.0, f + 0.05)
+	if not is_equal_approx(f, Settings.res_factor):
+		Settings.res_factor = f
+		for v in _views:
+			Settings.apply_viewport(v.viewport)
 
 
 func _leave() -> void:

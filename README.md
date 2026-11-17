@@ -153,6 +153,17 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Pause / options / quit to lobby | Start | Esc |
 | Toggle fullscreen (lobby) | – | F11 |
 
+### If the game does not feel smooth
+
+The game renders well above 60 FPS on a mid-range GPU, but it can only show
+as many frames as the screen accepts. **Check the screen's refresh rate
+first:** a 4K TV is often left at 30 Hz, which caps everything at 30 FPS
+(the lobby shows a red warning when this is the case). In Windows:
+Settings > System > Display > Advanced display > Choose a refresh rate >
+60 Hz. If 60 Hz is not offered at 4K, use the TV's HDMI 2.0 port / cable,
+switch on its "Input Signal Plus" (UHD colour) option for that port, or
+pick 1080p or 1440p at 60 Hz.
+
 ### Options
 
 Reachable from the lobby and from the pause menu:
@@ -162,7 +173,10 @@ Reachable from the lobby and from the pause menu:
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing (Off, FXAA,
   MSAA 2x/4x/8x), motion blur slider, render scale, shadows, ambient
-  occlusion, bloom, scenery.
+  occlusion, bloom, scenery, soft focus in the distance, and **auto
+  resolution** (on by default): when a busy moment would drop below 60 FPS
+  the 3D resolution is lowered for a moment and sharpened back up, so the
+  frame rate holds.
 - **Audio:** master, music and effects volume.
 - **Controls:** gamepad and mouse look speed, stick dead zone, invert Y, aim
   assist, rumble.

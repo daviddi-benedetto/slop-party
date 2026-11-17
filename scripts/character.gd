@@ -722,8 +722,13 @@ func _build_human(with_gun: bool) -> void:
 	# overlay used for the hit flash.
 	_tint = StandardMaterial3D.new()
 	_tint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_tint.albedo_color = Color(color, 0.26 if _creature else 0.2)
-	_tint.roughness = 0.8
+	_tint.albedo_color = Color(color.lerp(Color.WHITE, 0.15), 0.24 if _creature else 0.2)
+	_tint.roughness = 0.9
+	# A soft rim of light gives the models a plush, toy-like silhouette.
+	_tint.rim_enabled = true
+	_tint.rim = 0.9
+	_tint.rim_tint = 0.35
+	_tint.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	_white = StandardMaterial3D.new()
 	_white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_white.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

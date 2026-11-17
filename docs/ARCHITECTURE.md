@@ -528,6 +528,18 @@ is turned on (see `confetti()`), or they are ignored.
 
 ### Smoothness and input latency
 
+**Auto resolution** (`game._auto_resolution`, option `auto_res`): sums the
+measured GPU time of every splitscreen viewport; above 14 ms it lowers
+`Settings.res_factor` (0.5-1, multiplied into every view's
+`scaling_3d_scale`, FSR 1 upscaling), below 62 % of that it climbs back.
+The HUD is 2D and stays sharp. **The look** (toy diorama): `map._mat`
+pastelises colours, flattens the generated textures (`_soft`), halves the
+normal maps and adds a faint rim; soft sun shadows (`shadow_opacity`),
+brighter ambient, saturation 1.24, light bloom, and far depth of field on
+every camera (`CameraAttributesPractical`, option `dof`).
+The lobby warns when the screen runs below 50 Hz (a TV left at 30 Hz is
+the usual reason the game "runs badly").
+
 Checklist of what keeps motion smooth (keep it true when changing things):
 physics at 120 Hz with engine physics interpolation and jitter fix 0;
 cameras are not interpolated nodes, they are placed every rendered frame

@@ -35,6 +35,10 @@ const ITEMS := [
 	{"key": "ssao", "label": "Ambient occlusion", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "glow", "label": "Bloom", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "scenery", "label": "Scenery detail", "opts": ["Low", "High"], "vals": [0, 1], "def": 1},
+	# Lowers the 3D resolution on the fly whenever a frame would take too long
+	# (game.gd::_auto_resolution), so busy six-player moments stay at 60.
+	{"key": "auto_res", "label": "Auto resolution (hold 60 FPS)", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "dof", "label": "Soft focus in the distance", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"section": "AUDIO"},
 	{"key": "master", "label": "Master volume", "range": [0, 10], "def": 8},
 	{"key": "music", "label": "Music volume", "range": [0, 10], "def": 6},
@@ -56,13 +60,14 @@ const ITEMS := [
 
 ## preset index -> {key: choice index}
 const PRESETS := {
-	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0},
-	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1},
-	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1},
-	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1},
+	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0},
+	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0},
+	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1},
+	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1},
 }
 
 var idx := {}
+var res_factor := 1.0      # auto resolution: extra 3D scale factor set by game.gd (0.5-1)
 var lobby := {}            # free-form values the lobby remembers (loadouts, map, bots)
 var _items := {}           # key -> item dictionary (with opts/vals filled in)
 var rows: Array = []       # ITEMS with ranges expanded; what the menu shows
@@ -164,7 +169,10 @@ func apply_viewport(vp: Viewport) -> void:
 	var aa: int = v("aa")
 	vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X, Viewport.MSAA_8X][aa]
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if aa == 1 else Viewport.SCREEN_SPACE_AA_DISABLED
-	vp.scaling_3d_scale = v("scale")
+	vp.scaling_3d_scale = v("scale") * res_factor
+	# FSR 1 upscaling keeps edges crisp when the 3D resolution is below 100 %.
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if vp.scaling_3d_scale < 0.99 else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.fsr_sharpness = 0.5
 
 
 ## Shared by map.gd and stage.gd.
@@ -173,7 +181,7 @@ func apply_environment(env: Environment, sun: DirectionalLight3D) -> void:
 	env.glow_enabled = v("glow")
 	var sh: int = v("shadows")
 	sun.shadow_enabled = sh > 0
-	sun.shadow_blur = 1.6 if sh == 2 else 0.8
+	sun.shadow_blur = 2.6 if sh == 2 else 1.4
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if sh == 2 else DirectionalLight3D.SHADOW_ORTHOGONAL
 
 
