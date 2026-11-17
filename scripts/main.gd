@@ -22,6 +22,7 @@ extends Node
 ##   --options-page=N      ...on its Nth page (0 = DISPLAY)
 ##   --melee-at=<sec>      player 1 swings their melee then
 ##   --box-at=<sec>        player 1 opens a mystery box then
+##   --boom-at=<sec>       an explosion 7 m in front of player 1
 ##   --gore-at=<sec>[,how] a body comes apart 4 m in front of player 1
 ##                         (how: normal, head, blast, slice)
 ##   --start-after=<sec>   with --lobby-demo: start the match after that long
@@ -61,6 +62,32 @@ func _ready() -> void:
 		for s in str(_args.get("ids", "0")).split(","):
 			ids.append(int(s))
 		sheet.run(str(_args.sheet), ids)
+		return
+	if _args.has("fx-test"):
+		# Dev: particle effects alone in an empty scene (with --shot).
+		var r3 := Node3D.new()
+		add_child(r3)
+		var we := WorldEnvironment.new()
+		we.environment = Environment.new()
+		we.environment.background_mode = Environment.BG_COLOR
+		we.environment.background_color = Color(0.3, 0.4, 0.6)
+		we.environment.tonemap_mode = Environment.TONE_MAPPER_ACES
+		we.environment.glow_enabled = true
+		r3.add_child(we)
+		var sun := DirectionalLight3D.new()
+		sun.rotation_degrees = Vector3(-50, 30, 0)
+		r3.add_child(sun)
+		var cam := Camera3D.new()
+		r3.add_child(cam)
+		cam.look_at_from_position(Vector3(0, 2, 9), Vector3(0, 1.5, 0))
+		var FxS = preload("res://scripts/fx.gd")
+		get_tree().create_timer(float(_args.get("fx-at", "1.0"))).timeout.connect(func():
+			FxS.fireball(r3, Vector3(-2.5, 1, 0), 1.0)
+			FxS.embers(r3, Vector3(-2.5, 1, 0), 1.0)
+			FxS.smoke_column(r3, Vector3(0, 0.5, 0), 1.0)
+			FxS.fire_patch(r3, Vector3(2.5, 0, 0), 0.6, 0.0))
+		if _args.has("shot"):
+			_screenshot_later(float(_args.get("shot-time", "2")), _args["shot"])
 		return
 	lobby = Lobby.new()
 	add_child(lobby)
@@ -124,6 +151,12 @@ func _ready() -> void:
 					pk.take(p)
 					print("[box] at ", pk.global_position)
 					break)
+	if _args.has("boom-at"):
+		get_tree().create_timer(float(_args["boom-at"]), true, false, true).timeout.connect(func():
+			if game != null and not game.players.is_empty():
+				var p = game.players[0]
+				var fwd := Vector3(-sin(p.yaw), 0, -cos(p.yaw))
+				game.explode(p.global_position + fwd * 7.0 + Vector3(0, 0.6, 0), 3.5, 0.0, null, null))
 	if _args.has("gore-at"):
 		var ga := str(_args["gore-at"]).split(",")
 		get_tree().create_timer(float(ga[0]), true, false, true).timeout.connect(func():

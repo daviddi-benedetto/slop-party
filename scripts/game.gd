@@ -263,6 +263,11 @@ func _prewarm() -> void:
 	Fx.blood_splat(world, p, 0.2)
 	Fx.bolt(world, p, p + Vector3(1, 0, 0), Color.WHITE)
 	Fx.smoke(world, p, 0.2)
+	Fx.fireball(world, p, 0.2, 2)
+	Fx.smoke_column(world, p, 0.2, Color(0.2, 0.2, 0.2), 2)
+	Fx.embers(world, p, 0.2, 2)
+	Fx.dust_ring(world, p, 0.2)
+	Fx.fire_patch(world, p, 0.3, 0.5, false)
 	Gore.spray(world, p, Vector3.UP, 4, 1.0)
 	Gore.splat(world, p, Vector3.UP, 0.1)
 	Gore.gib(world, p, "meat", {}, Vector3.UP, 0.0)
@@ -402,6 +407,8 @@ func _add_view(player) -> void:
 	vp.add_child(layer)
 	var blur := MotionBlur.new()
 	layer.add_child(blur)
+	var sfx = preload("res://scripts/screen_fx.gd").new()
+	layer.add_child(sfx)
 	var hud_layer := CanvasLayer.new()
 	hud_layer.layer = 1
 	vp.add_child(hud_layer)
@@ -411,7 +418,7 @@ func _add_view(player) -> void:
 	hud.player = player
 	hud.game = self
 	hud_layer.add_child(hud)
-	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "rays": rays, "ink": ink, "player": player, "fov": 70.0,
+	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "rays": rays, "ink": ink, "sfx": sfx, "player": player, "fov": 70.0,
 		"scope_vp": null, "scope_cam": null}
 	_views.append(view)
 
@@ -557,7 +564,7 @@ func _update_cameras(delta: float) -> void:
 		var hurt_fx: float = 0.0
 		if p.alive and p.health < p.stats.max_health * 0.3:
 			hurt_fx = 0.5 + 0.5 * sin(time * 5.0)
-		v.ink.set_fx(spd, p.blast_blur, maxf(hurt_fx, p.hurt_flash * 0.6) if p.alive else 0.0)
+		v.sfx.set_fx(spd, p.blast_blur, maxf(hurt_fx, p.hurt_flash * 0.6) if p.alive else 0.0)
 		v.blur.track(cam)
 		_focus(cam, delta)
 		if p.vehicle != null or p.picking or p.taunt_view > 0.05 or (_debug_third and p.index == 0):
@@ -992,14 +999,27 @@ func respawn_default(p) -> void:
 
 
 func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim) -> void:
-	Fx.flash(world, pos, Color(1.0, 0.6, 0.2, 0.85), radius * 0.25, radius, 0.3)
-	Fx.flash(world, pos, Color(1.0, 0.95, 0.7, 0.95), radius * 0.1, radius * 0.55, 0.18)
-	Fx.burst(world, pos, Color(1.0, 0.75, 0.3), 16, radius * 4.0, 0.4, 0.5, -6.0)
-	Fx.puff(world, pos, Color(0.4, 0.36, 0.45, 0.7), 10, radius * 0.5)
-	Fx.ring(world, pos, Color(1, 1, 1, 0.8), radius * 0.2, radius * 1.1, 0.3)
-	Fx.sparks(world, pos, Color(1.0, 0.7, 0.3), 26, radius * 5.0, Vector3.UP, 180.0, 0.6)
-	Fx.light(world, pos, Color(1.0, 0.65, 0.3), 8.0, radius * 4.0, 0.4)
-	Fx.smoke(world, pos, clampf(radius / 3.0, 0.6, 1.6))
+	# Something blew up: a blinding flash, a rolling fireball, embers flung
+	# out in streaks, a shock ring and a ring of dust along the ground, and a
+	# column of black smoke that hangs around for a few seconds. Big blasts
+	# leave a fire burning.
+	var sz := clampf(radius / 3.0, 0.5, 2.0)
+	# Many blasts at once (a rocket fight): lighter effects so it holds 60.
+	var load := Fx.blast_load()
+	var k := 1.0 if load <= 2 else (0.55 if load <= 4 else 0.3)
+	Fx.flash(world, pos, Color(1.0, 0.95, 0.8, 0.9), radius * 0.12, radius * 0.5, 0.09)
+	Fx.fireball(world, pos, sz, int((18 + 10 * sz) * k))
+	Fx.embers(world, pos, sz, int((20 + 14 * sz) * k))
+	Fx.ring(world, pos, Color(1, 0.95, 0.85, 0.8), radius * 0.2, radius * 1.3, 0.3)
+	if k > 0.5:
+		Fx.dust_ring(world, Vector3(pos.x, pos.y - 0.4, pos.z), sz)
+	Fx.smoke_column(world, pos + Vector3(0, 0.5, 0), sz * 1.2, Color(0.12, 0.11, 0.12), int((14 + 8 * sz) * k))
+	Fx.light(world, pos, Color(1.0, 0.6, 0.25), 10.0, radius * 4.5, 0.55, k > 0.5)
+	if radius >= 3.0 and k > 0.5 and Fx.can_add_fire() and randf() < 0.45:
+		var down := PhysicsRayQueryParameters3D.create(pos + Vector3(0, 0.5, 0), pos + Vector3(0, -3.0, 0), 1)
+		var gh := world.get_world_3d().direct_space_state.intersect_ray(down)
+		if gh:
+			Fx.fire_patch(world, gh.position, clampf(radius * 0.18, 0.4, 0.9), randf_range(3.0, 5.0))
 	Fx.decal(world, pos, Vector3.UP, "scorch", radius * 1.5)
 	Sfx.play_at("boom", pos, -1.0)
 	for p in players:

@@ -70,6 +70,8 @@ var can_hit_owner := false
 var color := Color.WHITE
 var _ignore: Array = []        # RIDs of players already pierced
 var _smoke_t := 0.0
+var _trail_fx: GPUParticles3D = null   # smoke (and fire) trail of rockets / fireballs
+static var _flame_quad: QuadMesh
 var _direct = null             # player hit directly (skipped by our own explosion)
 var _core: MeshInstance3D
 var _trail: MeshInstance3D
@@ -136,8 +138,17 @@ func setup_stats(p, s, dir: Vector3, damage_mult := 1.0, ignore: Array = []) -> 
 	_core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_core)
 	if flame:
-		_core.material_override = _flame_mat
-		_core.scale = Vector3.ONE * radius
+		# A tongue of fire: a soft billboard flame sprite that swells as it flies.
+		if _flame_quad == null:
+			_flame_quad = QuadMesh.new()
+			_flame_mat.albedo_texture = Fx.fire_texture()
+			_flame_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			_flame_mat.billboard_keep_scale = true
+			_flame_mat.albedo_color = Color(1.6, 0.7, 0.18, 0.6)
+			_flame_quad.material = _flame_mat
+		_core.mesh = _flame_quad
+		_core.material_override = null
+		_core.scale = Vector3.ONE * radius * 2.5
 		return
 	projectile = s.projectile
 	if PROJECTILES.has(projectile):
@@ -183,6 +194,7 @@ func orient() -> void:
 
 func _physics_process(delta: float) -> void:
 	if not is_instance_valid(shooter):
+		_drop_trail()
 		queue_free()
 		return
 	life -= delta
@@ -191,6 +203,9 @@ func _physics_process(delta: float) -> void:
 		if fuse > 0.0:
 			_impact(global_position, null)
 		else:
+			_drop_trail()
+			if flame and randf() < 0.3:
+				Fx.puff(game.world, global_position, Color(0.25, 0.23, 0.23, 0.45), 1, radius * 4.0)
 			queue_free()
 		return
 
@@ -200,7 +215,7 @@ func _physics_process(delta: float) -> void:
 			global_position = _stuck_to.global_position + _stuck_off
 		return
 	if flame:
-		_core.scale = Vector3.ONE * radius * (0.6 + age * 5.0)
+		_core.scale = Vector3.ONE * radius * (0.6 + age * 5.0) * 2.6
 	if homing > 0.0:
 		_steer(delta)
 	if vortex > 0.0:
@@ -215,11 +230,10 @@ func _physics_process(delta: float) -> void:
 		_model.rotation.x += _spin * delta
 	_travel += vel.length() * delta
 	vel.y -= gravity * delta
-	if smoke:
-		_smoke_t -= delta
-		if _smoke_t <= 0.0:
-			_smoke_t = 0.035
-			Fx.puff(game.world, global_position, Color(0.9, 0.9, 1.0, 0.45), 1, radius * 3.5)
+	if smoke and _trail_fx == null:
+		# One continuous GPU trail instead of a puff node every few frames:
+		# smoke for rockets, smoke and fire for fireballs.
+		_trail_fx = Fx.trail(self, poison > 0.0 and explosive > 0.0, radius)
 
 	var from := global_position
 	var to := from + vel * delta
@@ -421,7 +435,23 @@ func _impact(pos: Vector3, normal) -> void:
 			Fx.decal(game.world, pos, n, "hole", clampf(radius * 5.0, 0.18, 0.5))
 			var cls: String = "wood" if _hit_collider != null and is_instance_valid(_hit_collider) and _hit_collider.has_method("knock") else game.map.surface_kind(pos, n)
 			Fx.impact(game.world, pos, n, cls)
+	_drop_trail()
 	queue_free()
+
+
+## The trail stays behind in the world to finish fading when the bullet goes.
+func _drop_trail() -> void:
+	if _trail_fx == null or not is_instance_valid(_trail_fx):
+		return
+	var xf := _trail_fx.global_transform
+	remove_child(_trail_fx)
+	game.world.add_child(_trail_fx)
+	_trail_fx.global_transform = xf
+	_trail_fx.emitting = false
+	var tw := _trail_fx.create_tween()
+	tw.tween_interval(_trail_fx.lifetime + 0.2)
+	tw.tween_callback(_trail_fx.queue_free)
+	_trail_fx = null
 
 
 ## Sticky bomb: stop here (or ride along on `victim`) and blow up in a second.

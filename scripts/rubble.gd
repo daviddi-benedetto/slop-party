@@ -97,6 +97,9 @@ func _collapse() -> void:
 	var centre := global_transform * Vector3(0, size.y * 0.5, 0)
 	Debris.burst(world, Transform3D(global_transform.basis, centre), size, _brick * 0.9, color.darkened(0.1), clampi(int(size.x * size.y * 2.2), 10, 30), Vector3.ZERO, 6.0)
 	Fx.puff(world, centre, Color(0.75, 0.72, 0.68, 0.7), 16, maxf(size.x, size.y) * 0.5)
+	# A wall coming down throws up a billowing cloud of dust.
+	Fx.smoke_column(world, centre, clampf(maxf(size.x, size.y) * 0.45, 0.8, 2.2), Color(0.66, 0.62, 0.56), 14, 3.0)
+	Fx.dust_ring(world, Vector3(centre.x, global_position.y, centre.z), clampf(maxf(size.x, size.y) * 0.4, 0.7, 2.0), Color(0.66, 0.62, 0.56))
 	Sfx.play_at("crumble", global_position, 2.0, randf_range(0.85, 1.1))
 	# Leave a low heap: the bottom course, jumbled.
 	var nx := maxi(2, int(round(size.x / _brick.x)))

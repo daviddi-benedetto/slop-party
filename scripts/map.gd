@@ -2357,6 +2357,8 @@ func _forest(r: Rect2, count: int, mirror := true) -> void:
 ## crates and a log to sit on.
 func _camp(pos: Vector3, mirror := true) -> void:
 	_model("survival/Campfire", pos, 0.0, 3.2, mirror, "none")
+	for fp in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		Fx.fire_patch(self, fp + Vector3(0, 0.25, 0), 0.35, 0.0, false)
 	_glow(pos + Vector3(0, 1.0, 0), Color(1.0, 0.6, 0.25), 9.0, 2.2 / maxf(light_scale, 0.5), mirror)
 	_model("survival/Tent", pos + Vector3(4.6, 0, 1.6), -1.2, 5.0, mirror)
 	_model("survival/Tent_Canvas", pos + Vector3(-4.2, 0, 3.6), 0.9, 5.0, mirror)
@@ -2524,6 +2526,8 @@ func _lava(center: Vector3, size: Vector3) -> void:
 		_hazards.append(area)
 		for i in 3:
 			_glow(c + Vector3((i - 1) * size.x * 0.33, 1.0, -sgn * 0.5), Color(1.0, 0.4, 0.1), 8.0, 1.5 / maxf(light_scale, 0.5), false)
+		# Embers and heat rising off the molten rock.
+		Fx.ember_field(self, c + Vector3(0, 0.1, 0), Vector3(size.x * 0.5, 0.05, size.z * 0.5))
 
 
 func _spawns(points: Array, mirror := true) -> void:

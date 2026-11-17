@@ -18,6 +18,19 @@ static var _confetti_ramp: Gradient
 static var _decal_tex := {}          # kind -> ImageTexture (generated once)
 static var _decals: Array = []       # pooled bullet holes / scorch marks, oldest first
 static var _prints: Array = []       # pooled paw prints (their own pool: they never push out bullet holes)
+static var _smoke_img_tex: ImageTexture
+static var _fire_img_tex: ImageTexture
+static var _star_tex: ImageTexture
+static var _fire_mat: StandardMaterial3D
+static var _smoke_mat: StandardMaterial3D
+static var _ember_mat: StandardMaterial3D
+static var _ramps := {}
+static var _blasts: Array = []       # recent explosion times (msec): load shedding
+static var _fires := 0               # ground fires burning right now
+static var _quads := {}
+static var _gpool := {}              # pooled one-shot particle nodes per effect
+static var _pms := {}                # cached ParticleProcessMaterials (building one is costly)
+static var _curves := {}
 static var _casing_mesh: CylinderMesh
 static var _casing_mat: StandardMaterial3D
 const MAX_DECALS := 48
@@ -82,7 +95,7 @@ static func _init_shared() -> void:
 	tex.width = 64
 	tex.height = 64
 	_mat_soft = _particle_mat()
-	_mat_soft.albedo_texture = tex
+	_mat_soft.albedo_texture = smoke_texture()
 	_mat_flat = _particle_mat()
 	_mat_add = _particle_mat()
 	_mat_add.albedo_texture = tex
@@ -422,8 +435,449 @@ static func smoke(parent: Node, pos: Vector3, size := 1.0) -> void:
 	p.emitting = true
 
 
+# --------------------------------------------------------------------------
+# Fire, smoke, embers (GPU particles: cheap on the CPU, soft and dramatic)
+# --------------------------------------------------------------------------
+
+## A cloudy puff: soft round alpha broken up by noise (smoke, dust, fire).
+static func smoke_texture() -> ImageTexture:
+	if _smoke_img_tex == null:
+		_smoke_img_tex = _puff_texture(41, 1.0)
+	return _smoke_img_tex
+
+
+static func fire_texture() -> ImageTexture:
+	if _fire_img_tex == null:
+		_fire_img_tex = _puff_texture(77, 1.6)
+	return _fire_img_tex
+
+
+static func _puff_texture(seed_i: int, core: float) -> ImageTexture:
+	var n := 64
+	var img := Image.create(n, n, true, Image.FORMAT_RGBA8)
+	var noise := FastNoiseLite.new()
+	noise.seed = seed_i
+	noise.frequency = 0.09
+	noise.fractal_octaves = 3
+	for y in n:
+		for x in n:
+			var u := (x + 0.5) / n * 2.0 - 1.0
+			var v := (y + 0.5) / n * 2.0 - 1.0
+			var r := sqrt(u * u + v * v)
+			var nz := noise.get_noise_2d(x, y) * 0.5 + 0.5
+			var a := clampf((1.0 - r) * 1.4 - (1.0 - nz) * 0.55, 0.0, 1.0)
+			a = pow(a, core)
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
+
+
+## Four-point star for muzzle flashes.
+static func star_texture() -> ImageTexture:
+	if _star_tex == null:
+		var n := 64
+		var img := Image.create(n, n, true, Image.FORMAT_RGBA8)
+		for y in n:
+			for x in n:
+				var u := absf((x + 0.5) / n * 2.0 - 1.0)
+				var v := absf((y + 0.5) / n * 2.0 - 1.0)
+				var a := maxf(1.0 - (u * 6.0 + v * 1.1), 1.0 - (v * 6.0 + u * 1.1))
+				a = maxf(a, 1.0 - sqrt(u * u + v * v) * 2.2)
+				img.set_pixel(x, y, Color(1, 1, 1, clampf(a, 0.0, 1.0)))
+		img.generate_mipmaps()
+		_star_tex = ImageTexture.create_from_image(img)
+	return _star_tex
+
+
+static func _gpu_mats() -> void:
+	if _fire_mat != null:
+		return
+	_fire_mat = StandardMaterial3D.new()
+	_fire_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_fire_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_fire_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_fire_mat.vertex_color_use_as_albedo = true
+	_fire_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	_fire_mat.billboard_keep_scale = true
+	_fire_mat.albedo_texture = fire_texture()
+	_fire_mat.disable_receive_shadows = true
+	_smoke_mat = StandardMaterial3D.new()
+	# Unshaded: overlapping lit smoke quads in six views cost too much.
+	_smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_smoke_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_smoke_mat.vertex_color_use_as_albedo = true
+	_smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	_smoke_mat.billboard_keep_scale = true
+	_smoke_mat.albedo_texture = smoke_texture()
+	_smoke_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	_smoke_mat.roughness = 1.0
+	_smoke_mat.disable_receive_shadows = true
+	_ember_mat = StandardMaterial3D.new()
+	_ember_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_ember_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_ember_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_ember_mat.vertex_color_use_as_albedo = true
+	_ember_mat.albedo_texture = smoke_texture()
+
+
+static func _ramp(key: String, stops: Array) -> GradientTexture1D:
+	if not _ramps.has(key):
+		var g := Gradient.new()
+		var offs := PackedFloat32Array()
+		var cols := PackedColorArray()
+		for s in stops:
+			offs.append(s[0])
+			cols.append(s[1])
+		g.offsets = offs
+		g.colors = cols
+		var t := GradientTexture1D.new()
+		t.gradient = g
+		t.use_hdr = true
+		_ramps[key] = t
+	return _ramps[key]
+
+
+static func _curve(key: String, pts: Array) -> CurveTexture:
+	if not _curves.has(key):
+		var c := Curve.new()
+		c.max_value = 4.0
+		for p in pts:
+			c.add_point(p)
+		var t := CurveTexture.new()
+		t.curve = c
+		_curves[key] = t
+	return _curves[key]
+
+
+static func _gpu(parent: Node, pos: Vector3, amount: int, life: float, pm: ParticleProcessMaterial, mat: Material, quad: Vector2, one_shot := true, explosive := 0.9) -> GPUParticles3D:
+	_gpu_mats()
+	# One-shot bursts are pooled: making a particle node every blast costs
+	# more than the blast itself.
+	var pk := "%d_%d_%d_%.2f_%.2f" % [pm.get_instance_id(), mat.get_instance_id(), amount, life, quad.x]
+	if one_shot and _gpool.has(pk):
+		var list: Array = _gpool[pk]
+		for n in list:
+			if is_instance_valid(n) and n.get_meta("free", false) and n.get_parent() == parent:
+				n.set_meta("free", false)
+				n.global_position = pos
+				n.restart()
+				parent.get_tree().create_timer(life + 0.6, false).timeout.connect(func():
+					if is_instance_valid(n):
+						n.set_meta("free", true))
+				return n
+	var p := GPUParticles3D.new()
+	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	p.amount = amount
+	p.lifetime = life
+	p.one_shot = one_shot
+	p.explosiveness = explosive if one_shot else 0.0
+	p.randomness = 0.4
+	p.process_material = pm
+	var qk := "%d_%.2f_%.2f" % [mat.get_instance_id(), quad.x, quad.y]
+	if not _quads.has(qk):
+		var q := QuadMesh.new()
+		q.size = quad
+		q.material = mat
+		_quads[qk] = q
+	p.draw_pass_1 = _quads[qk]
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.visibility_aabb = AABB(Vector3(-12, -4, -12), Vector3(24, 24, 24))
+	parent.add_child(p)
+	p.global_position = pos
+	p.emitting = true
+	if one_shot:
+		if not _gpool.has(pk):
+			_gpool[pk] = []
+		var list2: Array = _gpool[pk]
+		list2 = list2.filter(func(n): return is_instance_valid(n))
+		_gpool[pk] = list2
+		if list2.size() < 6:
+			list2.append(p)
+			p.set_meta("free", false)
+			parent.get_tree().create_timer(life + 0.6, false).timeout.connect(func():
+				if is_instance_valid(p):
+					p.set_meta("free", true))
+		else:
+			_free_later(p, parent, life + 0.6)
+	return p
+
+
+## How busy the effects are: explosions in the last second (game.explode
+## scales down its effects when several overlap).
+static func blast_load() -> int:
+	var now := Time.get_ticks_msec()
+	while not _blasts.is_empty() and now - int(_blasts[0]) > 1000:
+		_blasts.pop_front()
+	_blasts.append(now)
+	return _blasts.size()
+
+
+## A cached process material: `key` names the effect and its parameters.
+static func _pm(key: String) -> ParticleProcessMaterial:
+	return _pms.get(key)
+
+
+static func _keep(key: String, pm: ParticleProcessMaterial) -> ParticleProcessMaterial:
+	_pms[key] = pm
+	return pm
+
+
+static func can_add_fire() -> bool:
+	return _fires < 4
+
+
+## A rolling fireball: hot white core, yellow and orange flame licking out
+## and up, cooling to dark red before it vanishes.
+static func fireball(parent: Node, pos: Vector3, size := 1.0, amount := 26) -> void:
+	_gpu_mats()
+	var key := "fireball_%d" % roundi(size * 4.0)
+	var pm := _pm(key)
+	if pm == null:
+		pm = ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+		pm.emission_sphere_radius = 0.35 * size
+		pm.direction = Vector3.UP
+		pm.spread = 180.0
+		pm.initial_velocity_min = 1.5 * size
+		pm.initial_velocity_max = 6.0 * size
+		pm.gravity = Vector3(0, 3.5, 0)
+		pm.damping_min = 3.0
+		pm.damping_max = 6.0
+		pm.angle_min = -180.0
+		pm.angle_max = 180.0
+		pm.angular_velocity_min = -90.0
+		pm.angular_velocity_max = 90.0
+		pm.scale_min = 0.7
+		pm.scale_max = 1.3
+		pm.scale_curve = _curve("fire", [Vector2(0, 0.5), Vector2(0.25, 1.4), Vector2(1, 0.4)])
+		pm.color_ramp = _ramp("fire", [[0.0, Color(2.0, 1.7, 1.1, 1.0)], [0.15, Color(1.7, 0.85, 0.22, 1.0)], [0.45, Color(1.1, 0.3, 0.05, 0.85)], [0.75, Color(0.3, 0.07, 0.03, 0.5)], [1.0, Color(0.04, 0.02, 0.02, 0.0)]])
+		_keep(key, pm)
+	_gpu(parent, pos, amount, 0.9, pm, _fire_mat, Vector2.ONE * 1.9 * size)
+
+
+## A billowing column of smoke that rises, spreads and drifts for seconds.
+## `tint`: dark grey for fire, pale for dust.
+static func smoke_column(parent: Node, pos: Vector3, size := 1.0, tint := Color(0.16, 0.15, 0.16), amount := 16, life := 3.6) -> void:
+	_gpu_mats()
+	var key := "smoke_%d" % roundi(size * 4.0) + tint.to_html()
+	var pm := _pm(key)
+	if pm == null:
+		pm = ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+		pm.emission_sphere_radius = 0.5 * size
+		pm.direction = Vector3.UP
+		pm.spread = 35.0
+		pm.initial_velocity_min = 1.0 * size
+		pm.initial_velocity_max = 3.2 * size
+		pm.gravity = Vector3(0.25, 0.6, 0.1)
+		pm.damping_min = 0.6
+		pm.damping_max = 1.4
+		pm.angle_min = -180.0
+		pm.angle_max = 180.0
+		pm.angular_velocity_min = -25.0
+		pm.angular_velocity_max = 25.0
+		pm.turbulence_enabled = true
+		pm.turbulence_noise_strength = 1.2
+		pm.turbulence_noise_scale = 3.0
+		pm.turbulence_influence_min = 0.05
+		pm.turbulence_influence_max = 0.15
+		pm.scale_min = 0.8
+		pm.scale_max = 1.3
+		pm.scale_curve = _curve("smoke", [Vector2(0, 0.45), Vector2(0.3, 1.1), Vector2(1, 1.9)])
+		pm.color_ramp = _ramp("smoke_%s" % tint.to_html(), [[0.0, Color(tint, 0.0)], [0.08, Color(tint, 0.65)], [0.55, Color(tint.lerp(Color(0.5, 0.5, 0.52), 0.2), 0.45)], [1.0, Color(tint.lerp(Color(0.6, 0.6, 0.62), 0.4), 0.0)]])
+		_keep(key, pm)
+	var p := _gpu(parent, pos, amount, life, pm, _smoke_mat, Vector2.ONE * 1.7 * size, true, 0.75)
+	p.sorting_offset = -1.0
+
+
+## Glowing embers flung out in streaks, falling and fading.
+static func embers(parent: Node, pos: Vector3, size := 1.0, amount := 30, col := Color(1.0, 0.55, 0.15)) -> void:
+	_gpu_mats()
+	var key := "embers_%d" % roundi(size * 4.0) + col.to_html()
+	var pm := _pm(key)
+	if pm == null:
+		pm = ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+		pm.emission_sphere_radius = 0.3 * size
+		pm.direction = Vector3.UP
+		pm.spread = 75.0
+		pm.initial_velocity_min = 5.0 * size
+		pm.initial_velocity_max = 13.0 * size
+		pm.gravity = Vector3(0, -9.0, 0)
+		pm.damping_min = 0.5
+		pm.damping_max = 1.5
+		pm.particle_flag_align_y = true
+		pm.scale_min = 0.6
+		pm.scale_max = 1.2
+		pm.scale_curve = _curve("ember", [Vector2(0, 1.0), Vector2(1, 0.0)])
+		pm.color_ramp = _ramp("ember_%s" % col.to_html(), [[0.0, Color(col.r * 4.0, col.g * 4.0, col.b * 4.0, 1.0)], [0.6, Color(col.r * 2.0, col.g * 1.2, col.b, 1.0)], [1.0, Color(col.r, col.g * 0.4, 0.0, 0.0)]])
+		_keep(key, pm)
+	_gpu(parent, pos, amount, 1.4, pm, _ember_mat, Vector2(0.05, 0.45) * clampf(size, 0.6, 1.5))
+
+
+## A ring of dust blasted outwards along the ground.
+static func dust_ring(parent: Node, pos: Vector3, size := 1.0, tint := Color(0.62, 0.58, 0.52)) -> void:
+	_gpu_mats()
+	var key := "dust_%d" % roundi(size * 4.0) + tint.to_html()
+	var pm := _pm(key)
+	if pm == null:
+		pm = ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_RING
+		pm.emission_ring_axis = Vector3.UP
+		pm.emission_ring_radius = 0.6 * size
+		pm.emission_ring_inner_radius = 0.3 * size
+		pm.emission_ring_height = 0.1
+		pm.direction = Vector3(1, 0, 0)
+		pm.spread = 180.0
+		pm.flatness = 1.0
+		pm.initial_velocity_min = 6.0 * size
+		pm.initial_velocity_max = 10.0 * size
+		pm.gravity = Vector3(0, 0.4, 0)
+		pm.damping_min = 6.0
+		pm.damping_max = 9.0
+		pm.angle_min = -180.0
+		pm.angle_max = 180.0
+		pm.scale_curve = _curve("dust", [Vector2(0, 0.5), Vector2(1, 1.8)])
+		pm.color_ramp = _ramp("dust_%s" % tint.to_html(), [[0.0, Color(tint, 0.0)], [0.1, Color(tint, 0.55)], [1.0, Color(tint, 0.0)]])
+		_keep(key, pm)
+	_gpu(parent, pos + Vector3(0, 0.25, 0), 18, 1.6, pm, _smoke_mat, Vector2.ONE * 1.2 * size, true, 1.0)
+
+
+## A fire that keeps burning where it is for `time` seconds (0 = for ever):
+## licking flames, a little smoke, flickering light.
+static func fire_patch(parent: Node, pos: Vector3, radius := 0.6, time := 4.0, light := true) -> Node3D:
+	_gpu_mats()
+	var root := Node3D.new()
+	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	parent.add_child(root)
+	root.global_position = pos
+	if time > 0.0:
+		_fires += 1
+		root.tree_exiting.connect(func(): _fires -= 1)
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	pm.emission_sphere_radius = radius
+	pm.direction = Vector3.UP
+	pm.spread = 8.0
+	pm.initial_velocity_min = 1.6
+	pm.initial_velocity_max = 3.0
+	pm.gravity = Vector3(0, 2.5, 0)
+	pm.angle_min = -180.0
+	pm.angle_max = 180.0
+	pm.angular_velocity_min = -60.0
+	pm.angular_velocity_max = 60.0
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.8
+	pm.turbulence_noise_scale = 2.0
+	pm.scale_curve = _curve("flame", [Vector2(0, 0.7), Vector2(0.3, 1.0), Vector2(1, 0.15)])
+	pm.color_ramp = _ramp("flame", [[0.0, Color(1.6, 1.1, 0.4, 0.0)], [0.1, Color(1.7, 0.95, 0.25, 0.9)], [0.45, Color(1.3, 0.38, 0.06, 0.7)], [1.0, Color(0.25, 0.04, 0.02, 0.0)]])
+	var f := _gpu(root, pos, int(clampf(radius * 60.0, 18.0, 50.0)), 0.7, pm, _fire_mat, Vector2(0.55, 0.85) * (0.8 + radius * 0.7), false)
+	var sm := ParticleProcessMaterial.new()
+	sm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+	sm.emission_sphere_radius = radius * 0.6
+	sm.direction = Vector3.UP
+	sm.spread = 15.0
+	sm.initial_velocity_min = 1.2
+	sm.initial_velocity_max = 2.2
+	sm.gravity = Vector3(0.3, 0.5, 0.1)
+	sm.angle_min = -180.0
+	sm.angle_max = 180.0
+	sm.scale_curve = _curve("smoke", [Vector2(0, 0.45), Vector2(0.3, 1.2), Vector2(1, 2.4)])
+	sm.color_ramp = _ramp("firesmoke", [[0.0, Color(0.12, 0.11, 0.11, 0.0)], [0.25, Color(0.15, 0.14, 0.14, 0.4)], [1.0, Color(0.4, 0.4, 0.42, 0.0)]])
+	var s := _gpu(root, pos + Vector3(0, 1.0, 0), 8, 2.6, sm, _smoke_mat, Vector2.ONE * 1.3, false)
+	var l: OmniLight3D = null
+	if light:
+		l = OmniLight3D.new()
+		l.light_color = Color(1.0, 0.55, 0.2)
+		l.light_energy = 2.2
+		l.omni_range = 4.0 + radius * 3.0
+		l.position = Vector3(0, 0.8, 0)
+		root.add_child(l)
+		var tw := l.create_tween().set_loops()
+		tw.tween_property(l, "light_energy", 1.4, 0.09)
+		tw.tween_property(l, "light_energy", 2.6, 0.13)
+		tw.tween_property(l, "light_energy", 1.9, 0.07)
+	if time > 0.0:
+		parent.get_tree().create_timer(time, false).timeout.connect(func():
+			if is_instance_valid(root):
+				f.emitting = false
+				s.emitting = false
+				if l != null:
+					l.create_tween().tween_property(l, "light_energy", 0.0, 0.6)
+				_free_later(root, root.get_parent(), 3.0))
+	return root
+
+
+## Embers drifting up off a hot surface (lava), for ever.
+static func ember_field(parent: Node, centre: Vector3, extents: Vector3) -> void:
+	_gpu_mats()
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = extents
+	pm.direction = Vector3.UP
+	pm.spread = 15.0
+	pm.initial_velocity_min = 0.6
+	pm.initial_velocity_max = 1.8
+	pm.gravity = Vector3(0, 0.5, 0)
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.8
+	pm.turbulence_noise_scale = 2.5
+	pm.scale_min = 0.5
+	pm.scale_max = 1.2
+	pm.scale_curve = _curve("ember", [Vector2(0, 1.0), Vector2(1, 0.0)])
+	pm.color_ramp = _ramp("lava_ember", [[0.0, Color(4.0, 1.6, 0.3, 0.0)], [0.15, Color(4.0, 1.5, 0.3, 1.0)], [1.0, Color(1.5, 0.2, 0.0, 0.0)]])
+	var p := _gpu(parent, centre, clampi(int(extents.x * extents.z * 6.0), 12, 60), 2.5, pm, _ember_mat, Vector2.ONE * 0.09, false)
+	p.visibility_aabb = AABB(-extents - Vector3(1, 1, 1), extents * 2.0 + Vector3(2, 6, 2))
+	p.preprocess = 2.5
+
+
+## A continuous trail behind a projectile (child of it; world-space
+## particles). Smoke for rockets; with `fire`, a fiery core and embers too.
+static func trail(owner: Node3D, fire: bool, radius: float) -> GPUParticles3D:
+	_gpu_mats()
+	var key := "trail_%s_%d" % [fire, roundi(radius * 40.0)]
+	var pm := _pm(key)
+	if pm == null:
+		pm = ParticleProcessMaterial.new()
+		pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+		pm.emission_sphere_radius = radius * 0.8
+		pm.direction = Vector3.UP
+		pm.spread = 180.0
+		pm.initial_velocity_min = 0.1
+		pm.initial_velocity_max = 0.6
+		pm.gravity = Vector3(0, 0.8, 0)
+		pm.angle_min = -180.0
+		pm.angle_max = 180.0
+		pm.scale_curve = _curve("trail", [Vector2(0, 0.4), Vector2(1, 1.8)])
+		if fire:
+			pm.color_ramp = _ramp("fireball_trail", [[0.0, Color(1.8, 1.0, 0.3, 0.9)], [0.25, Color(1.2, 0.35, 0.06, 0.7)], [0.6, Color(0.2, 0.17, 0.17, 0.5)], [1.0, Color(0.3, 0.3, 0.32, 0.0)]])
+		else:
+			pm.color_ramp = _ramp("rocket_trail", [[0.0, Color(0.95, 0.95, 1.0, 0.0)], [0.08, Color(0.9, 0.9, 0.95, 0.6)], [1.0, Color(0.6, 0.6, 0.65, 0.0)]])
+		_keep(key, pm)
+	var mat: Material = _fire_mat if fire else _smoke_mat
+	var qsize := Vector2.ONE * radius * (9.0 if fire else 7.0)
+	var qk := "%d_%.2f_%.2f" % [mat.get_instance_id(), qsize.x, qsize.y]
+	if not _quads.has(qk):
+		var q := QuadMesh.new()
+		q.size = qsize
+		q.material = mat
+		_quads[qk] = q
+	var p := GPUParticles3D.new()
+	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	p.amount = 28 if fire else 18
+	p.lifetime = 0.8 if fire else 1.1
+	p.local_coords = false
+	p.process_material = pm
+	p.draw_pass_1 = _quads[qk]
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.visibility_aabb = AABB(Vector3(-40, -40, -40), Vector3(80, 80, 80))
+	owner.add_child(p)
+	p.emitting = true
+	return p
+
+
 ## A short flash of light that fades out (explosions, deaths).
-static func light(parent: Node, pos: Vector3, color: Color, energy: float, radius: float, time: float) -> void:
+static func light(parent: Node, pos: Vector3, color: Color, energy: float, radius: float, time: float, flicker := false) -> void:
 	var l := OmniLight3D.new()
 	l.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	l.light_color = color
@@ -432,7 +886,11 @@ static func light(parent: Node, pos: Vector3, color: Color, energy: float, radiu
 	parent.add_child(l)
 	l.global_position = pos
 	var tw := l.create_tween()
-	tw.tween_property(l, "light_energy", 0.0, time).set_ease(Tween.EASE_OUT)
+	if flicker:
+		tw.tween_property(l, "light_energy", energy * 0.6, time * 0.15)
+		tw.tween_property(l, "light_energy", energy * 0.9, time * 0.1)
+		tw.tween_property(l, "light_energy", energy * 0.45, time * 0.15)
+	tw.tween_property(l, "light_energy", 0.0, time * (0.6 if flicker else 1.0)).set_ease(Tween.EASE_OUT)
 	tw.tween_callback(l.queue_free)
 
 

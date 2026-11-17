@@ -16,6 +16,7 @@ extends Node3D
 ## The "bob" setting scales the walking part.
 
 const FpArm = preload("res://scripts/fp_arm.gd")
+const Fx = preload("res://scripts/fx.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
 
@@ -232,8 +233,14 @@ func set_weapon(id: int) -> void:
 	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	fmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	fmat.albedo_color = Color(_color.lerp(Color(1.0, 0.9, 0.6), 0.6) * 2.0, 0.9)
-	_flash = _ball(fmat, Vector3(_muzzle_xy.x, _muzzle_xy.y, _muzzle_z), Vector3.ONE * 0.05)
+	fmat.albedo_color = Color(_color.lerp(Color(1.0, 0.85, 0.5), 0.7) * 2.6, 1.0)
+	fmat.albedo_texture = Fx.star_texture()
+	fmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Muzzle flash: a hot four-point star facing the camera, a new angle
+	# every shot (update()).
+	var fq := QuadMesh.new()
+	fq.size = Vector2.ONE * 0.9
+	_flash = _part(fq, fmat, Vector3(_muzzle_xy.x, _muzzle_xy.y, _muzzle_z - 0.04))
 	_flash.visible = false
 	_swap = 0.0
 
@@ -1127,10 +1134,12 @@ func update(delta: float, p) -> void:
 		_spin_speed = lerpf(_spin_speed, 26.0 if p.recoil > 0.05 else 0.0, clampf(delta * 6.0, 0.0, 1.0))
 		_spin.rotation.z += _spin_speed * delta
 
-	_flash.visible = p.muzzle_flash > 0.0
+	_flash.visible = p.muzzle_flash > 0.0 and not _style in MELEE_STYLES and not _style in ["flamer", "hands_fire", "hands_frost", "staff_storm", "staff_arcane", "bow", "knives", "bomb"]
 	if _flash.visible:
-		var fs: float = (0.035 + p.muzzle_flash * 0.08) * clampf(p.stats.recoil_kick, 0.8, 1.8)
-		_flash.scale = Vector3(fs, fs, fs * 1.8)
+		if p.muzzle_flash > 0.95:
+			_flash.rotation.z = randf() * TAU
+		var fs: float = (0.05 + p.muzzle_flash * 0.12) * clampf(p.stats.recoil_kick, 0.8, 1.8)
+		_flash.scale = Vector3(fs, fs, 1.0)
 
 
 ## The melee knife: a plush paw holding a short blade, animated through
