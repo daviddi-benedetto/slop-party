@@ -52,21 +52,24 @@ void sky() {
 	col = mix(col, ground, smoothstep(0.0, -0.2, h));
 
 	if (stars > 0.0 && h > 0.0) {
-		vec2 suv = d.xz / (h + 0.4) * 60.0;
+		// Fewer, bigger, soft stars: tiny ones are smaller than a pixel and
+		// shimmer ("sparkle") as the view moves.
+		vec2 suv = d.xz / (h + 0.4) * 24.0;
 		vec2 cell = floor(suv);
 		float r = hash(cell);
 		vec2 off = vec2(hash(cell + 3.7), hash(cell + 9.1)) - 0.5;
-		float dist = length(fract(suv) - 0.5 - off * 0.6);
-		float star = smoothstep(0.09, 0.0, dist) * step(0.86, r);
-		col += vec3(0.9, 0.95, 1.0) * star * stars * (0.5 + r) * smoothstep(0.0, 0.25, h);
+		float dist = length(fract(suv) - 0.5 - off * 0.5);
+		float star = smoothstep(0.11, 0.02, dist) * step(0.9, r);
+		col += vec3(0.9, 0.95, 1.0) * star * stars * (0.35 + 0.5 * r) * smoothstep(0.05, 0.35, h);
 	}
 
 	if (aurora > 0.0 && h > 0.03) {
 		vec2 auv = vec2(atan(d.x, d.z) * 2.2, h * 5.0);
 		float band = fbm(vec2(auv.x * 1.6, auv.x * 0.3 + 4.0));
-		float curtain = smoothstep(0.35, 0.75, fbm(vec2(auv.x * 5.0, auv.y * 0.6))) * band;
+		// Soft, slow folds (finer detail broke up into blocky steps).
+		float curtain = smoothstep(0.3, 0.8, fbm(vec2(auv.x * 2.6, auv.y * 0.2))) * band;
 		float mask = smoothstep(0.03, 0.2, h) * smoothstep(0.75, 0.25, h);
-		col += mix(vec3(0.1, 1.0, 0.6), vec3(0.6, 0.3, 1.0), clamp(h * 2.2, 0.0, 1.0)) * curtain * mask * aurora * 0.9;
+		col += mix(vec3(0.1, 1.0, 0.6), vec3(0.6, 0.3, 1.0), clamp(h * 2.2, 0.0, 1.0)) * curtain * mask * aurora * 0.6;
 	}
 
 	float sd = max(dot(d, LIGHT0_DIRECTION), 0.0);

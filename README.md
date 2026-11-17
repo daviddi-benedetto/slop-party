@@ -1,6 +1,6 @@
-# Slop Game
+# Slop Party
 
-*(formerly Fragdeck: the repository, the project folder and the settings file keep the old name.)*
+*(formerly Slop Game, and before that Fragdeck. Old settings files carry over.)*
 
 Local splitscreen first-person shooter for 1–6 players on one PC, with five
 game modes:
@@ -120,8 +120,8 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Quarantine** (Zombies): a hospital campus with a clinic, triage tents, a
   warehouse, a motel, a tunnel and a morgue cellar.
 - **Frontline:** a town with towers, warehouses, bunkers and trenches.
-- **A world you can push around:** doors swing open as you walk through and
-  splinter when shot; furniture and clutter have weight (you shove a chair,
+- **A world you can push around:** doorways are open (no doors to get
+  stuck on); furniture and clutter have weight (you shove a chair,
   a fridge barely moves); glass shatters; fuel barrels explode; ruined walls
   crumble. Rooms are furnished for what they are, sparingly, so doorways
   stay clear.
@@ -151,6 +151,13 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Screen effects** (option): a speed blur at the edges when you dash or
   slide, a zoom blur when a blast goes off nearby, and colour fringing when
   you are badly hurt.
+- **Dramatic fire and smoke:** explosions throw a rolling fireball, streaks
+  of glowing embers, a shock ring, a ring of dust along the ground and a
+  column of black smoke that hangs for seconds; big blasts leave a fire
+  burning. The Flamer spits real tongues of flame, rockets and fireballs
+  leave smoke (and fire) trails, lava sheds embers, campfires burn, walls
+  coming down throw up dust clouds, and muzzle flashes are hot stars.
+- **Mystery boxes** float above their light rings, bobbing gently.
 - **Guns and feet:** brass shell casings fly out of the guns that eject
   them, smoke hangs at the muzzle, paws leave prints that fade, and slides
   kick up dust.
@@ -198,7 +205,7 @@ carries the notices that ship with the game. The UI fonts are Fredoka and Lilita
 
 ## Play
 
-Double-click **`Play.bat`**. It runs `build\SlopGame.exe` if it exists,
+Double-click **`Play.bat`**. It runs `build\SlopParty.exe` if it exists,
 otherwise it runs the project from source with the bundled engine.
 
 In the lobby each player presses **A** on their own gamepad to take a seat
@@ -275,7 +282,7 @@ Q / E to turn them):
 - **How to play:** every button, on foot, in a vehicle and in the lobby.
 - **Modes:** what each game mode is about.
 
-Options are saved in `fragdeck_settings.cfg` beside the game executable.
+Options are saved in `slop_party_settings.cfg` beside the game executable.
 
 Up to six gamepads are supported; one of the six seats can be keyboard + mouse
 instead. Screen layout: 1 player full screen, 2 stacked, 3–4 in a 2×2 grid,
@@ -296,10 +303,10 @@ fonts/                Fredoka and Lilita One UI fonts + their licences
 docs/                 architecture notes
 tools/                build.bat, setup_engine.ps1, smoke.sh, balance.sh
 engine/               bundled Godot editor + export templates  (not in git)
-build/SlopGame.exe    standalone single-file game              (not in git)
+build/SlopParty.exe    standalone single-file game              (not in git)
 ```
 
-`build\SlopGame.exe` on its own is also fully portable: it is a single file
+`build\SlopParty.exe` on its own is also fully portable: it is a single file
 with the game data embedded.
 
 ### Restoring from GitHub
@@ -313,7 +320,7 @@ tools\build.bat
 ```
 
 The first command re-downloads Godot 4.7.2 into `engine/`; the second
-re-exports `build\SlopGame.exe`. A ready-made build is also attached to the
+re-exports `build\SlopParty.exe`. A ready-made build is also attached to the
 repository's GitHub Releases.
 
 ## Developing

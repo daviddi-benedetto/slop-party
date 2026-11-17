@@ -1,4 +1,4 @@
-# Fragdeck – architecture and handoff notes
+# Slop Party – architecture and handoff notes
 
 Read this first if you are picking the project up. It describes what exists,
 how the pieces talk to each other, the non-obvious decisions, and what has and
@@ -50,7 +50,7 @@ has not been verified.
 |---|---|
 | Play | `Play.bat` |
 | Open editor | `Edit.bat` |
-| Export standalone exe | `tools\build.bat` → `build\SlopGame.exe` |
+| Export standalone exe | `tools\build.bat` → `build\SlopParty.exe` |
 | Re-download engine after a git clone | `tools\setup_engine.ps1 [-Templates]` |
 
 The engine binary is `engine\Godot_v4.7.2-stable_win64.exe` (use the
@@ -684,6 +684,23 @@ across the UI.
   `bullet._impact` on level hits, scorch marks from `game.explode`) that
   project only onto layer 1 and fade out; `map._ground_decals` scatters
   10-44 dirt and crack decals on the floor. Option "decals" turns both off.
+- **Fire and smoke** (fx.gd `fireball`, `smoke_column`, `embers`,
+  `dust_ring`, `fire_patch`, `ember_field`, `trail`): GPUParticles3D with
+  noise-textured puffs, HDR colour ramps and scale curves. Process
+  materials and quads are cached by effect and size, and one-shot bursts
+  are pooled (building them per blast cost frames in rocket fights);
+  `game.explode` sheds effects when several blasts overlap
+  (`Fx.blast_load`), and at most four ground fires burn at once. Smoke is
+  unshaded (lit smoke overdraw was too heavy at six views). Measured: a
+  six-view all-rocket match drops no more frames than before.
+- **Outline pass and transparency:** outline.gd multiplies edges dark
+  instead of copying the screen. A screen copy is taken before the
+  transparent pass, so painting it back erased every fire, smoke and spark
+  effect (that was the case from v0.21 until this fix). Screen effects that
+  must read the screen (screen_fx.gd) are a 2D post-process instead.
+- **Doors** are off (`map.DOORS`): doorways stay open; door.gd remains.
+- **Mystery boxes** (pickup.gd `_float`): the box floats `FLOAT_Y` above
+  the ring and bobs.
 - **Body language** (`character.animate`): player.gd sets `turn_rate`,
   `wall_side`, `sliding`, `hurt`, `low_health`, `happy` every frame;
   `hit_flash(from)` snaps the rig away from the hit. Eyes scale from their
@@ -959,7 +976,8 @@ What applies where:
 - FOV, screen shake, bot difficulty, rumble: `game.gd`. Damage numbers:
   `player.gd`.
 
-The file is saved as `fragdeck_settings.cfg` next to the executable (the
+The file is saved as `slop_party_settings.cfg` next to the executable (a
+leftover `fragdeck_settings.cfg` from before the rename is copied over; the
 `engine` folder when running from source, `build` for the exported game), not
 in the user profile, to keep the folder portable. Delete it to reset.
 
@@ -1098,7 +1116,7 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 - A settings file is read and applied (Low preset, wide FOV, hard bots).
 - Bots fight, die, pick cards, respawn; a match reaches the kill target, shows
   the podium and returns to the lobby.
-- The exported `build\SlopGame.exe` starts and plays.
+- The exported `build\SlopParty.exe` starts and plays.
 
 **Not verified:**
 - v0.12 (melee, taunts, magic and medieval weapons, Gun Game, Medieval,

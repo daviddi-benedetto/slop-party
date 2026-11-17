@@ -63,6 +63,7 @@ const Surface = preload("res://scripts/surface.gd")
 
 signal nav_built
 
+const DOORS := false              # hang doors in doorways (off: open doorways everywhere)
 const FURN := 2.15               # scale of the Kenney furniture kit models
 ## Loose clutter scattered on walkable spots after the nav graph exists:
 ## [model, scale, mass].
@@ -1486,6 +1487,9 @@ func _glass(pos: Vector3, w: float, h: float, along_z := false, mirror := true) 
 ## leaf runs from there along +X turned by `yaw`. It opens for bots, on the
 ## interact button for humans, and can be smashed.
 func _door(hinge: Vector3, yaw := 0.0, w := 1.7, h := 2.45, model := "doors/Door_Brown", mirror := true, hp := 110.0, label := "DOOR") -> void:
+	# Doorways are left open so the maps flow (doors only slowed people down).
+	if not DOORS:
+		return
 	for k in (2 if mirror else 1):
 		var d = Door.new()
 		d.width = w

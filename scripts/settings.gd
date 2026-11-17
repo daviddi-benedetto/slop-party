@@ -9,7 +9,7 @@ extends Node
 ## passed to apply_viewport(). Everything else reacts to the `changed` signal
 ## (map.gd, stage.gd, game.gd, sfx.gd) or simply reads v() when needed.
 ##
-## Saved to "fragdeck_settings.cfg" next to the executable, so the game folder
+## Saved to "slop_party_settings.cfg" next to the executable, so the game folder
 ## stays portable and nothing is written to the user profile.
 ##
 ## Dev flags (after "--"): --uncapped leaves v-sync / frame cap alone so
@@ -122,7 +122,11 @@ func _ready() -> void:
 		if item.has("key"):
 			_items[item.key] = item
 			idx[item.key] = item.def
-	_path = OS.get_executable_path().get_base_dir().path_join("fragdeck_settings.cfg")
+	var dir := OS.get_executable_path().get_base_dir()
+	_path = dir.path_join("slop_party_settings.cfg")
+	# Settings from before the rename (Fragdeck / Slop Game) carry over.
+	if not FileAccess.file_exists(_path) and FileAccess.file_exists(dir.path_join("fragdeck_settings.cfg")):
+		DirAccess.copy_absolute(dir.path_join("fragdeck_settings.cfg"), _path)
 	_load()
 	# Dev: --set-<key>=<choice index> overrides a setting for this run only.
 	for a in OS.get_cmdline_user_args():

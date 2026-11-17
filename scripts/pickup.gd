@@ -32,6 +32,8 @@ var _t := 0.0
 var _tint := Color.WHITE
 const OPEN_TIME := 1.5           # mystery box: lid open to weapon in hand
 var _lid: Node3D                 # mystery box lid (hinged at the back)
+var _float: Node3D               # the floating box (lid, marks) above the ring
+const FLOAT_Y := 0.55
 var _marks: Array = []           # the "?" labels
 var _opening := -1.0             # seconds into an opening, -1 = closed
 var _opener = null               # who opened it
@@ -104,15 +106,19 @@ func _build_box() -> void:
 	gold.metallic = 0.5
 	gold.roughness = 0.35
 	var box := BoxMesh.new()
-	_mesh(self, box, body, Vector3(0, 0.45, 0)).scale = Vector3(1.0, 0.7, 0.7)
+	# The box floats above its light ring and bobs gently (_process).
+	_float = Node3D.new()
+	_float.position.y = FLOAT_Y
+	add_child(_float)
+	_mesh(_float, box, body, Vector3(0, 0.45, 0)).scale = Vector3(1.0, 0.7, 0.7)
 	# Gold bands round the corners and the middle.
 	for sx in [-0.49, 0.49]:
 		for sz in [-0.34, 0.34]:
-			_mesh(self, box, gold, Vector3(sx, 0.45, sz)).scale = Vector3(0.06, 0.72, 0.06)
-	_mesh(self, box, gold, Vector3(0, 0.12, 0)).scale = Vector3(1.04, 0.06, 0.74)
+			_mesh(_float, box, gold, Vector3(sx, 0.45, sz)).scale = Vector3(0.06, 0.72, 0.06)
+	_mesh(_float, box, gold, Vector3(0, 0.12, 0)).scale = Vector3(1.04, 0.06, 0.74)
 	_lid = Node3D.new()
 	_lid.position = Vector3(0, 0.8, 0.35)
-	add_child(_lid)
+	_float.add_child(_lid)
 	_mesh(_lid, box, body, Vector3(0, 0.06, -0.35)).scale = Vector3(1.06, 0.12, 0.74)
 	_mesh(_lid, box, gold, Vector3(0, 0.06, -0.35)).scale = Vector3(0.12, 0.14, 0.76)
 	_mesh(_lid, box, gold, Vector3(0, 0.06, -0.72)).scale = Vector3(1.08, 0.14, 0.05)
@@ -130,7 +136,7 @@ func _build_box() -> void:
 		q.double_sided = false
 		q.position = spec[0]
 		q.rotation.y = spec[1]
-		add_child(q)
+		_float.add_child(q)
 		_marks.append(q)
 
 
@@ -218,12 +224,14 @@ func _process(delta: float) -> void:
 		return
 	for q in _marks:
 		q.scale = Vector3.ONE * (1.0 + sin(_t * 3.0) * 0.08)
+	if _float != null:
+		_float.position.y = FLOAT_Y + sin(_t * 1.8) * 0.07
 	if _opening < 0.0:
 		return
 	# Lid flips open; the weapons rise out spinning, swapping ever slower.
 	var o := _opening
 	_lid.rotation.x = -1.9 * (1.0 - pow(1.0 - clampf(o / 0.3, 0.0, 1.0), 3.0))
-	_holder.position.y = lerpf(0.55, 1.35, 1.0 - pow(1.0 - clampf(o / 0.6, 0.0, 1.0), 2.0))
+	_holder.position.y = FLOAT_Y + lerpf(0.55, 1.35, 1.0 - pow(1.0 - clampf(o / 0.6, 0.0, 1.0), 2.0))
 	_holder.rotation.y = _t * (9.0 - 7.0 * clampf(o / OPEN_TIME, 0.0, 1.0))
 
 

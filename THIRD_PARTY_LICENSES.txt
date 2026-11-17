@@ -1,4 +1,4 @@
-Slop Game - third-party notices
+Slop Party - third-party notices
 ==============================
 
 See ASSETS.md for the full list of assets and where each one came from.

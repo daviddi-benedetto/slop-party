@@ -492,7 +492,7 @@ func _draw() -> void:
 	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, ui.vignette)
 
 	# Bouncing logo.
-	var title := "SLOP GAME"
+	var title := "SLOP PARTY"
 	var px := 120.0 * s
 	var total := 0.0
 	var widths: Array = []
