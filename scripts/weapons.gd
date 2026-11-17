@@ -266,15 +266,15 @@ static func apply(id: int, s) -> void:
 			s.bullet_size = 2.6
 			s.recoil_kick = 2.2
 			s.shoot_pitch = 0.55
-		15:  # Vortex
-			s.damage = 45.0
+		15:  # Vortex  (balance.sh: weakest gun in bot matches; buffed 2026-11-17)
+			s.damage = 55.0
 			s.explosive = 4.0
 			s.vortex = 30.0
 			s.fuse = 0.0
-			s.fire_interval = 1.4
+			s.fire_interval = 1.3
 			s.mag_size = 2
-			s.reload_time = 2.4
-			s.bullet_speed = 11.0
+			s.reload_time = 2.1
+			s.bullet_speed = 14.0
 			s.bullet_gravity = 0.0
 			s.bullet_size = 4.0
 			s.bullet_life = 2.2
@@ -372,11 +372,11 @@ static func apply(id: int, s) -> void:
 			s.recoil_kick = 0.7
 			s.shoot_pitch = 1.8
 			s.zoom = 0.85
-		23:  # Arcane Staff
-			s.damage = 14.0
+		23:  # Arcane Staff  (balance.sh: weakest magic in bot matches; buffed 2026-11-17)
+			s.damage = 17.0
 			s.homing = 4.2
 			s.burst = 3
-			s.fire_interval = 0.75
+			s.fire_interval = 0.68
 			s.mag_size = 12
 			s.reload_time = 1.7
 			s.bullet_speed = 30.0
