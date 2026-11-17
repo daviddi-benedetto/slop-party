@@ -15,6 +15,9 @@ extends CharacterBody3D
 ## wave. zombies.gd scales health and speed with the wave number.
 
 const Fx = preload("res://scripts/fx.gd")
+const Gore = preload("res://scripts/gore.gd")
+var _last_crit := false
+var _last_dir := Vector3.UP
 const Models = preload("res://scripts/models.gd")
 const Prop = preload("res://scripts/prop.gd")
 
@@ -207,7 +210,9 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 		var spray := Vector3.UP
 		if attacker != null and is_instance_valid(attacker):
 			spray = (global_position - attacker.global_position + Vector3(0, 0.4, 0)).normalized()
-		Fx.blood_spray(game.world, chest_position(), spray, 12 if amount < max_health * 0.2 else 22)
+		Gore.hit(game.world, chest_position(), spray, amount * (0.6 if type == "boss" else 1.0))
+		_last_crit = crit
+		_last_dir = spray
 	if not silent:
 		_stagger = maxf(_stagger, 0.12 if type != "boss" else 0.0)
 		if amount > max_health * 0.12 and _action_t <= 0.0 and health > amount:
@@ -233,11 +238,16 @@ func _die(attacker) -> void:
 	collision_layer = 0
 	game.actors.erase(self)
 	var c := chest_position()
-	Fx.blood_spray(game.world, c, Vector3.UP, 64 if type == "boss" else 38)
-	Fx.blood_splat(game.world, global_position, 1.4 if type == "boss" else 0.9 * _scale)
-	Fx.sparks(game.world, c, color.lerp(Color(0.6, 1.0, 0.3), 0.4), 26 if type != "boss" else 80, 9.0, Vector3.UP, 180.0, 0.8)
-	Fx.puff(game.world, c, Color(color.lerp(Color(0.3, 0.4, 0.2), 0.5), 0.8), 10 if type != "boss" else 30, 0.9 * _scale)
-	Fx.flash(game.world, c, Color(0.8, 1.0, 0.5, 0.7), 0.3, 1.4 * _scale, 0.2)
+	var how := "normal"
+	if has_meta("blast_t") and game.time - float(get_meta("blast_t")) < 0.15:
+		how = "blast"
+	elif game.melee_strike:
+		how = "slice"
+	elif _last_crit:
+		how = "head"
+	Gore.death(game.world, global_position, _last_dir, {"fur": color, "limb": color, "paw": color.darkened(0.2)}, how, _scale)
+	if type == "boss":
+		Gore.death(game.world, global_position + Vector3(0, 0.8 * _scale, 0), Vector3.UP, {"fur": color, "limb": color, "paw": color.darkened(0.2)}, "blast", _scale)
 	Sfx.play_at("pop", global_position, -4.0, 0.7 if type != "runner" else 1.0)
 	if type == "boss":
 		game.explode(c, 5.0, 0.0, null, null)
@@ -248,6 +258,8 @@ func _die(attacker) -> void:
 	_set_flash(false)
 	_bar.visible = false
 	_play("Death")
+	if how == "blast":
+		_body.visible = false      # blown to bits: only the gibs remain
 	var tw := create_tween()
 	tw.tween_interval(1.3)
 	tw.tween_property(_body, "position:y", -1.6 * _scale, 0.7)

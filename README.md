@@ -69,6 +69,13 @@ PLAY** lists every button and **MODES** explains each mode.
   view turns to face whoever got you and shows how much health they had
   left. Bullets leave holes and puffs of dust; blasts leave scorch marks
   and smoke.
+- **Gore, in every mode:** every hit sprays blood that splatters the floor
+  and the wall behind the victim. A KO paints the area around the body and
+  sends parts flying: meat, bones, guts, severed limbs and the head. A
+  headshot bursts the head (skull chunks, eyes, brains), a blast blows the
+  body apart, and a melee KO lops off a limb. Splatter stays for about a
+  minute, so a long fight (or a zombie wave) turns into a real bloodbath.
+  The bullet hole / scorch mark option also turns the splatter off.
 
 ### HUD and menus
 
@@ -116,6 +123,9 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Scenery:** dense wind-blown grass and flowers over rolling mounds, a
   horizon of hills and mountains on every map, warm lamps indoors, sun rays,
   and pets (dogs, cats, a fox, a bunny) you can pet for a little health.
+- **Depth:** strong ambient occlusion (soft shadows in corners and under
+  things, even in sunlight) and ink outlines along silhouettes and creases
+  (option **Outlines**), so simple shapes and flat colours read in depth.
 - **Light and air:** bounce light (colour from lit walls and floors spills
   into the shade), a reflection probe so glass, water and metal reflect the
   level, optional light shafts through the haze, and drifting specks in the
@@ -220,7 +230,7 @@ Q / E to turn them):
   **Display**: frames are paced by your screen's own refresh rate, which is
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing, motion blur,
-  render scale, shadows, ambient occlusion, bounce light, light shafts in
+  render scale, shadows, ambient occlusion, outlines, bounce light, light shafts in
   the air (Ultra; used with one or two views), bullet holes and scorch
   marks, bloom, scenery, soft focus, sun rays, and **auto resolution** (on
   by default): a busy moment lowers the 3D resolution briefly instead of

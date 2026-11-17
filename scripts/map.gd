@@ -398,6 +398,7 @@ var _unit_sphere: SphereMesh
 var _unit_cyl: CylinderMesh
 var _rng := RandomNumberGenerator.new()
 var _env: Environment
+var boundary: StaticBody3D      # the invisible perimeter walls (player.gd: no wall runs on them)
 var _sun: DirectionalLight3D
 var _hazards: Array = []
 var _pad_rings: Array = []
@@ -1824,9 +1825,21 @@ func _lay_surfaces() -> void:
 func _build_walls() -> void:
 	var w := half_x * 2.0
 	var d := half_z * 2.0
+	# The invisible boundary: 8 m thick and 500 m tall (from 20 m below the
+	# floor), so no blast or jump pad can fling anyone out. Its own body, so
+	# players can tell it apart (no wall running on the invisible part).
+	boundary = StaticBody3D.new()
+	boundary.collision_layer = 1
+	boundary.collision_mask = 0
+	add_child(boundary)
 	for sgn in [1.0, -1.0]:
-		_collider(Vector3(0, 8, sgn * (half_z + 0.5)), Vector3(w + 2, 16, 1))
-		_collider(Vector3(sgn * (half_x + 0.5), 8, 0), Vector3(1, 16, d + 2))
+		for spec in [[Vector3(0, 230, sgn * (half_z + 4.0)), Vector3(w + 18, 500, 8)], [Vector3(sgn * (half_x + 4.0), 230, 0), Vector3(8, 500, d + 18)]]:
+			var shape := BoxShape3D.new()
+			shape.size = spec[1]
+			var cs := CollisionShape3D.new()
+			cs.shape = shape
+			cs.position = spec[0]
+			boundary.add_child(cs)
 	_box(Vector3(0, wall_h * 0.5, half_z + 0.5), Vector3(w + 2, wall_h, 1), "wall", true, 0.0, false)
 	_box(Vector3(half_x + 0.5, wall_h * 0.5, 0), Vector3(1, wall_h, d + 2), "wall", true, 0.0, false)
 	if theme.neon:

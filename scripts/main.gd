@@ -22,6 +22,8 @@ extends Node
 ##   --options-page=N      ...on its Nth page (0 = DISPLAY)
 ##   --melee-at=<sec>      player 1 swings their melee then
 ##   --box-at=<sec>        player 1 opens a mystery box then
+##   --gore-at=<sec>[,how] a body comes apart 4 m in front of player 1
+##                         (how: normal, head, blast, slice)
 ##   --start-after=<sec>   with --lobby-demo: start the match after that long
 ##                         (shows the loading card)
 ##   --uncapped            ignore the v-sync / frame-limit settings (benchmarking)
@@ -122,6 +124,13 @@ func _ready() -> void:
 					pk.take(p)
 					print("[box] at ", pk.global_position)
 					break)
+	if _args.has("gore-at"):
+		var ga := str(_args["gore-at"]).split(",")
+		get_tree().create_timer(float(ga[0]), true, false, true).timeout.connect(func():
+			if game != null and not game.players.is_empty():
+				var p = game.players[0]
+				var fwd := Vector3(-sin(p.yaw), 0, -cos(p.yaw))
+				preload("res://scripts/gore.gd").death(game.world, p.global_position + fwd * 4.0, fwd, preload("res://scripts/plush.gd").SPEC[1], ga[1] if ga.size() > 1 else "normal"))
 	if _args.has("start-after"):
 		get_tree().create_timer(float(_args["start-after"])).timeout.connect(func(): lobby._start())
 	if _args.has("pause-at"):

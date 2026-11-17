@@ -51,6 +51,7 @@ const Hud = preload("res://scripts/hud.gd")
 const InputSource = preload("res://scripts/input_source.gd")
 const BotBrain = preload("res://scripts/bot_brain.gd")
 const Fx = preload("res://scripts/fx.gd")
+const Gore = preload("res://scripts/gore.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
 const Viewmodel = preload("res://scripts/viewmodel.gd")
 const MotionBlur = preload("res://scripts/motion_blur.gd")
@@ -262,6 +263,9 @@ func _prewarm() -> void:
 	Fx.blood_splat(world, p, 0.2)
 	Fx.bolt(world, p, p + Vector3(1, 0, 0), Color.WHITE)
 	Fx.smoke(world, p, 0.2)
+	Gore.spray(world, p, Vector3.UP, 4, 1.0)
+	Gore.splat(world, p, Vector3.UP, 0.1)
+	Gore.gib(world, p, "meat", {}, Vector3.UP, 0.0)
 	Fx.decal(world, p, Vector3.UP, "hole", 0.2)
 	Fx.decal(world, p, Vector3.UP, "scorch", 0.2)
 	preload("res://scripts/debris.gd").burst(world, Transform3D(Basis(), p), Vector3.ONE, Vector3.ONE * 0.2, Color.GRAY, 1, Vector3.ZERO, 0.5)
@@ -389,6 +393,9 @@ func _add_view(player) -> void:
 	rays.layers = 1 << (15 + _views.size())   # bits 15-20: one per view
 	cam.cull_mask |= rays.layers
 	cam.add_child(rays)
+	var ink = preload("res://scripts/outline.gd").new()
+	ink.layers = rays.layers
+	cam.add_child(ink)
 
 	var layer := CanvasLayer.new()
 	layer.layer = 0
@@ -1011,6 +1018,7 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 		var f := 1.0 - 0.6 * clampf(d / radius, 0.0, 1.0)
 		if not p.has_method("seat_count"):
 			p.velocity += (to_p.normalized() + Vector3(0, 0.4, 0)) * 9.0 * f
+		p.set_meta("blast_t", time)
 		p.take_damage(damage * f * (0.5 if p == shooter else 1.0), shooter)
 
 

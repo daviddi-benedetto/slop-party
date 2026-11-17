@@ -36,6 +36,9 @@ const ITEMS := [
 	{"key": "ssao", "label": "Ambient occlusion", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# Light bouncing off surfaces (screen-space indirect light, SSIL). Tested
 	# SDFGI too: it cost over 10 ms a frame and stalled for seconds, so no.
+	# Ink lines along silhouettes and creases (outline.gd): shapes stand
+	# apart even with flat colours.
+	{"key": "outlines", "label": "Outlines", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "gi", "label": "Bounce light", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# Light shafts through the haze (volumetric fog), one or two views only.
 	{"key": "volfog", "label": "Light shafts in the air", "opts": ON_OFF, "vals": [false, true], "def": 0},
@@ -67,7 +70,7 @@ const ITEMS := [
 
 ## preset index -> {key: choice index}
 const PRESETS := {
-	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0},
+	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0, "outlines": 0},
 	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0, "gi": 0, "volfog": 0, "decals": 1},
 	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 0, "decals": 1},
 	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 1, "decals": 1},
@@ -195,6 +198,16 @@ func apply_viewport(vp: Viewport) -> void:
 ## Shared by map.gd and stage.gd.
 func apply_environment(env: Environment, sun: DirectionalLight3D) -> void:
 	env.ssao_enabled = v("ssao")
+	# Deep, soft contact shadows in corners, under props and between parts,
+	# and (light_affect) a little of it even in direct sunlight: depth on
+	# simple shapes.
+	env.ssao_radius = 1.8
+	env.ssao_intensity = 2.2
+	env.ssao_power = 1.6
+	env.ssao_detail = 0.7
+	env.ssao_horizon = 0.06
+	env.ssao_light_affect = 0.3
+	env.ssao_ao_channel_affect = 0.5
 	env.glow_enabled = v("glow")
 	# Bounce light: colour picked up from nearby lit surfaces.
 	env.ssil_enabled = v("gi")

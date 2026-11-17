@@ -30,6 +30,8 @@ const Stats = preload("res://scripts/stats.gd")
 const Cards = preload("res://scripts/cards.gd")
 const Bullet = preload("res://scripts/bullet.gd")
 const Fx = preload("res://scripts/fx.gd")
+const Gore = preload("res://scripts/gore.gd")
+const Plush = preload("res://scripts/plush.gd")
 const Character = preload("res://scripts/character.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
 const Weapons = preload("res://scripts/weapons.gd")
@@ -174,6 +176,8 @@ var hit_crit := false
 var hurt_flash := 0.0
 var recoil := 0.0
 var kill_flash := 0.0
+var _last_crit := false          # the last hit was a headshot (gore: the head bursts)
+var _last_dir := Vector3.UP      # direction of the last hit (gore sprays that way)
 var flinch := 0.0               # camera roll away from the last hit (signed, decays)
 var multi_kill := 0             # KOs in quick succession (HUD: DOUBLE KO!)
 var multi_t := 0.0              # time since the last KO, for multi_kill
@@ -509,12 +513,33 @@ func _find_wall(flat: Basis) -> Vector3:
 	for side in [flat.x, -flat.x]:
 		var q := PhysicsRayQueryParameters3D.create(chest, chest + side * 0.85, WORLD_MASK)
 		var hit := space.intersect_ray(q)
+		# The invisible part of the perimeter (above the visible wall) is not
+		# a wall you can run on.
+		if hit and hit.collider == game.map.boundary and hit.position.y > game.map.wall_h - 0.3:
+			continue
 		if hit and absf(hit.normal.y) < 0.3:
 			var d: float = chest.distance_to(hit.position)
 			if d < best_d:
 				best_d = d
 				best = hit.normal
 	return best
+
+
+## Backstop for the boundary walls: whatever physics does (a blast at point
+## blank, a jump pad, a fast fall through a seam), you stay inside the map.
+func _keep_inside() -> void:
+	var m = game.map
+	var lim_x: float = m.half_x - 0.35
+	var lim_z: float = m.half_z - 0.35
+	var p := global_position
+	if absf(p.x) > lim_x:
+		p.x = clampf(p.x, -lim_x, lim_x)
+		velocity.x = 0.0
+	if absf(p.z) > lim_z:
+		p.z = clampf(p.z, -lim_z, lim_z)
+		velocity.z = 0.0
+	if p != global_position:
+		global_position = p
 
 
 func _end_wallrun() -> void:
@@ -981,6 +1006,7 @@ func _physics_process(delta: float) -> void:
 	velocity.x = horiz.x
 	velocity.z = horiz.z
 	move_and_slide()
+	_keep_inside()
 	# Frontline: jumping off a roof or tower lets you pull your parachute
 	# (Jump). It never opens by itself here, and the other modes keep their
 	# normal air control (jump pads, jetpacks, wall runs).
@@ -1066,6 +1092,7 @@ func _skydive_tick(delta: float, wish: Vector3) -> void:
 	velocity.x = horiz.x
 	velocity.z = horiz.z
 	move_and_slide()
+	_keep_inside()
 	rotation.y = yaw
 	fall_amount = clampf(velocity.y, -14.0, 10.0)
 	character.animate(delta, 0.0, false, velocity.y, pitch, recoil)
@@ -1438,7 +1465,9 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 		var blood_dir := Vector3.UP
 		if has_attacker:
 			blood_dir = (global_position - attacker.global_position + Vector3(0, 0.5, 0)).normalized()
-		Fx.blood_spray(game.world, chest_position(), blood_dir, 16)
+		Gore.hit(game.world, chest_position(), blood_dir, amount)
+		_last_crit = crit
+		_last_dir = blood_dir
 		Sfx.play_at("hurt", global_position, -8.0)
 		if not is_bot and brain.device >= 0 and Settings.v("rumble"):
 			Input.start_joy_vibration(brain.device, 0.4, 0.7, 0.18)
@@ -1487,8 +1516,6 @@ func apply_slow(amount: float) -> void:
 func _die(attacker) -> void:
 	alive = false
 	deaths += 1
-	Fx.blood_spray(game.world, chest_position(), Vector3.UP, 52)
-	Fx.blood_splat(game.world, global_position, 1.25)
 	health = 0.0
 	burst_left = 0
 	_set_alive_visuals(false)
@@ -1513,14 +1540,18 @@ func _die(attacker) -> void:
 	pickup_prompt = ""
 	shake = 1.0
 	Sfx.play_at("pop", global_position, -2.0)
-	# A burst of glowing shards in the player's colour: flashy, no gore.
-	var c := chest_position()
-	Fx.sparks(game.world, c, color.lerp(Color.WHITE, 0.3), 40, 11.0, Vector3.UP, 180.0, 0.9)
-	Fx.confetti(game.world, c, 30)
-	Fx.puff(game.world, c, Color(color.lerp(Color.WHITE, 0.4), 0.8), 12, 0.9)
-	Fx.flash(game.world, c, Color(color.lerp(Color.WHITE, 0.6), 0.9), 0.3, 1.8, 0.22)
-	Fx.ring(game.world, c, Color(color.lerp(Color.WHITE, 0.5), 0.9), 0.3, 3.2, 0.4)
-	Fx.light(game.world, c, color.lerp(Color.WHITE, 0.4), 5.0, 9.0, 0.35)
+	# Gore: blown apart by a blast, head burst by a headshot, a limb lopped
+	# off by a melee KO, otherwise a messy pop with a few parts flying.
+	var how := "normal"
+	if has_meta("blast_t") and game.time - float(get_meta("blast_t")) < 0.15:
+		how = "blast"
+	elif game.melee_strike:
+		how = "slice"
+	elif _last_crit:
+		how = "head"
+	if global_position.y > -20.0:
+		Gore.death(game.world, global_position, _last_dir, Plush.SPEC[posmod(kind, Plush.SPEC.size())], how, stats.size)
+	_last_crit = false
 	game.on_player_died(self, attacker)
 
 
