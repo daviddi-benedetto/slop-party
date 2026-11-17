@@ -19,7 +19,7 @@ const FADE_FAR := 30.0
 
 ## Depth in metres of the deepest groove for each texture kind (map._tex).
 const DEPTH := {"bricks": 0.07, "tiles": 0.04, "planks": 0.04, "plates": 0.035, "rock": 0.11, "corrugated": 0.05,
-	"shingles": 0.07, "siding": 0.045, "marble": 0.02, "ice": 0.03, "lava": 0.08, "concrete": 0.02}
+	"shingles": 0.07, "siding": 0.045, "marble": 0.02, "ice": 0.03, "lava": 0.08, "concrete": 0.02, "asphalt": 0.006}
 
 const CODE := """
 shader_type spatial;
@@ -38,6 +38,9 @@ uniform float metallic = 0.0;
 uniform float rim_amount = 0.22;
 uniform float rim_tint_amount = 0.6;
 uniform float fade_far = 30.0;
+uniform sampler2D macro_tex : filter_linear_mipmap, repeat_enable;
+uniform float weather = 1.0;      // grime at the foot of walls, bleached tops, patchy colour
+uniform float wet = 0.0;          // wet themes: damp sheen and puddles on the ground
 varying vec3 w_pos;
 varying vec3 w_nrm;
 
@@ -102,14 +105,33 @@ void fragment() {
 	// Cavity shading: grooves and seams sit in their own shadow.
 	float h = textureGrad(height_tex, uv, gx, gy).r;
 	float cavity = mix(0.55, 1.0, smoothstep(0.05, 0.55, h));
-	ALBEDO = tint * textureGrad(albedo_tex, uv, gx, gy).rgb * cavity;
+	vec3 col = tint * textureGrad(albedo_tex, uv, gx, gy).rgb * cavity;
+	// Weathering, in world units so it ignores texture tiling.
+	vec2 wuv = uv / uv_scale;
+	float mac = texture(macro_tex, wuv * 0.035).r;
+	float mac2 = texture(macro_tex, wuv * 0.11 + vec2(0.37, 0.71)).r;
+	col *= mix(1.0, mix(0.84, 1.1, mac) * mix(0.95, 1.04, mac2), weather);
+	float rough = roughness;
+	if (abs(N.y) < 0.5) {
+		// Walls: damp, dirty feet and sun-bleached tops.
+		float grime = (1.0 - smoothstep(0.0, 1.3, w_pos.y)) * (0.55 + 0.45 * mac2);
+		col = mix(col, col * vec3(0.6, 0.56, 0.5), grime * 0.65 * weather);
+		col += vec3(0.05, 0.045, 0.035) * smoothstep(2.5, 7.0, w_pos.y) * weather;
+	} else if (N.y > 0.5 && wet > 0.0) {
+		// Wet ground: everything glistens, low spots hold puddles.
+		float puddle = smoothstep(0.56, 0.64, mac * 0.7 + mac2 * 0.3) * smoothstep(0.35, 0.0, h - 0.4);
+		col *= 1.0 - 0.3 * wet - 0.25 * puddle * wet;
+		rough = mix(rough, 0.32, wet);
+		rough = mix(rough, 0.03, puddle * wet);
+	}
+	ALBEDO = col;
 	AO = cavity;
 	AO_LIGHT_AFFECT = 0.4;
 	vec3 tn = textureGrad(normal_tex, uv, gx, gy).xyz * 2.0 - 1.0;
 	tn.xy *= normal_scale;
 	vec3 wn = normalize(T * tn.x - B * tn.y + N * max(tn.z, 0.05));
 	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
-	ROUGHNESS = roughness;
+	ROUGHNESS = rough;
 	METALLIC = metallic;
 	RIM = rim_amount;
 	RIM_TINT = rim_tint_amount;
@@ -118,6 +140,22 @@ void fragment() {
 """
 
 static var _shader: Shader
+static var _macro: NoiseTexture2D
+
+
+## Low-frequency seamless noise for weathering (shared).
+static func macro() -> NoiseTexture2D:
+	if _macro == null:
+		var n := FastNoiseLite.new()
+		n.frequency = 0.012
+		n.fractal_octaves = 3
+		_macro = NoiseTexture2D.new()
+		_macro.noise = n
+		_macro.width = 256
+		_macro.height = 256
+		_macro.seamless = true
+		_macro.generate_mipmaps = true
+	return _macro
 
 
 static func make(tint: Color, albedo: Texture2D, normal: Texture2D, height: Texture2D, emission: Texture2D,
@@ -139,4 +177,5 @@ static func make(tint: Color, albedo: Texture2D, normal: Texture2D, height: Text
 	m.set_shader_parameter("roughness", rough)
 	m.set_shader_parameter("metallic", metal)
 	m.set_shader_parameter("fade_far", FADE_FAR)
+	m.set_shader_parameter("macro_tex", macro())
 	return m

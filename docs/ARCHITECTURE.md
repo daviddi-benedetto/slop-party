@@ -684,6 +684,25 @@ across the UI.
   `bullet._impact` on level hits, scorch marks from `game.explode`) that
   project only onto layer 1 and fade out; `map._ground_decals` scatters
   10-44 dirt and crack decals on the floor. Option "decals" turns both off.
+- **Weathering and wet** (surface.gd uniforms `weather`, `wet`,
+  `macro_tex`): patchy colour from a shared low-frequency noise in world
+  units, grime below 1.3 m on walls, bleaching above 2.5 m; with a theme's
+  `wet` (looks.gd), ground faces get lower roughness and puddles. SSR
+  (option "ssr") only where the map sets the "ssr" env meta (wet themes,
+  outdoors); measured +0.7 ms at six views. A theme's `mist` sets
+  `fog_height` / `fog_height_density`.
+- **Sway** (`Models.sway`): foliage models (path contains Tree, Bush, Pine,
+  Plant, Fern) get a vertex shader that bends them more the higher a vertex
+  is; transparent materials are left alone.
+- **Skyline beacons** (`map._beacon_mat`): red lights on tall towers, one
+  shared material blinking in `_process`.
+- **Casings, smoke, prints** (`Fx.casing`, `Fx.paw_print`, player
+  `_fire_round` / movement): casings for blaster, burst, scatter, longshot,
+  twins, spinner, rail (at most one per 0.06 s per player); paw prints in
+  their own decal pool (40, 7 s); slide dust.
+- **Tried and dropped:** VoxelGI baked at load (1.4 s bake, then +5 ms a
+  frame and a 2.7 s stall every run), and a billboard cloud layer (did not
+  render reliably; the sky shader stays static).
 - **Relief** (`map._perimeter_dressing`, `_facade`, `_building`):
   pilasters every ~6 m on the perimeter walls, coping and skirting (not in
   neon themes, which have light strips there), rubble at their foot (own

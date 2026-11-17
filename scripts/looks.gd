@@ -22,6 +22,9 @@ extends RefCounted
 ##              glow_intensity, glow_bloom}: Environment adjustments; shadows /
 ##              highlights become a colour-correction ramp (split toning)
 ##   shadow     sun shadow opacity
+##   wet        0-1: rain-slick ground with puddles that reflect (surface.gd,
+##              screen-space reflections when the option allows)
+##   mist       height fog density: low mist pooling near the ground
 ##   ui         lobby overlay colours: logo_a, logo_b, panel, value, vignette
 ##   stage      lobby backyard (stage.gd): day, sky, ring_a / ring_b (party
 ##              lights), lawn, fence, hill, mountain, city (a neon skyline
@@ -89,7 +92,7 @@ const LOOKS := {
 			"sun": Color(0.55, 0.9, 1.0), "cloud_color": Color(0.24, 0.04, 0.3), "clouds": 0.6, "stars": 0.35, "aurora": 0.0},
 		"sun_color": Color(0.6, 0.66, 1.0), "sun_energy": 1.2, "sun_pitch": -48.0, "ambient": 3.6, "exposure": 1.45,
 		"glow": 1.0, "neon": 1.8, "lights": 1.25, "fog": Color(0.22, 0.03, 0.26), "fog_mult": 1.3,
-		"ambient_color": Color(0.36, 0.22, 0.48),
+		"ambient_color": Color(0.36, 0.22, 0.48), "wet": 1.0,
 		"accent_a": Color(1.0, 0.12, 0.72), "accent_b": Color(0.08, 0.9, 1.0), "window": Color(0.2, 0.9, 1.0), "lamp": Color(1.0, 0.3, 0.85),
 		"grade": {"sat": 0.8, "val": 1.0, "tint": Color(0.92, 0.88, 1.06)},
 		"post": {"saturation": 1.25, "contrast": 1.0, "brightness": 1.03, "shadows": Color(0.11, 0.04, 0.19), "highlights": Color(1.0, 0.95, 1.0),
@@ -108,7 +111,7 @@ const LOOKS := {
 	"synthwave": {"name": "SYNTHWAVE", "base": "sunset",
 		"sky": {"top": Color(0.12, 0.03, 0.3), "horizon": Color(1.0, 0.34, 0.6), "ground": Color(0.14, 0.03, 0.2),
 			"sun": Color(1.0, 0.5, 0.7), "cloud_color": Color(0.5, 0.18, 0.5), "clouds": 0.4, "stars": 0.5, "aurora": 0.0},
-		"sun_color": Color(1.0, 0.56, 0.76), "sun_energy": 1.8, "sun_pitch": -8.0, "ambient": 1.7, "exposure": 1.15,
+		"sun_color": Color(1.0, 0.56, 0.76), "sun_energy": 1.8, "sun_pitch": -8.0, "ambient": 1.7, "exposure": 1.15, "wet": 0.7,
 		"glow": 1.0, "neon": 1.5, "lights": 1.0, "fog": Color(0.5, 0.18, 0.46), "fog_mult": 0.9,
 		"accent_a": Color(1.0, 0.28, 0.78), "accent_b": Color(0.2, 1.0, 0.92), "window": Color(1.0, 0.45, 0.8), "lamp": Color(0.3, 1.0, 0.95),
 		"grade": {"sat": 0.9, "tint": Color(1.0, 0.9, 1.06)},
@@ -130,7 +133,7 @@ const LOOKS := {
 			"sun": Color(0.95, 1.0, 0.75), "cloud_color": Color(0.12, 0.15, 0.1), "clouds": 0.8, "stars": 0.6, "aurora": 0.0},
 		"sun_color": Color(0.72, 0.88, 0.72), "sun_energy": 1.2, "sun_pitch": -40.0, "ambient": 4.0, "exposure": 1.5,
 		"glow": 1.0, "neon": 1.3, "lights": 1.3, "fog": Color(0.12, 0.2, 0.1), "fog_mult": 1.6,
-		"ambient_color": Color(0.18, 0.24, 0.17),
+		"ambient_color": Color(0.18, 0.24, 0.17), "mist": 0.5,
 		"accent_a": Color(1.0, 0.48, 0.06), "accent_b": Color(0.55, 1.0, 0.2), "window": Color(1.0, 0.55, 0.12), "lamp": Color(0.6, 1.0, 0.3),
 		"grade": {"sat": 0.78, "val": 0.95, "tint": Color(0.95, 1.0, 0.92)},
 		"post": {"saturation": 1.05, "contrast": 1.06, "brightness": 1.02, "shadows": Color(0.04, 0.08, 0.04), "highlights": Color(1.0, 0.98, 0.9)},
@@ -144,7 +147,7 @@ const LOOKS := {
 			"sun_color": Color(0.72, 0.9, 0.72), "sun_energy": 1.1, "ambient": 1.8, "exposure": 1.3, "fog": Color(0.1, 0.18, 0.08)},
 	},
 	# A calm clear night: each map's own moonlight, stars and lit windows.
-	"moonlit": {"name": "MOONLIT", "base": "night",
+	"moonlit": {"name": "MOONLIT", "base": "night", "mist": 0.35,
 		"ui": {"logo_a": Color(0.75, 0.85, 1.0), "logo_b": Color(0.45, 0.65, 1.0), "panel": Color(0.05, 0.07, 0.14, 0.92),
 			"value": Color(0.75, 0.88, 1.0), "vignette": Color(0.0, 0.02, 0.08, 0.6)},
 		"stage": {"day": false, "ring_a": Color(0.6, 0.75, 1.0), "ring_b": Color(1.0, 0.86, 0.6),

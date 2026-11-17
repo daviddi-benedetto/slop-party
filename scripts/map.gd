@@ -404,6 +404,7 @@ var _sun: DirectionalLight3D
 var _hazards: Array = []
 var _pad_rings: Array = []
 var _time := 0.0
+var _beacon: StandardMaterial3D   # skyline warning lights (blink together)
 var _flicker: Array = []         # [OmniLight3D, base energy, phase, speed]: neon that stutters
 var _water_t := 0.0
 
@@ -480,6 +481,9 @@ func _process(delta: float) -> void:
 		var l: OmniLight3D = f[0]
 		var n := sin(_time * f[3] + f[2]) * sin(_time * f[3] * 2.7 + f[2] * 1.9)
 		l.light_energy = f[1] * (0.25 if n > 0.93 else (0.9 + 0.1 * sin(_time * 31.0 + f[2])))
+	if _beacon != null:
+		var bl := 1.0 if fmod(_time, 1.6) < 0.25 else 0.08
+		_beacon.emission_energy_multiplier = 6.0 * bl
 	# Water ripples drift.
 	if _mats.has("water"):
 		_water_t += delta
@@ -626,6 +630,12 @@ func _build_environment() -> void:
 	# through, tinted like the fog. Kept thin so players stay readable.
 	env.set_meta("volfog_density", look.get("volfog", 0.012 if indoor else 0.007))
 	env.set_meta("volfog_albedo", fog_col.lerp(Color(0.85, 0.85, 0.9), 0.5))
+	# Wet themes: screen-space reflections in the puddles (Settings decides).
+	env.set_meta("ssr", float(look.get("wet", 0.0)) > 0.0 and not indoor)
+	# Low mist pooling in the bottom metre or so (night themes).
+	if float(look.get("mist", 0.0)) > 0.0 and not indoor:
+		env.fog_height = 1.2
+		env.fog_height_density = float(look.mist)
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -650,6 +660,16 @@ func _build_environment() -> void:
 
 func _on_settings() -> void:
 	Settings.apply_environment(_env, _sun)
+
+
+func _beacon_mat() -> StandardMaterial3D:
+	if _beacon == null:
+		_beacon = StandardMaterial3D.new()
+		_beacon.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_beacon.albedo_color = Color(1.0, 0.15, 0.1)
+		_beacon.emission_enabled = true
+		_beacon.emission = Color(1.0, 0.1, 0.05)
+	return _beacon
 
 
 ## Drifting specks in the air, one kind per theme: pollen and dandelion
@@ -925,8 +945,12 @@ func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float
 	if depth_ok and Surface.DEPTH.has(kind) and Settings.v("parallax"):
 		# Parallax occlusion surfaces (surface.gd): grooves with real depth.
 		var tx: Array = _tex(kind)
-		return Surface.make(toy.lerp(Color.WHITE, 0.06), _soft(kind, tx[0]) if tx[2] == null else tx[0], tx[1], tx[3], tx[2],
+		var sm := Surface.make(toy.lerp(Color.WHITE, 0.06), _soft(kind, tx[0]) if tx[2] == null else tx[0], tx[1], tx[3], tx[2],
 			uv_scale, Surface.DEPTH[kind], maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6)
+		sm.set_shader_parameter("weather", 0.6 if indoor else 1.0)
+		if not indoor:
+			sm.set_shader_parameter("wet", float(look.get("wet", 0.0)))
+		return sm
 	m.albedo_color = toy.lerp(Color.WHITE, 0.06)
 	m.roughness = maxf(rough, 0.62) if metal < 0.5 else rough
 	m.metallic = metal * 0.6
@@ -1266,10 +1290,13 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 		var y := yaw + (PI if k == 1 else 0.0)
 		var rot := Basis(Vector3.UP, y)
 		var xf := Transform3D(rot * Basis.from_scale(s3), p)
+		# Trees, bushes and plants bend in the wind (Models.sway).
+		var leafy: bool = "Tree" in path or "Bush" in path or "Pine" in path or "Plant" in path or "Fern" in path
 		for part in Models.parts(path):
 			var mesh: Mesh = part[0]
 			for si in mesh.get_surface_count():
-				_add(mesh, Models.toy(mesh.surface_get_material(si)), xf * part[1], shadow, si, "g%d" % mesh.surface_get_format(si))
+				var src: Material = mesh.surface_get_material(si)
+				_add(mesh, Models.sway(src) if leafy else Models.toy(src), xf * part[1], shadow, si, "g%d" % mesh.surface_get_format(si))
 		if collide == "box":
 			_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
 		if _audit:
@@ -3282,6 +3309,9 @@ func _skyline(radius: float, spread: float, count: int, h_min: float, h_max: flo
 		var p := Vector3(cos(a) * d, h * 0.5 - 2.0, sin(a) * d)
 		var yaw := _rng.randf() * TAU
 		_add(box, body, Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(w, h, w * _rng.randf_range(0.7, 1.2))), p), false)
+		if h > 70.0 and i % 2 == 0:
+			# Aircraft warning light on the roof (blinks in _process).
+			_add(_unit_sphere, _beacon_mat(), Transform3D(Basis.from_scale(Vector3.ONE * 1.1), Vector3(p.x, h - 1.0, p.z)), false)
 		if night_amount > 0.0:
 			for b in 3 + _rng.randi() % 5:
 				var y := h * _rng.randf_range(0.15, 0.95) - 2.0

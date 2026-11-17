@@ -16,6 +16,44 @@ static var _scenes := {}
 static var _parts := {}
 static var _bounds := {}
 static var _toys := {}
+static var _sways := {}
+static var _sway_shader: Shader
+
+## Foliage that moves in the wind: the toy() look on a shader that bends the
+## mesh more the higher it is above the ground (trees, bushes, plants in
+## map.gd). Transparent materials keep toy() unchanged.
+const SWAY_CODE := """
+shader_type spatial;
+render_mode diffuse_lambert_wrap, specular_schlick_ggx, cull_disabled;
+uniform vec4 albedo : source_color = vec4(1.0);
+uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+uniform bool use_tex = false;
+uniform bool use_vcol = false;
+uniform vec3 uv_scale = vec3(1.0);
+uniform vec3 uv_offset = vec3(0.0);
+uniform float rough = 0.8;
+uniform float amp = 1.0;
+void vertex() {
+	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float h = clamp(w.y - 0.4, 0.0, 7.0);
+	float s = sin(TIME * 1.25 + w.x * 0.31 + w.z * 0.23) + 0.35 * sin(TIME * 3.1 + w.x * 1.7 + w.z * 1.3);
+	vec3 off = vec3(s, 0.0, s * 0.55) * amp * h * h * 0.0035;
+	VERTEX += inverse(mat3(MODEL_MATRIX)) * off;
+}
+void fragment() {
+	vec3 c = albedo.rgb;
+	if (use_tex) {
+		c *= texture(tex, UV * uv_scale.xy + uv_offset.xy).rgb;
+	}
+	if (use_vcol) {
+		c *= COLOR.rgb;
+	}
+	ALBEDO = c;
+	ROUGHNESS = rough;
+	RIM = 0.22;
+	RIM_TINT = 0.6;
+}
+"""
 ## The visual theme in play (looks.gd entry), set by map.gd / stage.gd so
 ## toy() grades imported colours like the generated ones.
 static var look := {}
@@ -43,6 +81,32 @@ static func toy(m: Material) -> Material:
 	t.albedo_color = Looks.grade(look, t.albedo_color)
 	_toys[key] = t
 	return t
+
+
+## The swaying version of toy(m) (cached).
+static func sway(m: Material) -> Material:
+	var t := toy(m)
+	if not (t is BaseMaterial3D) or (t as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+		return t
+	var key := t.get_instance_id()
+	if _sways.has(key):
+		return _sways[key]
+	if _sway_shader == null:
+		_sway_shader = Shader.new()
+		_sway_shader.code = SWAY_CODE
+	var b: BaseMaterial3D = t
+	var s := ShaderMaterial.new()
+	s.shader = _sway_shader
+	s.set_shader_parameter("albedo", b.albedo_color)
+	if b.albedo_texture != null:
+		s.set_shader_parameter("tex", b.albedo_texture)
+		s.set_shader_parameter("use_tex", true)
+	s.set_shader_parameter("use_vcol", b.vertex_color_use_as_albedo)
+	s.set_shader_parameter("uv_scale", b.uv1_scale)
+	s.set_shader_parameter("uv_offset", b.uv1_offset)
+	s.set_shader_parameter("rough", b.roughness)
+	_sways[key] = s
+	return s
 
 
 ## toy() on every surface of every MeshInstance3D under `n` (instanced

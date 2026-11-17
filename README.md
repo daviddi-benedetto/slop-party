@@ -129,6 +129,16 @@ PLAY** lists every button and **MODES** explains each mode.
   seams sink in, shift as you move and sit in their own shadow. Buildings
   have window jambs and roof cornices, and perimeter walls have pilasters,
   a coping, a skirting and fallen rubble at their foot.
+- **Weathering:** walls are dirtier and damp at the foot and sun-bleached
+  higher up, and big surfaces vary in colour so no two stretches match.
+- **Wet neon nights:** Cyberpunk and Synthwave streets are rain-slick, with
+  puddles that reflect the neon (option **Reflections on wet ground**).
+  Spooky and Moonlit have a low mist pooling near the ground.
+- **A world that moves:** trees, bushes and plants sway in the wind, and
+  the tall towers on the skyline blink red warning lights.
+- **Guns and feet:** brass shell casings fly out of the guns that eject
+  them, smoke hangs at the muzzle, paws leave prints that fade, and slides
+  kick up dust.
 - **Depth:** strong ambient occlusion (soft shadows in corners and under
   things, even in sunlight) and ink outlines along silhouettes and creases
   (option **Outlines**), so simple shapes and flat colours read in depth.
@@ -236,7 +246,7 @@ Q / E to turn them):
   **Display**: frames are paced by your screen's own refresh rate, which is
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing, motion blur,
-  render scale, shadows, ambient occlusion, surface depth, outlines, bounce light, light shafts in
+  render scale, shadows, ambient occlusion, surface depth, outlines, reflections on wet ground, bounce light, light shafts in
   the air (Ultra; used with one or two views), bullet holes and scorch
   marks, bloom, scenery, soft focus, sun rays, and **auto resolution** (on
   by default): a busy moment lowers the 3D resolution briefly instead of

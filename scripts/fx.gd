@@ -17,6 +17,9 @@ static var _shrink: Curve
 static var _confetti_ramp: Gradient
 static var _decal_tex := {}          # kind -> ImageTexture (generated once)
 static var _decals: Array = []       # pooled bullet holes / scorch marks, oldest first
+static var _prints: Array = []       # pooled paw prints (their own pool: they never push out bullet holes)
+static var _casing_mesh: CylinderMesh
+static var _casing_mat: StandardMaterial3D
 const MAX_DECALS := 48
 
 
@@ -158,10 +161,12 @@ static func decal(parent: Node, pos: Vector3, normal: Vector3, kind: String, siz
 	if not Settings.v("decals"):
 		return
 	var d: Decal = null
-	while not _decals.is_empty() and not is_instance_valid(_decals[0]):
-		_decals.pop_front()
-	if _decals.size() >= MAX_DECALS:
-		d = _decals.pop_front()
+	var pool: Array = _prints if kind == "paw" else _decals
+	var cap := 40 if kind == "paw" else MAX_DECALS
+	while not pool.is_empty() and not is_instance_valid(pool[0]):
+		pool.pop_front()
+	if pool.size() >= cap:
+		d = pool.pop_front()
 		if d.get_parent() != parent:
 			d.get_parent().remove_child(d)
 			parent.add_child(d)
@@ -173,22 +178,24 @@ static func decal(parent: Node, pos: Vector3, normal: Vector3, kind: String, siz
 		d.distance_fade_begin = 30.0
 		d.distance_fade_length = 8.0
 		parent.add_child(d)
-	_decals.append(d)
+	pool.append(d)
 	d.texture_albedo = _decal_texture(kind)
 	d.modulate = tint
 	d.albedo_mix = 1.0
 	d.upper_fade = 0.3
 	d.lower_fade = 0.3
-	var depth := 0.5 if kind != "scorch" else size * 0.8
+	var depth := (0.5 if kind != "scorch" else size * 0.8) if kind != "paw" else 0.3
 	d.size = Vector3(size, depth, size)
 	# Decals project along their local -Y: point that into the surface.
 	var up := normal.normalized() if normal.length() > 0.01 else Vector3.UP
 	var side := up.cross(Vector3.RIGHT if absf(up.x) < 0.9 else Vector3.FORWARD).normalized()
-	var b := Basis(side, up, side.cross(up)).rotated(up, randf() * TAU)
+	var b := Basis(side, up, side.cross(up)).rotated(up, randf() * TAU if kind != "paw" else 0.0)
+	if kind == "paw" and normal.length() > 0.01:
+		b = Basis.looking_at(-normal, Vector3.UP) if absf(normal.y) < 0.9 else b
 	d.global_transform = Transform3D(b, pos)
 	d.visible = true
 	# Fade out after a while (bullet holes sooner than scorch marks).
-	var life := 14.0 if kind == "hole" else 22.0
+	var life := 14.0 if kind == "hole" else (7.0 if kind == "paw" else 22.0)
 	if d.has_meta("tween"):
 		var old: Tween = d.get_meta("tween")
 		if old != null and old.is_valid():
@@ -242,6 +249,15 @@ static func _decal_texture(kind: String) -> Texture2D:
 					c = Color(1, 1, 1, clampf(a2, 0.0, 1.0))
 				"crack":
 					c = Color(1, 1, 1, 0)
+				"paw":
+					# A pad and four toes.
+					var a := 0.0
+					if Vector2(u * 1.1, (v - 0.25) * 1.25).length() < 0.42:
+						a = 1.0
+					for tx in [-0.48, -0.17, 0.17, 0.48]:
+						if Vector2(u - tx, v + 0.42 - absf(tx) * 0.35).length() < 0.15:
+							a = 1.0
+					c = Color(1, 1, 1, a * (0.7 + 0.3 * nz))
 			img.set_pixel(x, y, c)
 	if kind == "crack":
 		# A few branching dark lines from the centre.
@@ -260,6 +276,52 @@ static func _decal_texture(kind: String) -> Texture2D:
 	var tex := ImageTexture.create_from_image(img)
 	_decal_tex[kind] = tex
 	return tex
+
+
+## A paw print where a player stepped (dir = their facing, flat on the floor).
+static func paw_print(parent: Node, pos: Vector3, yaw: float, tint: Color) -> void:
+	decal(parent, pos, Vector3.UP, "paw", 0.26, tint)
+	var d: Decal = _prints.back()
+	d.global_transform = Transform3D(Basis(Vector3.UP, yaw), pos)
+
+
+## A brass shell casing flicked out of the ejection port.
+static func casing(parent: Node, pos: Vector3, right: Vector3, layers := 1) -> void:
+	if _casing_mesh == null:
+		_casing_mesh = CylinderMesh.new()
+		_casing_mesh.top_radius = 0.012
+		_casing_mesh.bottom_radius = 0.012
+		_casing_mesh.height = 0.04
+		_casing_mesh.radial_segments = 6
+		_casing_mesh.rings = 1
+		_casing_mat = StandardMaterial3D.new()
+		_casing_mat.albedo_color = Color(0.95, 0.72, 0.3)
+		_casing_mat.metallic = 0.9
+		_casing_mat.roughness = 0.3
+		_casing_mesh.material = _casing_mat
+	var p := CPUParticles3D.new()
+	p.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	p.mesh = _casing_mesh
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.layers = layers
+	p.amount = 1
+	p.lifetime = 0.7
+	p.one_shot = true
+	p.explosiveness = 1.0
+	p.local_coords = false
+	p.direction = (right + Vector3(0, 1.1, 0)).normalized()
+	p.spread = 18.0
+	p.initial_velocity_min = 2.2
+	p.initial_velocity_max = 3.2
+	p.gravity = Vector3(0, -12.0, 0)
+	p.angle_max = 360.0
+	p.angular_velocity_min = -900.0
+	p.angular_velocity_max = 900.0
+	p.particle_flag_rotate_y = true
+	parent.add_child(p)
+	p.global_position = pos
+	p.emitting = true
+	_free_later(p, parent, 0.9)
 
 
 ## A dark smoke column that rises and spreads after a blast.

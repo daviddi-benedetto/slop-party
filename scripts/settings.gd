@@ -44,6 +44,8 @@ const ITEMS := [
 	{"key": "gi", "label": "Bounce light", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# Light shafts through the haze (volumetric fog), one or two views only.
 	{"key": "volfog", "label": "Light shafts in the air", "opts": ON_OFF, "vals": [false, true], "def": 0},
+	# Screen-space reflections on wet ground (Cyberpunk, Synthwave).
+	{"key": "ssr", "label": "Reflections on wet ground", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "decals", "label": "Bullet holes and scorch marks", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "glow", "label": "Bloom", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "scenery", "label": "Scenery detail", "opts": ["Low", "High"], "vals": [0, 1], "def": 1},
@@ -72,7 +74,7 @@ const ITEMS := [
 
 ## preset index -> {key: choice index}
 const PRESETS := {
-	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0, "outlines": 0, "parallax": 0},
+	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0, "outlines": 0, "parallax": 0, "ssr": 0},
 	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0, "gi": 0, "volfog": 0, "decals": 1},
 	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 0, "decals": 1},
 	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 1, "decals": 1},
@@ -218,6 +220,12 @@ func apply_environment(env: Environment, sun: DirectionalLight3D) -> void:
 	env.ssil_radius = 4.0
 	env.ssil_intensity = 0.9
 	env.ssil_sharpness = 0.98
+	env.ssr_enabled = v("ssr") and env.get_meta("ssr", false)
+	if env.ssr_enabled:
+		env.ssr_max_steps = 48 if view_count <= 2 else 24
+		env.ssr_fade_in = 0.15
+		env.ssr_fade_out = 2.0
+		env.ssr_depth_tolerance = 0.3
 	env.volumetric_fog_enabled = v("volfog") and view_count <= 2 and env.get_meta("volfog_density", 0.0) > 0.0
 	if env.volumetric_fog_enabled:
 		env.volumetric_fog_density = env.get_meta("volfog_density", 0.01)

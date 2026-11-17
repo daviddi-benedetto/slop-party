@@ -178,6 +178,9 @@ var recoil := 0.0
 var kill_flash := 0.0
 var _last_crit := false          # the last hit was a headshot (gore: the head bursts)
 var _last_dir := Vector3.UP      # direction of the last hit (gore sprays that way)
+var _print_dist := 0.0
+var _print_side := 1.0
+var _casing_t := 0.0
 var flinch := 0.0               # camera roll away from the last hit (signed, decays)
 var multi_kill := 0             # KOs in quick succession (HUD: DOUBLE KO!)
 var multi_t := 0.0              # time since the last KO, for multi_kill
@@ -1049,6 +1052,16 @@ func _physics_process(delta: float) -> void:
 		if _step_dist > 2.3:
 			_step_dist = 0.0
 			Sfx.play_at("step", global_position, -9.0)
+		# Paw prints every stride, left and right.
+		_print_dist += hspeed * delta
+		if _print_dist > 0.9 and Settings.v("decals"):
+			_print_dist = 0.0
+			_print_side = -_print_side
+			var right := Basis(Vector3.UP, yaw).x
+			Fx.paw_print(game.world, global_position + right * 0.12 * _print_side * stats.size + Vector3(0, 0.02, 0), yaw, Color(0.12, 0.09, 0.07, 0.35))
+		# Sliding kicks up dust.
+		if sliding > 0.0 and hspeed > 3.0 and Engine.get_physics_frames() % 4 == 0:
+			Fx.puff(game.world, global_position + Vector3(0, 0.12, 0), Color(0.85, 0.82, 0.76, 0.45), 2, 0.35)
 	var frac: float = clampf(health / stats.max_health, 0.0, 1.0)
 	health_bar.set_instance_shader_parameter("fill", frac)
 	health_bar.set_instance_shader_parameter("tint", Color(1.0, 0.3, 0.3).lerp(Color(0.35, 0.9, 0.4), frac))
@@ -1177,6 +1190,16 @@ func _fire_round() -> void:
 	var mod := _attribute_sound(style)
 	if mod != "":
 		Sfx.play_at(mod, global_position, -9.0)
+	# Brass flies out of the guns that eject it; smoke hangs at the muzzle.
+	var now: float = game.time
+	if style in ["blaster", "burst", "scatter", "longshot", "twins", "spinner", "rail"] and now - _casing_t > 0.06:
+		_casing_t = now
+		var rgt := aim_basis().x
+		var port: Vector3 = viewmodel.global_transform * Vector3(0.03, 0.04, -0.02) if has_view and viewmodel != null else chest_position() + rgt * 0.2 + Vector3(0, 0.15, 0)
+		Fx.casing(game.world, port, rgt)
+		if Engine.get_physics_frames() % 2 == 0:
+			var mz: Vector3 = viewmodel.muzzle_position() if viewmodel != null and is_instance_valid(viewmodel) and viewmodel.visible else character.muzzle_position()
+			Fx.puff(game.world, mz, Color(0.75, 0.75, 0.78, 0.25), 2, 0.22)
 
 	var eye := eye_position()
 	var basis := aim_basis()
