@@ -157,7 +157,7 @@ static func _props(m) -> void:
 	m._model("toon/Prop/Debris_Broken_Car", Vector3(24.0, 0, -36.0), 2.1, 1.0)
 	m._model("toon/Prop/Debris_Broken_Car", Vector3(84.0, 0, 34.0), 1.4, 1.0)
 	m._model("toon/Prop/Debris_Tires", Vector3(56.0, 0, 15.0), 0.3, 1.2)
-	m._model("toon/Prop/Debris_Pile", Vector3(18.0, 0.02, -12.0), 0.5, 1.4, true, "none")
+	m._model("toon/Prop/Debris_Pile", Vector3(10.0, 0.02, -15.0), 0.5, 1.4, true, "none")
 	m._model("toon/Prop/Debris_Pile", Vector3(-6.0, 0.02, 34.0), 2.0, 1.4, true, "none")
 	m._model("toon/Prop/Gas_Tank", Vector3(64.0, 0, -30.0), 0.0, 1.2)
 	m._model("toon/Prop/Pipes", Vector3(50.0, 0, -44.0), 0.4, 1.2)
@@ -332,8 +332,9 @@ static func _trees(m) -> void:
 		tries += 1
 		var p := Vector3(m._rng.randf_range(4, 96), 0, m._rng.randf_range(-66, 66))
 		var ok := true
-		for r in blocked:
-			if (r as Rect2).has_point(Vector2(p.x, p.z)) or (r as Rect2).has_point(Vector2(-p.x, -p.z)):
+		for r in blocked + m.roofs:
+			var rr: Rect2 = (r as Rect2).grow(2.0)
+			if rr.has_point(Vector2(p.x, p.z)) or rr.has_point(Vector2(-p.x, -p.z)):
 				ok = false
 				break
 		if not ok:

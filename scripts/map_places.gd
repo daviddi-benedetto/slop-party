@@ -168,17 +168,18 @@ static func museum(m) -> void:
 ## along the east gallery and coin vitrines along the west one.
 static func _galleries(m) -> void:
 	var f := 2.15
-	# Cafe: counter with coffee machine, bar stools, two tables.
+	# Cafe: counter with coffee machine, bar stools, a table (counter and
+	# table fixed, seats loose).
 	for i in 3:
-		m._prop("furniture/Kitchen_Bar", Vector3(-16.7, 0, 16.4 + i * 1.16), -PI * 0.5, f * 1.25, 5.0)
-		m._prop("furniture/Stool_Bar", Vector3(-17.7, 0, 16.4 + i * 1.16), 0.0, f, 5.0)
-	m._prop("furniture/Kitchen_Coffee_Machine", Vector3(-16.7, 1.14, 16.4), PI * 0.5, f, 5.0)
-	m._prop("furniture/Kitchen_Fridge", Vector3(-15.65, 0, 19.3), -PI * 0.5, f, 5.0)
-	for tz in [16.4, 18.9]:
-		m._prop("furniture/Table_Round", Vector3(-20.2, 0, tz), 0.0, f, 5.0)
-		m._prop("furniture/Chair", Vector3(-21.3, 0, tz), PI * 0.5, f, 5.0)
-		m._prop("furniture/Chair_Cushion", Vector3(-19.1, 0, tz), -PI * 0.5, f, 5.0)
-	m._prop("furniture/Potted_Plant", Vector3(-25.4, 0, 19.4), 0.0, f, 5.0)
+		m._fixed("furniture/Kitchen_Bar", Vector3(-16.7, 0, 16.4 + i * 1.16), -PI * 0.5, f * 1.25)
+	for i in 2:
+		m._prop("furniture/Stool_Bar", Vector3(-17.7, 0, 16.9 + i * 1.16), 0.0, f, 5.0)
+	m._fixed("furniture/Kitchen_Coffee_Machine", Vector3(-16.7, 1.14, 16.4), PI * 0.5, f, true, "none")
+	m._fixed("furniture/Kitchen_Fridge", Vector3(-15.65, 0, 19.3), -PI * 0.5, f)
+	m._fixed("furniture/Table_Round", Vector3(-20.6, 0, 17.6), 0.0, f)
+	m._prop("furniture/Chair", Vector3(-21.7, 0, 17.6), PI * 0.5, f, 5.0)
+	m._prop("furniture/Chair_Cushion", Vector3(-19.5, 0, 17.6), -PI * 0.5, f, 5.0)
+	m._fixed("furniture/Potted_Plant", Vector3(-25.4, 0, 19.4), 0.0, f)
 	# Armoury: siege engines on plinths, roped off, weapon racks on the wall.
 	for ex in [["castle/Siege_Catapult", -4.0, 4.6], ["castle/Siege_Ballista", 3.0, 4.4]]:
 		var x: float = ex[1]
@@ -201,11 +202,10 @@ static func _galleries(m) -> void:
 		for lvl in 4:
 			m._model("fantasy/BookGroup_Medium_%d" % (1 + (i + lvl) % 3), Vector3(bx, 0.07 + lvl * 0.465, 19.5), PI, 0.7, true, "none", false)
 	for i in 2:
-		m._prop("furniture/Kitchen_Bar", Vector3(17.6 + i * 1.16, 0, 17.0), 0.0, f * 1.25, 5.0)
-	m._prop("furniture/Laptop", Vector3(17.6, 1.14, 17.0), PI, f, 5.0)
-	m._prop("furniture/Table_Cross_Cloth", Vector3(20.4, 0, 16.4), 0.0, f, 5.0)
-	m._prop("furniture/Books", Vector3(20.2, 0.75, 16.4), 0.4, f, 5.0)
-	m._prop("furniture/Books", Vector3(20.8, 0.75, 16.5), 1.3, f, 5.0)
+		m._fixed("furniture/Kitchen_Bar", Vector3(17.6 + i * 1.16, 0, 17.0), 0.0, f * 1.25)
+	m._fixed("furniture/Laptop", Vector3(17.6, 1.14, 17.0), PI, f, true, "none")
+	m._fixed("furniture/Table_Cross_Cloth", Vector3(20.4, 0, 16.4), 0.0, f)
+	m._fixed("furniture/Books", Vector3(20.4, 0.75, 16.4), 0.4, f, true, "none")
 	# Antiquities on column pedestals along the east gallery.
 	var antiques := [["fantasy/Vase_2", 0.9], ["fantasy/Vase_4", 1.3], ["fantasy/Chalice", 2.6]]
 	for i in 3:

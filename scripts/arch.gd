@@ -36,6 +36,12 @@ static func _p(m, path: String, pos: Vector3, yaw: float, mirror: bool, scl := F
 	m._prop(path, pos, yaw, scl, 5.0, mirror)
 
 
+## Fixed furniture: a static model (with a box collider unless collide is
+## "none"), centred on its footprint the same way _p's loose props are.
+static func _s(m, path: String, pos: Vector3, yaw: float, mirror: bool, scl := F, collide := "box") -> void:
+	m._fixed(path, pos, yaw, scl, mirror, collide)
+
+
 # --------------------------------------------------------------------------
 # Exteriors
 # --------------------------------------------------------------------------
@@ -326,7 +332,6 @@ static func interior(m, style: String, f: int, floors: int, c: Vector3, sx: floa
 			_office(m, ne, north, mirror)
 			if wide:
 				_office(m, nw, north, mirror)
-				_p(m, "furniture/Potted_Plant", Vector3(c.x, y, hall_z - 0.5), 0.0, mirror)
 		"clinic":
 			if not upper:
 				_reception(m, se, south, mirror)
@@ -378,175 +383,148 @@ static func interior(m, style: String, f: int, floors: int, c: Vector3, sx: floa
 
 # ---- rooms: `at` is the middle of the room on the floor; `wall_z` the z of
 # ---- the wall its big furniture stands against.
+# ---- Furniture is fixed in place (_s) so rooms stay walkable after a fight;
+# ---- only chairs and stools are loose (_p). Small things on tables and
+# ---- counters are decoration without collision. Kept to what a real room
+# ---- of that kind would have, with clear walkways to every door.
 
 static func _kitchen(m, at: Vector3, w: float, wall_z: float, mirror: bool) -> void:
 	var z := wall_z - 0.55 * signf(wall_z - at.z)
-	_p(m, "furniture/Kitchen_Fridge", at + Vector3(-1.4, 0, z - at.z), PI, mirror)
-	_p(m, "furniture/Kitchen_Stove", at + Vector3(-0.4, 0, z - at.z), PI, mirror)
-	_p(m, "furniture/Kitchen_Sink", at + Vector3(0.55, 0, z - at.z), PI, mirror)
-	_p(m, "furniture/Kitchen_Cabinet", at + Vector3(1.5, 0, z - at.z), PI, mirror)
-	_p(m, "furniture/Toaster", at + Vector3(1.5, 0.99, z - at.z), 0.0, mirror)
-	_p(m, "furniture/Kitchen_Coffee_Machine", at + Vector3(0.55, 1.08, z - at.z + 0.2), 0.0, mirror)
+	_s(m, "furniture/Kitchen_Fridge", at + Vector3(-1.4, 0, z - at.z), PI, mirror)
+	_s(m, "furniture/Kitchen_Stove", at + Vector3(-0.4, 0, z - at.z), PI, mirror)
+	_s(m, "furniture/Kitchen_Sink", at + Vector3(0.55, 0, z - at.z), PI, mirror)
+	_s(m, "furniture/Kitchen_Cabinet", at + Vector3(1.5, 0, z - at.z), PI, mirror)
+	_s(m, "furniture/Kitchen_Coffee_Machine", at + Vector3(1.5, 0.99, z - at.z), 0.0, mirror, F, "none")
 	if w > 3.4:
-		_p(m, "furniture/Table_Round", at + Vector3(0, 0, -0.55), 0.0, mirror)
-		_p(m, "furniture/Chair", at + Vector3(-1.1, 0, -0.55), PI * 0.5, mirror)
-		_p(m, "furniture/Chair_Cushion", at + Vector3(1.1, 0, -0.55), -PI * 0.5, mirror)
-		_p(m, "survival/Bottle", at + Vector3(0.1, 0.82, -0.5), 0.0, mirror, 2.4)
+		_s(m, "furniture/Table_Round", at + Vector3(0, 0, -0.75), 0.0, mirror)
+		_p(m, "furniture/Chair", at + Vector3(-1.0, 0, -0.75), PI * 0.5, mirror)
+		_p(m, "furniture/Chair_Cushion", at + Vector3(1.0, 0, -0.75), -PI * 0.5, mirror)
 
 
 static func _bathroom(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	var z := wall_z - 0.7
-	_p(m, "furniture/Bathtub", at + Vector3(0.2, 0, z - at.z), 0.0, mirror)
-	_p(m, "furniture/Toilet", at + Vector3(-1.6, 0, z - at.z + 0.1), PI, mirror)
-	_p(m, "furniture/Washer", at + Vector3(1.9, 0, z - at.z + 0.2), PI, mirror)
-	m._model("furniture/Rug_Round", at + Vector3(0.5, 0.01, -0.2), 0.0, F * 0.8, mirror, "none", false)
+	_s(m, "furniture/Bathtub", at + Vector3(0.6, 0, z - at.z), 0.0, mirror)
+	_s(m, "furniture/Toilet", at + Vector3(-1.6, 0, z - at.z + 0.1), PI, mirror)
+	m._model("furniture/Rug_Round", at + Vector3(0.5, 0.01, -0.3), 0.0, F * 0.8, mirror, "none", false)
 
 
 static func _living(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	var s := signf(wall_z - at.z)
 	m._model("furniture/Rug_Rectangle", at + Vector3(0, 0.01, 0.2), 0.0, F, mirror, "none", false)
-	_p(m, "furniture/Lounge_Sofa", at + Vector3(0, 0, -s * 1.1), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Pillow_Blue", at + Vector3(-0.5, 0.55, -s * 1.1), 0.3, mirror)
-	_p(m, "furniture/Table_Coffee", at + Vector3(0, 0, 0.1), 0.0, mirror)
-	_p(m, "furniture/Books", at + Vector3(0.2, 0.52, 0.1), 0.4, mirror)
-	_p(m, "furniture/Cabinet_Television", at + Vector3(0, 0, wall_z - at.z - s * 0.5), PI if s < 0 else 0.0, mirror)
-	_p(m, "furniture/Television_Modern", at + Vector3(0, 0.69, wall_z - at.z - s * 0.5), PI if s < 0 else 0.0, mirror)
-	_p(m, "furniture/Lamp_Round_Floor", at + Vector3(1.5, 0, -s * 1.2), 0.0, mirror)
-	_p(m, "furniture/Potted_Plant", at + Vector3(-1.6, 0, wall_z - at.z - s * 0.5), 0.0, mirror)
-	_p(m, "furniture/Speaker", at + Vector3(1.3, 0, wall_z - at.z - s * 0.45), 0.0, mirror)
+	_s(m, "furniture/Lounge_Sofa", at + Vector3(0, 0, -s * 1.1), 0.0 if s < 0 else PI, mirror)
+	_s(m, "furniture/Table_Coffee", at + Vector3(0, 0, 0.1), 0.0, mirror)
+	_s(m, "furniture/Cabinet_Television", at + Vector3(0, 0, wall_z - at.z - s * 0.5), PI if s < 0 else 0.0, mirror)
+	_s(m, "furniture/Television_Modern", at + Vector3(0, 0.69, wall_z - at.z - s * 0.5), PI if s < 0 else 0.0, mirror, F, "none")
+	_s(m, "furniture/Potted_Plant", at + Vector3(-1.6, 0, wall_z - at.z - s * 0.5), 0.0, mirror)
 
 
 static func _bedroom(m, at: Vector3, wall_z: float, mirror: bool, double: bool) -> void:
 	var s := signf(wall_z - at.z)
 	var z := wall_z - at.z - s * 1.35
 	m._model("furniture/Rug_Round", at + Vector3(0.9, 0.01, z - s * 0.6), 0.0, F, mirror, "none", false)
-	_p(m, "furniture/Bed_Double" if double else "furniture/Bed_Single", at + Vector3(-0.4, 0, z), 0.0 if s > 0 else PI, mirror)
-	_p(m, "furniture/Side_Table", at + Vector3(1.05, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Lamp_Round_Table", at + Vector3(1.05, 0.84, wall_z - at.z - s * 0.4), 0.0, mirror)
-	_p(m, "furniture/Bookcase_Open", at + Vector3(-1.9, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Coat_Rack_Standing", at + Vector3(1.9, 0, z - s * 1.2), 0.0, mirror)
-	if double:
-		_p(m, "furniture/Bear", at + Vector3(-0.2, 0.84, z + s * 0.5), 2.4, mirror)
+	_s(m, "furniture/Bed_Double" if double else "furniture/Bed_Single", at + Vector3(-0.4, 0, z), 0.0 if s > 0 else PI, mirror)
+	_s(m, "furniture/Side_Table", at + Vector3(1.05, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
+	_s(m, "furniture/Lamp_Round_Table", at + Vector3(1.05, 0.84, wall_z - at.z - s * 0.4), 0.0, mirror, F, "none")
+	_s(m, "furniture/Bookcase_Closed_Wide", at + Vector3(-1.9, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
 
 
 static func _office(m, at: Vector3, wall_z: float, mirror: bool, face := 0.0) -> void:
 	var s := signf(wall_z - at.z)
 	var z := wall_z - at.z - s * 0.6
-	_p(m, "furniture/Desk", at + Vector3(-0.3, 0, z), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Computer_Screen", at + Vector3(-0.3, 0.84, z + s * 0.12), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Computer_Keyboard", at + Vector3(-0.3, 0.84, z - s * 0.22), 0.0, mirror)
+	_s(m, "furniture/Desk", at + Vector3(-0.3, 0, z), 0.0 if s < 0 else PI, mirror)
+	_s(m, "furniture/Computer_Screen", at + Vector3(-0.3, 0.84, z + s * 0.12), 0.0 if s < 0 else PI, mirror, F, "none")
 	_p(m, "furniture/Chair_Desk", at + Vector3(-0.3, 0, z - s * 0.95), PI if s < 0 else 0.0, mirror)
-	_p(m, "furniture/Bookcase_Closed_Wide", at + Vector3(1.7, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Trashcan", at + Vector3(-1.5, 0, z), 0.0, mirror)
-	_p(m, "furniture/Plant_Small_1", at + Vector3(1.7, 1.72, wall_z - at.z - s * 0.4), 0.0, mirror)
+	_s(m, "furniture/Bookcase_Closed_Wide", at + Vector3(1.7, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
 
 
 static func _reception(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	var s := signf(wall_z - at.z)
-	_p(m, "furniture/Kitchen_Bar", at + Vector3(-0.5, 0, 0.6 * -s), PI * 0.5, mirror, F * 1.25)
-	_p(m, "furniture/Laptop", at + Vector3(-0.5, 1.14, 0.6 * -s), PI * 0.5, mirror)
+	_s(m, "furniture/Kitchen_Bar", at + Vector3(-0.5, 0, 0.6 * -s), PI * 0.5, mirror, F * 1.25)
+	_s(m, "furniture/Laptop", at + Vector3(-0.5, 1.14, 0.6 * -s), PI * 0.5, mirror, F, "none")
 	_p(m, "furniture/Chair_Desk", at + Vector3(0.5, 0, 0.6 * -s), -PI * 0.5, mirror)
-	for i in 3:
-		_p(m, "furniture/Bench_Cushion", at + Vector3(-1.2 + i * 0.95, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Potted_Plant", at + Vector3(1.9, 0, wall_z - at.z - s * 0.5), 0.0, mirror)
-	_p(m, "furniture/Coat_Rack_Standing", at + Vector3(-2.1, 0, wall_z - at.z - s * 0.4), 0.0, mirror)
+	for i in 2:
+		_s(m, "furniture/Bench_Cushion", at + Vector3(-0.7 + i * 0.95, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
+	_s(m, "furniture/Potted_Plant", at + Vector3(1.9, 0, wall_z - at.z - s * 0.5), 0.0, mirror)
 
 
 static func _ward(m, at: Vector3, wall_z: float, mirror: bool, beds: int) -> void:
 	var s := signf(wall_z - at.z)
 	for i in beds:
 		var x := (i - (beds - 1) * 0.5) * 1.7
-		_p(m, "furniture/Bed_Single", at + Vector3(x, 0, wall_z - at.z - s * 1.35), 0.0 if s > 0 else PI, mirror)
-		_p(m, "furniture/Side_Table", at + Vector3(x + 0.8, 0, wall_z - at.z - s * 0.35), 0.0 if s < 0 else PI, mirror, F * 0.7)
+		_s(m, "furniture/Bed_Single", at + Vector3(x, 0, wall_z - at.z - s * 1.35), 0.0 if s > 0 else PI, mirror)
+		_s(m, "furniture/Side_Table", at + Vector3(x + 0.8, 0, wall_z - at.z - s * 0.35), 0.0 if s < 0 else PI, mirror, F * 0.7)
 		# A screen between beds.
 		if i > 0:
 			m._box(at + Vector3(x - 0.85, 0.9, wall_z - at.z - s * 1.2), Vector3(0.05, 1.8, 1.9), _mat(m, ["trim", "block_a"]), mirror, 0.0, false)
-	_p(m, "furniture/Coat_Rack_Standing", at + Vector3(-(beds * 0.85 + 0.3), 0, wall_z - at.z - s * 0.4), 0.0, mirror)
 
 
 static func _motel_room(m, at: Vector3, wall_z: float, mirror: bool, flip := false) -> void:
 	var s := signf(wall_z - at.z)
-	_p(m, "furniture/Bed_Double", at + Vector3(-0.6, 0, wall_z - at.z - s * 1.35), 0.0 if s > 0 else PI, mirror)
-	_p(m, "furniture/Pillow", at + Vector3(-0.6, 0.84, wall_z - at.z - s * 0.7), 0.0, mirror)
-	_p(m, "furniture/Side_Table", at + Vector3(0.9, 0, wall_z - at.z - s * 0.35), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Lamp_Round_Table", at + Vector3(0.9, 0.84, wall_z - at.z - s * 0.35), 0.0, mirror)
-	_p(m, "furniture/Television_Vintage", at + Vector3(1.9, 0.0, wall_z - at.z - s * 2.2), -PI * 0.5, mirror)
-	_p(m, "furniture/Chair_Rounded", at + Vector3(-1.9, 0, wall_z - at.z - s * 2.3), 0.6 if not flip else -0.6, mirror)
+	_s(m, "furniture/Bed_Double", at + Vector3(-0.6, 0, wall_z - at.z - s * 1.35), 0.0 if s > 0 else PI, mirror)
+	_s(m, "furniture/Side_Table", at + Vector3(0.9, 0, wall_z - at.z - s * 0.35), 0.0 if s < 0 else PI, mirror)
+	_s(m, "furniture/Lamp_Round_Table", at + Vector3(0.9, 0.84, wall_z - at.z - s * 0.35), 0.0, mirror, F, "none")
+	_s(m, "furniture/Television_Vintage", at + Vector3(1.9, 0.0, wall_z - at.z - s * 2.2), -PI * 0.5, mirror)
 
 
 static func _shop(m, c: Vector3, sx: float, sz: float, y: float, mirror: bool) -> void:
-	# Shelf aisles running back from the shop front, a counter by the door
-	# with the till, fridges along the east wall, stock boxes.
-	var rows := clampi(int((sx - 5.0) / 2.2), 1, 3)
+	# Shelf aisles running back from the shop front (wide gaps between them),
+	# a counter with the till by the door, a drinks fridge on the east wall.
+	var rows := clampi(int((sx - 5.0) / 2.8), 1, 2)
 	for r in rows:
-		var x := c.x - sx * 0.5 + 2.9 + r * 2.1
+		var x := c.x - sx * 0.5 + 2.9 + r * 2.8
 		for i in 2:
 			var z := c.z - sz * 0.3 + i * 1.0
-			_p(m, "furniture/Bookcase_Open", Vector3(x, y, z), PI * 0.5, mirror)
-			_p(m, "furniture/Bookcase_Open", Vector3(x + 0.56, y, z), -PI * 0.5, mirror)
-		_p(m, "furniture/Cardboard_Box_Open", Vector3(x + 0.3, y, c.z - sz * 0.3 + 2.0), 0.3 * r, mirror)
+			_s(m, "furniture/Bookcase_Open", Vector3(x, y, z), PI * 0.5, mirror)
+			_s(m, "furniture/Bookcase_Open", Vector3(x + 0.56, y, z), -PI * 0.5, mirror)
 	var cx := c.x + sx * 0.5 - 2.4
-	_p(m, "furniture/Kitchen_Bar", Vector3(cx, y, c.z - sz * 0.5 + 1.6), 0.0, mirror, F * 1.3)
-	_p(m, "furniture/Laptop", Vector3(cx, y + 1.18, c.z - sz * 0.5 + 1.6), PI, mirror)
-	_p(m, "furniture/Stool_Bar", Vector3(cx, y, c.z - sz * 0.5 + 2.5), 0.0, mirror)
-	_p(m, "furniture/Kitchen_Fridge", Vector3(c.x + sx * 0.5 - 0.75, y, c.z - sz * 0.5 + 3.4), -PI * 0.5, mirror)
-	_p(m, "furniture/Trashcan", Vector3(c.x - 1.4, y, c.z - sz * 0.5 + 0.8), 0.0, mirror)
+	_s(m, "furniture/Kitchen_Bar", Vector3(cx, y, c.z - sz * 0.5 + 1.6), 0.0, mirror, F * 1.3)
+	_s(m, "furniture/Laptop", Vector3(cx, y + 1.18, c.z - sz * 0.5 + 1.6), PI, mirror, F, "none")
+	_s(m, "furniture/Kitchen_Fridge", Vector3(c.x + sx * 0.5 - 0.75, y, c.z - sz * 0.5 + 3.4), -PI * 0.5, mirror)
 
 
+## A stock room: shelving along the wall.
 static func _storage(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	var s := signf(wall_z - at.z)
-	var z := wall_z - at.z - s * 0.8
-	var crate := _mat(m, ["crate"])
-	m._box(at + Vector3(-1.2, 0.5, z), Vector3(1.0, 1.0, 1.0), crate, mirror)
-	m._box(at + Vector3(-0.1, 0.5, z), Vector3(1.0, 1.0, 1.0), crate, mirror)
-	m._box(at + Vector3(-0.6, 1.5, z), Vector3(1.0, 1.0, 1.0), crate, mirror)
-	_p(m, "furniture/Bookcase_Closed_Wide", at + Vector3(1.6, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
-	_p(m, "furniture/Cardboard_Box_Closed", at + Vector3(1.0, 0, z - s * 1.2), 0.5, mirror, 2.4)
-	_p(m, "furniture/Cardboard_Box_Closed", at + Vector3(1.6, 0, z - s * 1.4), 1.1, mirror, 2.4)
-	_p(m, "survival/Barrel", at + Vector3(-1.9, 0, z - s * 1.2), 0.0, mirror, 3.0)
+	for x in [-1.2, 0.6]:
+		_s(m, "furniture/Bookcase_Closed_Wide", at + Vector3(x, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
+	_s(m, "furniture/Cardboard_Box_Closed", at + Vector3(1.9, 0, wall_z - at.z - s * 0.5), 0.5, mirror, 2.4)
 
 
 static func _bunks(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	var s := signf(wall_z - at.z)
 	for i in 3:
 		var x := (i - 1) * 1.6
-		_p(m, "furniture/Bed_Single", at + Vector3(x, 0, wall_z - at.z - s * 1.35), 0.0 if s > 0 else PI, mirror)
-		m._box(at + Vector3(x, 0.3, wall_z - at.z - s * 2.9), Vector3(0.9, 0.6, 0.5), _mat(m, ["olive", "crate"]), mirror)
-	_p(m, "furniture/Bookcase_Closed_Wide", at + Vector3(2.7, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
+		_s(m, "furniture/Bed_Single", at + Vector3(x, 0, wall_z - at.z - s * 1.35), 0.0 if s > 0 else PI, mirror)
+		# A footlocker at the end of each bed.
+		m._box(at + Vector3(x, 0.25, wall_z - at.z - s * 2.75), Vector3(0.8, 0.5, 0.4), _mat(m, ["olive", "crate"]), mirror)
 
 
 static func _briefing(m, at: Vector3, mirror: bool) -> void:
-	_p(m, "furniture/Table", at, 0.0, mirror)
-	_p(m, "furniture/Radio", at + Vector3(-0.4, 0.75, 0), 0.5, mirror)
-	_p(m, "furniture/Books", at + Vector3(0.4, 0.75, 0.1), 1.0, mirror)
+	_s(m, "furniture/Table", at, 0.0, mirror)
+	_s(m, "furniture/Radio", at + Vector3(-0.4, 0.75, 0), 0.5, mirror, F, "none")
 	for sgn in [-1.0, 1.0]:
 		_p(m, "furniture/Chair", at + Vector3(sgn * 0.5, 0, 0.95), PI, mirror)
 		_p(m, "furniture/Chair", at + Vector3(sgn * 0.5, 0, -0.95), 0.0, mirror)
-	_p(m, "survival/Box_Large", at + Vector3(1.9, 0, -0.8), 0.3, mirror, 3.0)
 
 
 static func _lab(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	var s := signf(wall_z - at.z)
 	for i in 2:
 		var x := -1.0 + i * 1.7
-		_p(m, "furniture/Desk", at + Vector3(x, 0, wall_z - at.z - s * 0.6), 0.0 if s < 0 else PI, mirror)
-		_p(m, "furniture/Computer_Screen", at + Vector3(x, 0.84, wall_z - at.z - s * 0.5), 0.0 if s < 0 else PI, mirror)
+		_s(m, "furniture/Desk", at + Vector3(x, 0, wall_z - at.z - s * 0.6), 0.0 if s < 0 else PI, mirror)
+		_s(m, "furniture/Computer_Screen", at + Vector3(x, 0.84, wall_z - at.z - s * 0.5), 0.0 if s < 0 else PI, mirror, F, "none")
 		_p(m, "furniture/Chair_Desk", at + Vector3(x, 0, wall_z - at.z - s * 1.5), PI if s < 0 else 0.0, mirror)
-	# Server racks with status lights.
-	for i in 2:
-		var rp: Vector3 = at + Vector3(2.3, 1.0, wall_z - at.z - s * (0.5 + i * 0.9))
-		m._box(rp, Vector3(0.7, 2.0, 0.8), "dark", mirror)
-		m._box(rp + Vector3(-0.36, 0.4, 0), Vector3(0.03, 0.08, 0.5), "accent_b", mirror, 0.0, false)
-		m._box(rp + Vector3(-0.36, 0.1, 0), Vector3(0.03, 0.08, 0.5), "accent_a", mirror, 0.0, false)
-	_p(m, "blaster/Crate_Small", at + Vector3(-2.2, 0, wall_z - at.z - s * 0.6), 0.2, mirror, 1.6)
+	# A server rack with status lights.
+	var rp: Vector3 = at + Vector3(2.3, 1.0, wall_z - at.z - s * 0.5)
+	m._box(rp, Vector3(0.7, 2.0, 0.8), "dark", mirror)
+	m._box(rp + Vector3(-0.36, 0.4, 0), Vector3(0.03, 0.08, 0.5), "accent_b", mirror, 0.0, false)
+	m._box(rp + Vector3(-0.36, 0.1, 0), Vector3(0.03, 0.08, 0.5), "accent_a", mirror, 0.0, false)
 
 
 static func _workshop(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	var s := signf(wall_z - at.z)
 	m._model("survival/Workbench", at + Vector3(-0.6, 0, wall_z - at.z - s * 0.7), 0.0 if s < 0 else PI, 3.0, mirror)
-	_p(m, "fantasy/Anvil", at + Vector3(1.2, 0, wall_z - at.z - s * 1.6), 0.5, mirror, 1.1)
-	_p(m, "survival/Bucket", at + Vector3(1.9, 0, wall_z - at.z - s * 0.6), 0.0, mirror, 2.6)
-	_p(m, "survival/Barrel", at + Vector3(-2.1, 0, wall_z - at.z - s * 0.7), 0.0, mirror, 3.0)
+	_s(m, "furniture/Bookcase_Closed_Wide", at + Vector3(1.0, 0, wall_z - at.z - s * 0.4), 0.0 if s < 0 else PI, mirror)
 	# The forge: a brick hearth with a glow.
 	m._box(at + Vector3(2.0, 0.5, wall_z - at.z - s * 2.6), Vector3(1.1, 1.0, 1.1), _mat(m, ["block_b", "wall"]), mirror)
 	m._box(at + Vector3(2.0, 1.02, wall_z - at.z - s * 2.6), Vector3(0.8, 0.06, 0.8), "accent_a", mirror, 0.0, false)
@@ -556,33 +534,26 @@ static func _workshop(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 static func _cabin(m, c: Vector3, sx: float, sz: float, y: float, mirror: bool) -> void:
 	var north := c.z + sz * 0.5 - 0.3
 	m._model("furniture/Rug_Rectangle", Vector3(c.x + 0.6, y + 0.01, c.z - 0.3), PI * 0.5, F * 1.1, mirror, "none", false)
-	_p(m, "furniture/Bed_Single", Vector3(c.x + sx * 0.5 - 1.2, y, north - 1.3), 0.0, mirror)
-	_p(m, "furniture/Bear", Vector3(c.x + sx * 0.5 - 1.2, y + 0.84, north - 1.0), 2.6, mirror)
-	_p(m, "furniture/Table_Round", Vector3(c.x + 0.4, y, c.z - 0.2), 0.0, mirror)
+	_s(m, "furniture/Bed_Single", Vector3(c.x + sx * 0.5 - 1.2, y, north - 1.3), 0.0, mirror)
+	_s(m, "furniture/Table_Round", Vector3(c.x + 0.4, y, c.z - 0.2), 0.0, mirror)
 	_p(m, "furniture/Chair", Vector3(c.x + 0.4, y, c.z - 1.3), 0.0, mirror)
-	_p(m, "fantasy/Mug", Vector3(c.x + 0.3, y + 0.82, c.z - 0.2), 0.4, mirror, 1.3)
-	_p(m, "furniture/Bookcase_Open", Vector3(c.x + 0.6, y, north - 0.4), PI, mirror)
+	_s(m, "fantasy/Mug", Vector3(c.x + 0.3, y + 0.82, c.z - 0.2), 0.4, mirror, 1.3, "none")
+	_s(m, "furniture/Bookcase_Open", Vector3(c.x + 0.6, y, north - 0.4), PI, mirror)
 	# Hearth against the west wall under the chimney, with a warm glow.
 	var hx := c.x - sx * 0.5 + 0.75
 	m._box(Vector3(hx, y + 0.6, c.z), Vector3(0.9, 1.2, 1.5), _mat(m, ["wall", "block_b"]), mirror)
 	m._box(Vector3(hx + 0.47, y + 0.45, c.z), Vector3(0.05, 0.6, 0.9), "accent_a", mirror, 0.0, false)
 	m._glow(Vector3(hx + 1.2, y + 0.8, c.z), Color(1.0, 0.5, 0.18), 6.5, 1.7, mirror)
-	_p(m, "survival/Bucket", Vector3(hx + 0.2, y, c.z + 1.3), 0.0, mirror, 2.6)
 
 
 static func _garage(m, c: Vector3, sx: float, sz: float, y: float, mirror: bool) -> void:
 	var north := c.z + sz * 0.5 - 0.3
 	m._model("survival/Workbench", Vector3(c.x + 0.4, y, north - 0.6), PI, 3.0, mirror)
-	_p(m, "furniture/Washer", Vector3(c.x + sx * 0.5 - 0.8, y, north - 0.6), PI, mirror)
-	_p(m, "furniture/Bookcase_Open", Vector3(c.x + sx * 0.5 - 0.6, y, c.z + 0.6), -PI * 0.5, mirror)
-	_p(m, "furniture/Cardboard_Box_Closed", Vector3(c.x + 1.0, y, c.z - sz * 0.5 + 1.0), 0.4, mirror, 2.4)
-	_p(m, "furniture/Cardboard_Box_Open", Vector3(c.x + 1.7, y, c.z - sz * 0.5 + 1.1), 1.2, mirror, 2.4)
-	_p(m, "toon/Prop/Gas_Can", Vector3(c.x + 0.2, y, c.z - sz * 0.5 + 0.8), 0.0, mirror, 0.8)
-	_p(m, "furniture/Trashcan", Vector3(c.x + sx * 0.5 - 0.7, y, c.z - sz * 0.5 + 0.9), 0.0, mirror)
+	_s(m, "furniture/Bookcase_Closed_Wide", Vector3(c.x + sx * 0.5 - 0.6, y, c.z + 0.6), -PI * 0.5, mirror)
 
 
 ## A narrow club stand (stairs on the west wall below, east wall above).
-## Ground floor: a bar along the back wall with stools, two tables, a TV.
+## Ground floor: a bar along the back wall with stools, a table, a TV.
 ## Upper floor: a lit trophy cabinet, a lounge under the front window.
 static func _clubhouse(m, c: Vector3, sx: float, sz: float, y: float, mirror: bool, upper: bool) -> void:
 	var b := Vector3(c.x, y, c.z)
@@ -590,22 +561,17 @@ static func _clubhouse(m, c: Vector3, sx: float, sz: float, y: float, mirror: bo
 	var e := sx * 0.5 - 0.3
 	if not upper:
 		for i in 3:
-			_p(m, "furniture/Kitchen_Bar", b + Vector3(-1.0 + i * 1.16, 0, n - 1.1), 0.0, mirror, F * 1.25)
-			_p(m, "furniture/Stool_Bar", b + Vector3(-1.0 + i * 1.16, 0, n - 2.0), 0.0, mirror)
-		_p(m, "furniture/Kitchen_Coffee_Machine", b + Vector3(-1.0, 1.14, n - 1.1), PI, mirror)
-		_p(m, "survival/Bottle", b + Vector3(0.3, 1.14, n - 1.05), 0.0, mirror, 2.4)
-		_p(m, "survival/Bottle", b + Vector3(0.55, 1.14, n - 1.15), 0.0, mirror, 2.4)
-		_p(m, "furniture/Bookcase_Open", b + Vector3(0.0, 0, n - 0.32), PI, mirror)
-		_p(m, "furniture/Kitchen_Fridge", b + Vector3(e - 0.5, 0, n - 0.45), PI, mirror)
-		_p(m, "furniture/Table_Round", b + Vector3(1.6, 0, 1.9), 0.0, mirror)
-		_p(m, "furniture/Chair", b + Vector3(0.45, 0, 1.9), PI * 0.5, mirror)
-		_p(m, "furniture/Chair", b + Vector3(2.75, 0, 1.9), -PI * 0.5, mirror)
-		_p(m, "furniture/Table_Round", b + Vector3(2.1, 0, -3.5), 0.0, mirror)
-		_p(m, "furniture/Chair", b + Vector3(2.1, 0, -4.6), 0.0, mirror)
-		_p(m, "furniture/Chair", b + Vector3(2.1, 0, -2.4), PI, mirror)
-		_p(m, "furniture/Cabinet_Television", b + Vector3(-2.6, 0, -n + 0.45), PI, mirror)
-		_p(m, "furniture/Television_Modern", b + Vector3(-2.6, 0.69, -n + 0.45), PI, mirror)
-		_p(m, "furniture/Potted_Plant", b + Vector3(-3.1, 0, n - 0.5), 0.0, mirror)
+			_s(m, "furniture/Kitchen_Bar", b + Vector3(-1.0 + i * 1.16, 0, n - 1.1), 0.0, mirror, F * 1.25)
+		for i in 2:
+			_p(m, "furniture/Stool_Bar", b + Vector3(-0.4 + i * 1.16, 0, n - 2.0), 0.0, mirror)
+		_s(m, "furniture/Kitchen_Coffee_Machine", b + Vector3(-1.0, 1.14, n - 1.1), PI, mirror, F, "none")
+		_s(m, "furniture/Bookcase_Open", b + Vector3(0.0, 0, n - 0.32), PI, mirror)
+		_s(m, "furniture/Kitchen_Fridge", b + Vector3(e - 0.5, 0, n - 0.45), PI, mirror)
+		_s(m, "furniture/Table_Round", b + Vector3(1.6, 0, 1.4), 0.0, mirror)
+		_p(m, "furniture/Chair", b + Vector3(0.45, 0, 1.4), PI * 0.5, mirror)
+		_p(m, "furniture/Chair", b + Vector3(2.75, 0, 1.4), -PI * 0.5, mirror)
+		_s(m, "furniture/Cabinet_Television", b + Vector3(-2.6, 0, -n + 0.45), PI, mirror)
+		_s(m, "furniture/Television_Modern", b + Vector3(-2.6, 0.69, -n + 0.45), PI, mirror, F, "none")
 	else:
 		m._box(b + Vector3(-0.3, 0.45, n - 0.3), Vector3(3.0, 0.9, 0.55), "dark", mirror)
 		m._box(b + Vector3(-0.3, 1.35, n - 0.3), Vector3(2.9, 0.9, 0.5), "glass", mirror)
@@ -613,8 +579,6 @@ static func _clubhouse(m, c: Vector3, sx: float, sz: float, y: float, mirror: bo
 			m._model("fantasy/Chalice", b + Vector3(-1.3 + i * 1.0, 0.9, n - 0.3), 0.5 * i, 2.8 - 0.4 * absf(i - 1), mirror, "none")
 		m._glow(b + Vector3(-0.3, 2.4, n - 0.9), Color(1.0, 0.85, 0.6), 3.5, 0.8, mirror)
 		m._model("furniture/Rug_Rectangle", b + Vector3(0, 0.01, -n + 1.6), 0.0, F, mirror, "none", false)
-		_p(m, "furniture/Lounge_Sofa", b + Vector3(0, 0, -n + 0.6), PI, mirror)
-		_p(m, "furniture/Table_Coffee", b + Vector3(0, 0, -n + 1.7), 0.0, mirror)
+		_s(m, "furniture/Lounge_Sofa", b + Vector3(0, 0, -n + 0.6), PI, mirror)
+		_s(m, "furniture/Table_Coffee", b + Vector3(0, 0, -n + 1.7), 0.0, mirror)
 		_p(m, "furniture/Lounge_Chair", b + Vector3(-1.5, 0, -n + 1.8), PI * 0.5, mirror)
-		_p(m, "furniture/Lounge_Chair", b + Vector3(1.2, 0, -n + 1.9), -PI * 0.5, mirror)
-		_p(m, "furniture/Potted_Plant", b + Vector3(-3.1, 0, -n + 0.5), 0.0, mirror)

@@ -75,9 +75,11 @@ arenas with readable colour and atmosphere at every time of day.
   you.
 - **Pets:** dogs, cats, a fox and a bunny wander every map. Walk up and press
   the pick-up button to pet one (it heals you a little).
-- **Seven selectable animals:** Bunny, Frog, Dino, Bird, Yeti, Fish and
-  Monkroose. Each uses the imported creature rig and animations, with colour,
-  hat and face customisation.
+- **Seven selectable plush animals:** Bunny, Kitty, Pup, Bear, Fox, Panda and
+  Duck: big-headed, soft, fuzzy toys made for this game (one seamless body
+  each, painted patches, glossy button eyes, a wagging tail, stubby paws that
+  hold the weapon). Your colour is the bandana; pick a hat, face and back
+  item too.
 - **31 weapons**: 20 guns (including Tesla, Cluster, Vortex, Ripper, Sticky,
   Longshot, Frostbite and the akimbo Twins), 4 magic weapons and 7 medieval
   ones.

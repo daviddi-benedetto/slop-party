@@ -1,36 +1,24 @@
 extends Node3D
 ## The plush animal model used for players in a match, in the lobby and on the
-## victory podium. Built from primitive meshes; animated procedurally.
+## victory podium. The body is one seamless generated mesh (plush.gd); eyes,
+## nose, limbs, tail and accessories are separate parts animated procedurally
+## (squash and stretch, waddle, stepping feet, paws that hold the weapon).
 ##
 ## It has no _process of its own: whoever owns it calls animate() once per
 ## PHYSICS tick (physics interpolation then smooths it to the display rate).
 ##
-## Selectable kinds: Bunny, Frog, Dino, Bird, Yeti, Fish and Monkroose (see
-## ui_kit.KIND_NAMES; ui_kit.portrait() draws the matching 2D face).
-## Customisation: a hat (ui_kit.HAT_NAMES) and a face accessory
-## (ui_kit.FACE_NAMES), built by _build_hat() / _build_face(). To add one,
-## append its name in ui_kit.gd and a branch in the matching function.
+## Selectable kinds: Bunny, Kitty, Pup, Bear, Fox, Panda and Duck (plush.gd
+## NAMES / SPEC; ui_kit.KIND_NAMES; ui_kit.portrait() draws the 2D face).
+## Customisation: a hat (ui_kit.HAT_NAMES), a face accessory
+## (ui_kit.FACE_NAMES) and a back item, built by _build_hat() / _build_face() /
+## _build_back(). To add one, append its name in ui_kit.gd and a branch in the
+## matching function. The player's colour is the bandana round the neck.
 ##
-## Local space: feet at y = 0, facing -Z, about 1.75 m tall plus ears.
+## Local space: feet at y = 0, facing -Z, about 1.72 m tall plus ears.
 
 const Viewmodel = preload("res://scripts/viewmodel.gd")
-const GUN_SCALE := 1.6
 const Weapons = preload("res://scripts/weapons.gd")
-const Models = preload("res://scripts/models.gd")
-const ArmIk = preload("res://scripts/arm_ik.gd")
-
-## Every selectable character is an imported, rigged animal model driven by
-## its shared creature animations. The human roster remains in the asset pack
-## for NPCs but is intentionally not selectable.
-## ROSTER[kind] = [model, "creature"] in ui_kit.KIND_NAMES order.
-##   creatures: Quaternius Ultimate Monsters (one shared rig: Idle, Walk, Run,
-##              Jump_Idle, Duck, Wave, No, HitReact)
-##   humans:    Quaternius animated characters (Idle_Gun_Pointing, Run_Shoot...)
-const ROSTER := [
-	["animals/m_Bunny_14", "creature"], ["animals/m_Frog_14", "creature"], ["animals/m_Dino_14", "creature"],
-	["animals/m_Birb_14", "creature"], ["animals/m_Yeti_14", "creature"], ["animals/m_Fish_14", "creature"],
-	["animals/m_Monkroose_14", "creature"],
-]
+const Plush = preload("res://scripts/plush.gd")
 const KIND_COUNT := 7
 
 var kind := 0
@@ -43,39 +31,34 @@ var _jet_flames: Array = []
 var hat := 0
 var face := 0
 var back := 0                  # back accessory (ui_kit.BACK_NAMES)
-var _human: Node3D             # the imported model when kind >= 6
-var _anim: AnimationPlayer
-var _human_meshes: Array = []
-var _tint: StandardMaterial3D
-var _white: StandardMaterial3D
-var _gun_scale := GUN_SCALE
+var _gun_scale := 1.2
 var _with_gun := true
 var _back_node: Node3D
-var _creature := false
 var taunt := -1                # player.TAUNTS index while taunting, else -1
 var _swing_t := 9.0            # seconds since swing() (melee animation)
 var _swing_weapon := false
 var _swing_n := 0
-var _ik                        # arm_ik.gd on the skeleton (hands hold the weapon)
 var _grip_r: Node3D
 var _grip_l: Node3D
 var _gun_rest := Vector3.ZERO
 
 var rig: Node3D                # squash / stretch / lean
 var head: Node3D
-var aim: Node3D                # right arm + blaster, pitches with the view
+var aim: Node3D                # the weapon pivot, pitches with the view
 var muzzle: Node3D
 var _gun: Node3D
 var _weapon := -1
-var _arm_l: Node3D
+var _arm_l: Dictionary         # limbs: see _limb()
+var _arm_r: Dictionary
+var _leg_l: Dictionary
+var _leg_r: Dictionary
 var _foot_l: Node3D
 var _foot_r: Node3D
-var _ears: Array = []
 var _eyes: Array = []
 var _tail: Node3D
 var _mat_body: StandardMaterial3D
 var _mat_light: StandardMaterial3D
-var _outline: StandardMaterial3D
+var _mat_paw: StandardMaterial3D
 var _layers := 1
 
 var _phase := 0.0
@@ -97,153 +80,154 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 	face = face_id
 	back = back_id
 	_with_gun = with_gun
-	if kind == 5:
-		_eye_pos = Vector3(0.2, 0.32, -0.2)
 	_layers = layer_bits
 	_t = randf() * 10.0
-
-	_outline = StandardMaterial3D.new()
-	_outline.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_outline.albedo_color = col.darkened(0.72)
-	_outline.cull_mode = BaseMaterial3D.CULL_FRONT
-	_outline.grow = true
-	_outline.grow_amount = 0.022
-	_mat_body = _plush(col)
-	_mat_light = _plush(col.lerp(Color(1.0, 0.97, 0.9), 0.68))
-	var mat_dark := _plush(col.darkened(0.35))
-	var mat_ink := _plain(Color(0.1, 0.08, 0.12), 0.25)
-	var mat_white := _plain(Color(1, 1, 1), 0.3)
-	var mat_pink := _plain(Color(1.0, 0.6, 0.65), 0.8)
+	var spec: Dictionary = Plush.SPEC[kind]
 
 	rig = Node3D.new()
 	add_child(rig)
-	if true:
-		var scarf_h := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0), false)
-		scarf_h.emission = scarf_h.albedo_color
-		scarf_h.emission_energy_multiplier = 0.25
-		_accent = scarf_h
-		_build_human(with_gun)
-		_build_scarf(col)
-		_build_hat()
-		_build_back()
-		return
+	# One seamless plush body (head, tummy, ears, snout) painted with patches.
+	_mat_body = _plush(Color.WHITE, true, true)
+	_mesh(rig, Plush.body(kind), _mat_body, Vector3.ZERO)
+	_tail = Node3D.new()
+	_tail.position = Plush.TAIL_ROOT
+	rig.add_child(_tail)
+	_mesh(_tail, Plush.tail(kind), _mat_body, Vector3.ZERO)
+	_mat_light = _plush(spec.limb)
+	_mat_paw = _plush(spec.paw)
 
-	# Body, belly, feet.
-	_ball(rig, _mat_body, Vector3(0, 0.62, 0), Vector3(0.42, 0.5, 0.38))
-	_ball(rig, _mat_light, Vector3(0, 0.58, -0.1), Vector3(0.32, 0.38, 0.31))
-	_foot_l = _ball(rig, mat_dark, Vector3(-0.18, 0.1, -0.03), Vector3(0.15, 0.1, 0.2))
-	_foot_r = _ball(rig, mat_dark, Vector3(0.18, 0.1, -0.03), Vector3(0.15, 0.1, 0.2))
+	# Face: glossy button eyes, a nose, blush, all sitting on the surface.
+	head = Node3D.new()
+	head.position = Plush.HEAD
+	rig.add_child(head)
+	var ink := _plain(Color(0.06, 0.05, 0.07), 0.12)
+	ink.metallic_specular = 0.9
+	var shine := _plain(Color(1, 1, 1), 0.3)
+	shine.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var ex: float = spec.eye[0]
+	var ey: float = spec.eye[1]
+	for sx in [-1.0, 1.0]:
+		var z := Plush.surface_z(kind, sx * ex, ey)
+		var e := _ball(head, ink, Vector3(sx * ex, ey, z - 0.01) - Plush.HEAD, Vector3(0.062, 0.078, 0.04))
+		e.rotation.y = -sx * 0.35
+		_ball(e, shine, Vector3(-0.32, 0.38, -0.75), Vector3(0.34, 0.3, 0.3))
+		_ball(e, shine, Vector3(0.3, -0.35, -0.8), Vector3(0.15, 0.13, 0.15))
+		_eyes.append(e)
+		if kind != 5:
+			var bz := Plush.surface_z(kind, sx * 0.29, 1.2)
+			var blush := _plain(Color(1.0, 0.55, 0.6, 0.55), 1.0)
+			blush.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			_ball(head, blush, Vector3(sx * 0.29, 1.2, bz - 0.004) - Plush.HEAD, Vector3(0.07, 0.04, 0.02)).rotation.y = -sx * 0.6
+	_eye_pos = Vector3(ex, ey, Plush.surface_z(kind, ex, ey)) - Plush.HEAD
+	if not spec.nose.is_empty():
+		var ny: float = spec.nose[0]
+		var nz := Plush.surface_z(kind, 0.0, ny)
+		var nose := _plain(spec.nose[1], 0.2)
+		_ball(head, nose, Vector3(0, ny, nz - 0.004) - Plush.HEAD, Vector3(0.055, 0.038, 0.035))
+		# A little smile under the nose.
+		var mz := Plush.surface_z(kind, 0.0, ny - 0.07)
+		for sx in [-1.0, 1.0]:
+			_ball(head, ink, Vector3(sx * 0.03, ny - 0.07, mz - 0.008) - Plush.HEAD, Vector3(0.035, 0.009, 0.01)).rotation.z = sx * 0.45
 
-	# Scarf in a contrasting colour hides the neck seam and adds charm.
-	var scarf_mat := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0), false)
-	scarf_mat.emission = scarf_mat.albedo_color
-	scarf_mat.emission_energy_multiplier = 0.9
-	_accent = scarf_mat
-	var scarf := TorusMesh.new()
-	scarf.inner_radius = 0.19
-	scarf.outer_radius = 0.33
-	scarf.rings = 24
-	scarf.ring_segments = 10
-	_mesh(rig, scarf, scarf_mat, Vector3(0, 1.07, 0)).scale = Vector3(1.0, 0.8, 1.0)
-	_ball(rig, scarf_mat, Vector3(0.2, 0.93, -0.28), Vector3(0.075, 0.14, 0.05)).rotation.z = 0.25
+	# Stubby limbs: a capsule from the shoulder / hip to a round paw.
+	_arm_l = _limb(Vector3(-0.31, 0.9, -0.02), 0.095, _mat_light)
+	_arm_r = _limb(Vector3(0.31, 0.9, -0.02), 0.095, _mat_light)
+	_leg_l = _limb(Vector3(-0.16, 0.3, 0.0), 0.1, _mat_light)
+	_leg_r = _limb(Vector3(0.16, 0.3, 0.0), 0.1, _mat_light)
+	_foot_l = _ball(rig, _mat_paw, Vector3(-0.17, 0.09, -0.05), Vector3(0.13, 0.085, 0.17))
+	_foot_r = _ball(rig, _mat_paw, Vector3(0.17, 0.09, -0.05), Vector3(0.13, 0.085, 0.17))
+	for limb in [_arm_l, _arm_r]:
+		limb.paw = _ball(limb.root, _mat_paw, Vector3.ZERO, Vector3.ONE * 0.105)
 
-	# Left arm swings from the shoulder.
-	_arm_l = Node3D.new()
-	_arm_l.position = Vector3(-0.4, 0.92, 0)
-	rig.add_child(_arm_l)
-	_ball(_arm_l, _mat_body, Vector3(-0.03, -0.17, 0), Vector3(0.11, 0.22, 0.11))
-	_ball(_arm_l, mat_dark, Vector3(-0.04, -0.36, 0), Vector3(0.11, 0.09, 0.11))
-
-	# Right arm + blaster pitch together.
+	# The weapon pitches with the view; both paws hold it.
 	aim = Node3D.new()
 	aim.position = Vector3(0, 0.92, 0)
 	rig.add_child(aim)
-	_ball(aim, _mat_body, Vector3(0.4, -0.04, -0.17), Vector3(0.11, 0.11, 0.24))
-	_ball(aim, mat_dark, Vector3(0.4, -0.04, -0.38), Vector3(0.11, 0.1, 0.1))
 	muzzle = Node3D.new()
-	muzzle.position = Vector3(0.4, 0.04, -0.95)
+	muzzle.position = Vector3(0.12, 0.04, -1.0)
 	aim.add_child(muzzle)
+	_gun_scale = 1.2
 	if with_gun:
 		_gun = Node3D.new()
-		_gun.position = Vector3(0.4, 0.05, -0.3)
+		_gun.position = Vector3(0.16, -0.06, -0.46)
+		_gun_rest = _gun.position
 		aim.add_child(_gun)
+		_grip_r = Node3D.new()
+		_gun.add_child(_grip_r)
+		_grip_l = Node3D.new()
+		_gun.add_child(_grip_l)
 		set_weapon(0)
 
-	# Head.
-	head = Node3D.new()
-	head.position = Vector3(0, 1.36, 0)
-	rig.add_child(head)
-	_ball(head, _mat_body, Vector3.ZERO, Vector3(0.41, 0.37, 0.38))
-	if kind == 5:
-		# Frog: eyes on stalks, wide mouth, no snout.
-		for sx in [-1.0, 1.0]:
-			_ball(head, _mat_body, Vector3(sx * 0.2, 0.3, -0.08), Vector3(0.15, 0.15, 0.15))
-			var e := _ball(head, mat_white, Vector3(sx * 0.2, 0.32, -0.16), Vector3(0.11, 0.11, 0.09), false)
-			_ball(e, mat_ink, Vector3(0, 0, -0.75), Vector3(0.5, 0.5, 0.4), false)
-			_eyes.append(e)
-		_ball(head, _mat_light, Vector3(0, -0.1, -0.2), Vector3(0.3, 0.16, 0.2))
-		_ball(head, mat_ink, Vector3(0, -0.06, -0.37), Vector3(0.2, 0.018, 0.03), false)
-	else:
-		_ball(head, _mat_light, Vector3(0, -0.09, -0.3), Vector3(0.17, 0.13, 0.14))
-		_ball(head, mat_ink, Vector3(0, -0.04, -0.43), Vector3(0.055, 0.04, 0.035), false)
-		for sx in [-1.0, 1.0]:
-			var e2 := _ball(head, mat_ink, Vector3(sx * 0.16, 0.07, -0.33), Vector3(0.058, 0.07, 0.04), false)
-			_ball(e2, mat_white, Vector3(-0.3, 0.35, -0.7), Vector3(0.35, 0.3, 0.3), false)
-			_eyes.append(e2)
-			_ball(head, mat_pink, Vector3(sx * 0.27, -0.07, -0.25), Vector3(0.07, 0.045, 0.03), false)
-
-	# Ears and tail by species.
-	for sx in [-1.0, 1.0]:
-		var ear := Node3D.new()
-		head.add_child(ear)
-		match kind:
-			0:
-				ear.position = Vector3(sx * 0.29, 0.27, 0)
-				_ball(ear, _mat_body, Vector3.ZERO, Vector3(0.14, 0.14, 0.09))
-				_ball(ear, _mat_light, Vector3(0, 0, -0.04), Vector3(0.08, 0.08, 0.06), false)
-			1:
-				ear.position = Vector3(sx * 0.15, 0.3, 0)
-				ear.rotation.z = -sx * 0.16
-				_ball(ear, _mat_body, Vector3(0, 0.3, 0), Vector3(0.09, 0.34, 0.07))
-				_ball(ear, mat_pink, Vector3(0, 0.3, -0.035), Vector3(0.05, 0.26, 0.045), false)
-			2, 4:
-				var big := 1.35 if kind == 4 else 1.0
-				ear.position = Vector3(sx * 0.24, 0.25, 0)
-				ear.rotation.z = -sx * 0.3
-				var cone := CylinderMesh.new()
-				cone.top_radius = 0.0
-				cone.bottom_radius = 0.13 * big
-				cone.height = 0.26 * big
-				cone.radial_segments = 12
-				_mesh(ear, cone, _mat_body, Vector3(0, 0.12 * big, 0))
-				var tip := CylinderMesh.new()
-				tip.top_radius = 0.0
-				tip.bottom_radius = 0.075 * big
-				tip.height = 0.16 * big
-				tip.radial_segments = 10
-				_mesh(ear, tip, mat_pink if kind == 2 else mat_dark, Vector3(0, 0.12 * big, -0.045), false)
-			3:
-				ear.position = Vector3(sx * 0.36, 0.14, 0)
-				ear.rotation.z = sx * 0.25
-				_ball(ear, mat_dark, Vector3(sx * 0.03, -0.2, 0), Vector3(0.1, 0.26, 0.13))
-		if kind != 5:
-			_ears.append(ear)
-	_tail = Node3D.new()
-	_tail.position = Vector3(0, 0.5, 0.34)
-	rig.add_child(_tail)
-	match kind:
-		0, 1:
-			_ball(_tail, _mat_light if kind == 1 else _mat_body, Vector3(0, 0, 0.04), Vector3(0.12, 0.12, 0.12))
-		2, 3:
-			_tail.rotation.x = -0.7
-			_ball(_tail, _mat_body if kind == 2 else mat_dark, Vector3(0, 0, 0.22), Vector3(0.06, 0.06, 0.27))
-		4:
-			_tail.rotation.x = -0.5
-			_ball(_tail, _mat_body, Vector3(0, 0, 0.26), Vector3(0.15, 0.15, 0.32))
-			_ball(_tail, _mat_light, Vector3(0, 0, 0.5), Vector3(0.1, 0.1, 0.13))
+	var scarf_h := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0), false)
+	scarf_h.emission = scarf_h.albedo_color
+	scarf_h.emission_energy_multiplier = 0.25
+	_accent = scarf_h
+	_build_scarf(col)
 	_build_hat()
 	_build_face()
 	_build_back()
+
+
+## A limb: {root (at the joint), seg (the capsule), paw}. _reach() aims it.
+func _limb(at: Vector3, r: float, mat: Material) -> Dictionary:
+	var root := Node3D.new()
+	root.position = at
+	rig.add_child(root)
+	var cap := CapsuleMesh.new()
+	cap.radius = r
+	cap.height = 1.0
+	cap.radial_segments = 12
+	cap.rings = 4
+	var seg := _mesh(root, cap, mat, Vector3.ZERO)
+	return {"root": root, "seg": seg, "paw": null, "at": at, "r": r}
+
+
+## Points a limb at `to` (rig space) and stretches it to reach.
+func _reach(limb: Dictionary, to: Vector3, max_len := 0.62) -> void:
+	var root: Node3D = limb.root
+	var d: Vector3 = to - root.position
+	var l := clampf(d.length(), 0.12, max_len)
+	var down := -d.normalized() if d.length() > 0.001 else Vector3.UP
+	var side := Vector3.RIGHT if absf(down.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD
+	var z := side.cross(down).normalized()
+	var x := down.cross(z).normalized()
+	root.basis = Basis(x, down, z)
+	var seg: MeshInstance3D = limb.seg
+	var r: float = limb.r
+	seg.position = Vector3(0, -l * 0.5, 0)
+	seg.scale = Vector3(1.0, maxf(l + r * 0.8, r * 2.0), 1.0)
+	if limb.paw != null:
+		limb.paw.position = Vector3(0, -l, 0)
+
+
+## A bandana in the player's colour round the neck: who is who, without
+## dyeing the whole animal.
+func _build_scarf(col: Color) -> void:
+	var y := 0.95
+	var rx := 0.6
+	while rx > 0.05 and Plush.sdf(kind, Vector3(rx, y, 0.0)) > 0.0:
+		rx -= 0.01
+	var rz := 0.6
+	while rz > 0.05 and Plush.sdf(kind, Vector3(0.0, y, -rz)) > 0.0:
+		rz -= 0.01
+	var cloth := StandardMaterial3D.new()
+	cloth.albedo_color = col
+	cloth.roughness = 0.85
+	cloth.emission_enabled = true
+	cloth.emission = col
+	cloth.emission_energy_multiplier = 0.35
+	cloth.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.9
+	ring.outer_radius = 1.2
+	ring.rings = 28
+	ring.ring_segments = 8
+	var mi := _mesh(rig, ring, cloth, Vector3(0, y, 0))
+	mi.scale = Vector3(rx, 0.32, rz)
+	var knot := PrismMesh.new()
+	knot.size = Vector3(0.26, 0.24, 0.05)
+	var tail := _mesh(rig, knot, cloth, Vector3(0.08, y - 0.12, -rz - 0.04))
+	tail.rotation = Vector3(-0.25, 0, PI + 0.2)
 
 
 func _cyl(parent: Node3D, mat: Material, top: float, bottom: float, height: float, pos: Vector3, sides := 20) -> MeshInstance3D:
@@ -448,27 +432,39 @@ func set_weapon(id: int) -> void:
 		_grip_l.visible = model.two_handed
 
 
-func _plush(col: Color, furry := true) -> StandardMaterial3D:
+## Soft felt with a fuzzy shell and a thin outline of a darker shade.
+## vcol: the colour comes from the mesh's vertex colours (the plush bodies).
+func _plush(col: Color, furry := true, vcol := false) -> StandardMaterial3D:
+	var outline := StandardMaterial3D.new()
+	outline.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	outline.cull_mode = BaseMaterial3D.CULL_FRONT
+	outline.grow = true
+	outline.grow_amount = 0.016
+	outline.albedo_color = Color(0.32, 0.27, 0.3) if vcol else col.darkened(0.68)
 	var m := StandardMaterial3D.new()
 	m.albedo_color = col
 	m.roughness = 0.95
 	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	m.rim_enabled = true
-	m.rim = 0.55
-	m.rim_tint = 0.4
+	m.rim = 0.5
+	m.rim_tint = 0.5
 	m.emission_enabled = true
 	m.emission = Color.WHITE
 	m.emission_energy_multiplier = 0.0
 	# Fine felt bumps so the plush catches light like fabric.
 	m.normal_enabled = true
 	m.normal_texture = _felt()
-	m.normal_scale = 0.45
+	m.normal_scale = 0.4
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * 5.0
+	if vcol:
+		for x in [m, outline]:
+			x.vertex_color_use_as_albedo = true
+			x.vertex_color_is_srgb = true
 	if not furry:
-		m.next_pass = _outline
+		m.next_pass = outline
 		return m
-	# A fuzzy shell over the surface, then the dark outline: plush fur.
+	# A fuzzy shell over the surface, then the outline: plush fur.
 	var fur := StandardMaterial3D.new()
 	fur.albedo_color = col.lerp(Color.WHITE, 0.06)
 	fur.albedo_texture = _fuzz()
@@ -477,10 +473,13 @@ func _plush(col: Color, furry := true) -> StandardMaterial3D:
 	fur.roughness = 1.0
 	fur.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	fur.grow = true
-	fur.grow_amount = 0.014
+	fur.grow_amount = 0.012
 	fur.uv1_triplanar = true
 	fur.uv1_scale = Vector3.ONE * 7.0
-	fur.next_pass = _outline
+	if vcol:
+		fur.vertex_color_use_as_albedo = true
+		fur.vertex_color_is_srgb = true
+	fur.next_pass = outline
 	m.next_pass = fur
 	return m
 
@@ -551,53 +550,11 @@ func _mesh(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3, _outlined :=
 	return mi
 
 
-## A bandana in the player's colour round the neck: who is who, without
-## dyeing the whole animal.
-func _build_scarf(col: Color) -> void:
-	var skel: Skeleton3D = null
-	for s in _human.find_children("*", "Skeleton3D", true, false):
-		skel = s
-	if skel == null or skel.find_bone("Neck") < 0:
-		return
-	var att := BoneAttachment3D.new()
-	att.bone_name = "Neck"
-	skel.add_child(att)
-	var cloth := StandardMaterial3D.new()
-	cloth.albedo_color = col
-	cloth.roughness = 0.85
-	cloth.emission_enabled = true
-	cloth.emission = col
-	cloth.emission_energy_multiplier = 0.35
-	var ring := TorusMesh.new()
-	ring.inner_radius = 0.42
-	ring.outer_radius = 0.66
-	ring.rings = 20
-	ring.ring_segments = 8
-	var mi := MeshInstance3D.new()
-	mi.mesh = ring
-	mi.material_override = cloth
-	mi.layers = _layers
-	mi.scale = Vector3(1.0, 0.75, 1.0)
-	mi.position = Vector3(0, 0.02, 0)
-	att.add_child(mi)
-	var knot := PrismMesh.new()
-	knot.size = Vector3(0.5, 0.55, 0.12)
-	var tail := MeshInstance3D.new()
-	tail.mesh = knot
-	tail.material_override = cloth
-	tail.layers = _layers
-	tail.position = Vector3(0, -0.3, 0.6)
-	tail.rotation = Vector3(0.4, 0, PI)
-	att.add_child(tail)
-
-
 ## Start the melee animation (player._melee_start).
 func swing(with_weapon: bool) -> void:
 	_swing_t = 0.0
 	_swing_weapon = with_weapon
 	_swing_n += 1
-	if _anim != null and not with_weapon:
-		_anim.stop()
 
 
 func hit_flash() -> void:
@@ -617,14 +574,12 @@ func muzzle_position() -> Vector3:
 ## speed: 0..1+ fraction of run speed. vy: vertical velocity. pitch: view pitch.
 ## strafe: -1..1 sideways speed (leans the body into the turn).
 func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float, recoil := 0.0, strafe := 0.0) -> void:
-	if _human != null:
-		_animate_human(delta, speed, on_floor, pitch, recoil, strafe)
-		return
 	_t += delta
+	_swing_t += delta
 	speed = clampf(speed, 0.0, 1.5)
 	var run := minf(speed, 1.0)
 	if speed > 0.05 and on_floor:
-		_phase += delta * (5.0 + 8.0 * speed)
+		_phase += delta * (6.0 + 9.0 * speed)
 
 	# Landing squash (damped spring) + air stretch + breathing.
 	if on_floor and not _was_floor:
@@ -634,53 +589,123 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 	_squash += _squash_v * delta
 	var stretch := clampf(_squash, -0.35, 0.35) + sin(_t * 2.3) * 0.014
 	if not on_floor:
-		stretch += clampf(absf(vy) * 0.012, 0.0, 0.14)
+		stretch += clampf(absf(vy) * 0.012, 0.0, 0.12)
 	_pop = minf(1.0, _pop + delta * 2.2)
 	var pop := 1.0 if _pop >= 1.0 else maxf(0.001, pow(2.0, -10.0 * _pop) * sin((_pop * 10.0 - 0.75) * TAU / 3.0) + 1.0)
-	rig.scale = Vector3(1.0 - stretch * 0.6, 1.0 + stretch, 1.0 - stretch * 0.6) * pop
+	var low := 1.0 - crouch * 0.22
+	rig.scale = Vector3(1.0 - stretch * 0.5 + crouch * 0.06, (1.0 + stretch) * low, 1.0 - stretch * 0.5 + crouch * 0.06) * pop
 
 	var sw := sin(_phase) * run
-	var bob := absf(sin(_phase)) * 0.06 * run
 	var hop := 0.0
-	var arm_x := sw * 0.9
-	var aim_x := pitch + recoil * 0.3
-	var head_x := pitch * 0.55
-	match emote:
-		"cheer":
-			hop = absf(sin(_t * 6.5)) * 0.32
-			arm_x = -2.7 + sin(_t * 13.0) * 0.35
-			aim_x = 1.25 + sin(_t * 13.0 + 1.0) * 0.25
-			head_x = 0.25
-		"sad":
-			head_x = -0.5
-			arm_x = 0.15
-			aim_x = -0.9
-	rig.position.y = bob + hop - crouch * 0.45
-	rig.rotation.x -= crouch * 0.25
-	rig.rotation.x = -0.13 * run
-	rig.rotation.z = sin(_phase) * 0.05 * run - strafe * 0.16
-	_arm_l.rotation.x = arm_x
-	aim.rotation.x = aim_x
-	head.rotation.x = head_x
-	head.rotation.z = sin(_phase * 0.5 + 0.5) * 0.06 * run + sin(_t * 1.3) * 0.03
+	var lean := -0.12 * run
+	var roll := sin(_phase) * 0.07 * run - strafe * 0.14
+	var yaw := 0.0
+	# Where the paws go (rig space); null = hold the weapon.
+	var paw_l = null
+	var paw_r = null
+	var sh_l: Vector3 = _arm_l.at
+	var sh_r: Vector3 = _arm_r.at
+	var busy := taunt >= 0 or emote != "" or (_swing_t < 0.45 and not _swing_weapon)
+	if _gun != null:
+		_gun.visible = taunt < 0 and emote == ""
+		var swing := sin(clampf(_swing_t / 0.36, 0.0, 1.0) * PI)
+		var side := 1.0 if _swing_n % 2 == 0 else -1.0
+		if _swing_weapon and _swing_t < 0.45:
+			_gun.rotation = Vector3(-1.3 * swing, side * 0.5 * swing, side * 0.7 * swing)
+			_gun.position = _gun_rest + Vector3(0, 0.12 * swing, -0.22 * swing)
+		else:
+			_gun.rotation = Vector3.ZERO
+			_gun.position = _gun_rest + Vector3(0, 0, recoil * 0.05)
+	if not _with_gun or _gun == null:
+		busy = true
+	if taunt >= 0:
+		match taunt:
+			0:  # wave
+				paw_r = sh_r + Vector3(0.18 + sin(_t * 12.0) * 0.12, 0.42, -0.05)
+				paw_l = sh_l + Vector3(0.0, -0.4, 0.0)
+				roll = sin(_t * 6.0) * 0.08
+			1:  # spin dance
+				yaw = _t * 7.0
+				hop = absf(sin(_t * 8.0)) * 0.22
+				paw_l = sh_l + Vector3(-0.2, 0.3 + sin(_t * 8.0) * 0.15, 0)
+				paw_r = sh_r + Vector3(0.2, 0.3 - sin(_t * 8.0) * 0.15, 0)
+			2:  # no-no wiggle
+				yaw = sin(_t * 9.0) * 0.45
+				paw_l = sh_l + Vector3(0.12, -0.25, -0.2)
+				paw_r = sh_r + Vector3(-0.12, -0.25, -0.2)
+			_:  # flex
+				hop = absf(sin(_t * 5.0)) * 0.08
+				var f := sin(_t * 6.0) * 0.06
+				paw_l = sh_l + Vector3(-0.25, 0.25 + f, 0)
+				paw_r = sh_r + Vector3(0.25, 0.25 - f, 0)
+				roll = sin(_t * 5.0) * 0.06
+		pitch = 0.0
+	elif emote == "cheer":
+		hop = absf(sin(_t * 6.5)) * 0.3
+		paw_l = sh_l + Vector3(-0.15, 0.45 + sin(_t * 13.0) * 0.08, 0)
+		paw_r = sh_r + Vector3(0.15, 0.45 - sin(_t * 13.0) * 0.08, 0)
+		pitch = 0.2
+	elif emote == "sad":
+		lean = 0.25
+		paw_l = sh_l + Vector3(0.05, -0.38, 0.05)
+		paw_r = sh_r + Vector3(-0.05, -0.38, 0.05)
+		pitch = -0.4
+	elif _swing_t < 0.45 and not _swing_weapon:
+		# A punch with the paw on the swinging side.
+		var jab := sin(clampf(_swing_t / 0.3, 0.0, 1.0) * PI)
+		var fwd := Basis(Vector3.RIGHT, pitch) * Vector3(0, 0, -1)
+		if _swing_n % 2 == 0:
+			paw_r = sh_r + Vector3(-0.12, 0.02, 0) + fwd * (0.2 + 0.4 * jab)
+			paw_l = sh_l + Vector3(0.1, -0.1, -0.2)
+		else:
+			paw_l = sh_l + Vector3(0.12, 0.02, 0) + fwd * (0.2 + 0.4 * jab)
+			paw_r = sh_r + Vector3(-0.1, -0.1, -0.2)
+		roll += (0.12 if _swing_n % 2 == 0 else -0.12) * jab
+	elif busy:
+		# Arms swing as it walks.
+		paw_l = sh_l + Vector3(-0.06, -0.36, -sw * 0.22)
+		paw_r = sh_r + Vector3(0.06, -0.36, sw * 0.22)
+	if _flash > 0.6:
+		lean += 0.15
+	rig.position.y = hop - crouch * 0.12 + absf(sin(_phase)) * 0.05 * run
+	rig.rotation = Vector3(lean - crouch * 0.1, yaw, roll)
+	aim.rotation.x = pitch + recoil * 0.2
+	aim.position.y = 0.92 - crouch * 0.05
 
+	# Paws: on the weapon's grips, or wherever the pose wants them.
+	if paw_l == null and _grip_l != null:
+		paw_l = rig.to_local(_grip_l.global_position) if _grip_l.visible else sh_l + Vector3(0.04, -0.3, -0.18)
+	if paw_r == null and _grip_r != null:
+		paw_r = rig.to_local(_grip_r.global_position)
+	if paw_l == null:
+		paw_l = sh_l + Vector3(0, -0.36, 0)
+	if paw_r == null:
+		paw_r = sh_r + Vector3(0, -0.36, 0)
+	_reach(_arm_l, paw_l)
+	_reach(_arm_r, paw_r)
+
+	# Feet: step in time, tuck up in the air.
+	var fl: Vector3
+	var fr: Vector3
 	if on_floor and hop <= 0.01:
-		_foot_l.position = Vector3(-0.18, 0.1 + maxf(0.0, cos(_phase)) * 0.12 * run, -0.03 - sw * 0.24)
-		_foot_r.position = Vector3(0.18, 0.1 + maxf(0.0, -cos(_phase)) * 0.12 * run, -0.03 + sw * 0.24)
+		fl = Vector3(-0.17, 0.09 + maxf(0.0, cos(_phase)) * 0.12 * run, -0.05 - sw * 0.24)
+		fr = Vector3(0.17, 0.09 + maxf(0.0, -cos(_phase)) * 0.12 * run, -0.05 + sw * 0.24)
 	else:
-		_foot_l.position = Vector3(-0.2, 0.16, 0.08)
-		_foot_r.position = Vector3(0.2, 0.2, -0.12)
+		fl = Vector3(-0.19, 0.16, 0.04)
+		fr = Vector3(0.19, 0.2, -0.12)
+	_foot_l.position = fl
+	_foot_r.position = fr
+	_reach(_leg_l, fl + Vector3(0, 0.05, 0.02), 0.4)
+	_reach(_leg_r, fr + Vector3(0, 0.05, 0.02), 0.4)
 
-	for i in _ears.size():
-		_ears[i].rotation.x = sin(_t * 3.1 + i * 1.7) * 0.06 + clampf(vy * 0.03, -0.4, 0.4) - sw * 0.08
-	_tail.rotation.y = sin(_t * 5.0) * 0.25 + sw * 0.3
+	_tail.rotation = Vector3(sin(_t * 2.0) * 0.08, sin(_t * (5.0 + run * 6.0)) * (0.3 + run * 0.2), 0)
 
 	_blink -= delta
 	var eye_y := 0.12 if _blink < 0.0 else 1.0
 	if _blink < -0.11:
 		_blink = randf_range(1.6, 4.5)
 	for e in _eyes:
-		e.scale.y = absf(e.scale.x) * (1.2 if kind != 5 else 1.0) * eye_y
+		e.scale.y = 0.078 * eye_y
 
 	for f in _jet_flames:
 		f.visible = jetting
@@ -688,19 +713,19 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 			f.scale = Vector3.ONE * (0.8 + randf() * 0.5)
 	if _flash > 0.0:
 		_flash = maxf(0.0, _flash - delta * 6.0)
-		_mat_body.emission_energy_multiplier = _flash * 1.6
-		_mat_light.emission_energy_multiplier = _flash * 1.6
+		for m in [_mat_body, _mat_light, _mat_paw]:
+			m.emission_energy_multiplier = _flash * 1.6
 
 
 # --------------------------------------------------------------------------
-# Back accessories (both plush and human characters)
+# Back accessories
 # --------------------------------------------------------------------------
 
 func _build_back() -> void:
 	if back <= 0:
 		return
 	_back_node = Node3D.new()
-	_back_node.position = Vector3(0, 1.0, 0.42) if _creature else Vector3(0, 1.2, 0.2)
+	_back_node.position = Vector3(0, 0.88, 0.36)
 	rig.add_child(_back_node)
 	var b := _back_node
 	var dark := _plain(Color(0.08, 0.08, 0.1), 0.5)
@@ -745,226 +770,3 @@ func _build_back() -> void:
 			var cloth2 := BoxMesh.new()
 			cloth2.size = Vector3(0.55, 0.34, 0.02)
 			_mesh(b, cloth2, _accent, Vector3(0.29, 1.1, 0.1))
-
-
-# --------------------------------------------------------------------------
-# Human characters (kinds 6+): imported rigged models with real animations
-# --------------------------------------------------------------------------
-
-func _build_human(with_gun: bool) -> void:
-	var path: String = ROSTER[kind][0]
-	_creature = ROSTER[kind][1] == "creature"
-	_human = Models.scene(path).instantiate()
-	# Creatures share a rig about 3.3 units tall; humans are about 1.9.
-	_human.scale = Vector3.ONE * (0.53 if _creature else 0.94)
-	_human.rotation.y = PI
-	rig.add_child(_human)
-	# A light wash of the player's colour over the whole model, and a white
-	# overlay used for the hit flash.
-	_tint = StandardMaterial3D.new()
-	_tint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	# The animals keep their own natural colours; only a faint wash of the
-	# player's colour goes over them (the scarf, hat and name tag carry it).
-	_tint.albedo_color = Color(color.lerp(Color.WHITE, 0.3), 0.07)
-	_tint.roughness = 0.9
-	# A soft rim of light gives the models a plush, toy-like silhouette.
-	_tint.rim_enabled = true
-	_tint.rim = 0.9
-	_tint.rim_tint = 0.35
-	_tint.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	_white = StandardMaterial3D.new()
-	_white.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_white.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_white.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_white.albedo_color = Color(1, 1, 1, 0.6)
-	for mi in Models.mesh_instances(_human):
-		var m: MeshInstance3D = mi
-		m.layers = _layers
-		# The models carry their own pistol / sword; we give them our guns.
-		var mb: AABB = m.mesh.get_aabb() if m.mesh != null else AABB()
-		if m.name in ["Pistol", "Sword", "Gun", "Weapon", "Staff", "Axe"] or mb.position.x > 0.3 or mb.end.x < -0.3:
-			m.visible = false
-			continue
-		m.material_overlay = _tint
-		_human_meshes.append(m)
-	for c in _human.find_children("*", "AnimationPlayer", true, false):
-		_anim = c
-	if _anim != null:
-		for a in _anim.get_animation_list():
-			if a.begins_with("Idle") or a.begins_with("Run") or a in ["Walk", "Wave", "Duck", "Jump_Idle", "No"]:
-				_anim.get_animation(a).loop_mode = Animation.LOOP_LINEAR
-		_anim.playback_default_blend_time = 0.18
-	# Hats sit on the head bone (scaled down from the plush head size).
-	head = Node3D.new()
-	var skel: Skeleton3D = null
-	for s in _human.find_children("*", "Skeleton3D", true, false):
-		skel = s
-	if skel != null and skel.find_bone("Head") >= 0:
-		var att := BoneAttachment3D.new()
-		att.bone_name = "Head"
-		skel.add_child(att)
-		att.add_child(head)
-		head.rotation.y = PI
-		if _creature:
-			head.position = Vector3(0, 0.42, -0.12)
-			head.scale = Vector3.ONE * 1.25
-		else:
-			head.position = Vector3(0, 0.13, 0.02)
-			head.scale = Vector3.ONE * 0.62
-	else:
-		head.position = Vector3(0, 1.62, 0)
-		rig.add_child(head)
-	# The gun floats in the two-handed aiming pose and pitches with the view.
-	aim = Node3D.new()
-	aim.position = Vector3(0, 1.0 if _creature else 1.22, 0)
-	rig.add_child(aim)
-	muzzle = Node3D.new()
-	muzzle.position = Vector3(0.12, 0.04, -1.0)
-	aim.add_child(muzzle)
-	_gun_scale = 1.2
-	if with_gun:
-		_gun = Node3D.new()
-		_gun.position = Vector3(0.24, -0.02, -0.4) if _creature else Vector3(0.12, 0.02, -0.42)
-		_gun_rest = _gun.position
-		aim.add_child(_gun)
-		if skel != null and _creature:
-			# The hands reach for grip markers on the weapon (arm_ik.gd).
-			_grip_r = Node3D.new()
-			_gun.add_child(_grip_r)
-			_grip_l = Node3D.new()
-			_gun.add_child(_grip_l)
-			_ik = ArmIk.new()
-			skel.add_child(_ik)
-			var palm := 0.62
-			var mid := skel.find_bone("Middle1.R")
-			var low := skel.find_bone("LowerArm.R")
-			if mid >= 0 and low >= 0:
-				palm = skel.get_bone_global_rest(mid).origin.distance_to(skel.get_bone_global_rest(low).origin) + 0.12
-			# The model faces +Z inside the rig, so its right side is -X.
-			_ik.set_target(_ik.add_arm("UpperArm.R", "LowerArm.R", palm, Vector3(-0.5, -1.0, 0.2)), _grip_r)
-			_ik.set_target(_ik.add_arm("UpperArm.L", "LowerArm.L", palm, Vector3(0.5, -1.0, 0.2)), _grip_l)
-		set_weapon(0)
-	_play_h("Idle" if _creature or not with_gun else "Idle_Gun_Pointing")
-
-
-func _play_h(a: String, speed := 1.0) -> void:
-	if _anim == null:
-		return
-	if not _anim.has_animation(a):
-		a = "Idle"
-	if _anim.current_animation != a:
-		_anim.play(a)
-	_anim.speed_scale = speed
-
-
-func _animate_human(delta: float, speed: float, on_floor: bool, pitch: float, recoil: float, strafe: float) -> void:
-	_t += delta
-	_pop = minf(1.0, _pop + delta * 2.2)
-	var pop := 1.0 if _pop >= 1.0 else maxf(0.001, pow(2.0, -10.0 * _pop) * sin((_pop * 10.0 - 0.75) * TAU / 3.0) + 1.0)
-	rig.scale = Vector3(1.0, 1.0 - (0.0 if _creature else crouch * 0.28), 1.0) * pop
-	var hop := 0.0
-	if _creature:
-		# Creature rig: Idle / Walk / Run / Jump_Idle / Duck / Wave / No / Yes /
-		# Punch / Weapon. Taunts and punches play with the arms free; otherwise
-		# the arm IK keeps both hands on the weapon.
-		_swing_t += delta
-		var busy := taunt >= 0 or emote != "" or (_swing_t < 0.45 and not _swing_weapon)
-		if _ik != null:
-			_ik.influence = move_toward(_ik.influence, 0.0 if busy else 1.0, delta * 9.0)
-		if _gun != null:
-			_gun.visible = taunt < 0
-			# Swing the held weapon: chop for blades, a jab otherwise.
-			var sw := sin(clampf(_swing_t / 0.36, 0.0, 1.0) * PI)
-			var side := 1.0 if _swing_n % 2 == 0 else -1.0
-			if _swing_weapon:
-				_gun.rotation = Vector3(-1.3 * sw, side * 0.5 * sw, side * 0.7 * sw)
-				_gun.position = _gun_rest + Vector3(0, 0.12 * sw, -0.22 * sw)
-			else:
-				_gun.rotation = Vector3.ZERO
-				_gun.position = _gun_rest
-		rig.rotation.y = 0.0
-		if taunt >= 0:
-			match taunt:
-				0:
-					_play_h("Wave", 1.5)
-				1:
-					_play_h("Yes", 2.2)
-					rig.rotation.y = _t * 7.0
-					hop = absf(sin(_t * 8.0)) * 0.22
-				2:
-					_play_h("No", 1.6)
-				_:
-					_play_h("Punch", 1.5)
-					hop = absf(sin(_t * 5.0)) * 0.08
-			rig.position.y = hop
-			rig.rotation.z = 0.0
-			aim.rotation.x = 0.0
-			return
-		if _swing_t < 0.45 and emote == "" and not _swing_weapon:
-			_play_h("Punch", 1.9)
-			rig.position.y = 0.0
-			aim.rotation.x = pitch
-			return
-		match emote:
-			"cheer":
-				hop = absf(sin(_t * 6.5)) * 0.25
-				_play_h("Wave", 1.5)
-			"sad":
-				_play_h("No", 0.8)
-			_:
-				if _flash > 0.6:
-					_play_h("HitReact", 1.6)
-				elif crouch > 0.5:
-					_play_h("Duck")
-				elif not on_floor:
-					_play_h("Jump_Idle")
-				elif speed > 0.6:
-					_play_h("Run", 0.7 + speed * 0.5)
-				elif speed > 0.12:
-					_play_h("Walk", 0.8 + speed)
-				else:
-					_play_h("Idle")
-		rig.position.y = hop
-		rig.rotation.z = -strafe * 0.1
-		aim.rotation.x = pitch + recoil * 0.2
-		aim.position.y = 1.0 - crouch * 0.4
-		for f in _jet_flames:
-			f.visible = jetting
-		if _flash > 0.0:
-			_flash = maxf(0.0, _flash - delta * 6.0)
-			var ovc: Material = _white if _flash > 0.35 else _tint
-			for m in _human_meshes:
-				m.material_overlay = ovc
-		return
-	match emote:
-		"cheer":
-			hop = absf(sin(_t * 6.5)) * 0.25
-			_play_h("Wave", 1.6)
-		"sad":
-			_play_h("Idle_Neutral", 0.6)
-		_:
-			if not _with_gun:
-				_play_h("Idle")
-			elif not on_floor:
-				_play_h("Idle_Gun_Pointing")
-			elif speed > 0.15:
-				if strafe > 0.6:
-					_play_h("Run_Right", 0.7 + speed * 0.5)
-				elif strafe < -0.6:
-					_play_h("Run_Left", 0.7 + speed * 0.5)
-				else:
-					_play_h("Run_Shoot", 0.6 + speed * 0.6)
-			else:
-				_play_h("Idle_Gun_Pointing")
-	rig.position.y = hop
-	rig.rotation.z = -strafe * 0.08
-	aim.rotation.x = pitch + recoil * 0.2
-	for f in _jet_flames:
-		f.visible = jetting
-		if jetting:
-			f.scale = Vector3.ONE * (0.8 + randf() * 0.5)
-	if _flash > 0.0:
-		_flash = maxf(0.0, _flash - delta * 6.0)
-		var ov: Material = _white if _flash > 0.35 else _tint
-		for m in _human_meshes:
-			m.material_overlay = ov

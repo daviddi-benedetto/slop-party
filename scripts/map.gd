@@ -383,6 +383,8 @@ var _nav_ids := PackedInt64Array()
 var _body: StaticBody3D
 var _mats := {}
 var _holes: Array = []            # Rect2 (XZ) cut out of the ground slab
+var _pending_surfaces: Array = [] # [Rect2, y, mat] waiting for _lay_surfaces()
+var roofs: Array = []             # Rect2 footprints of every _building (indoors)
 var _box_cache := {}
 var _stairs_cache := {}
 var _batches := {}
@@ -1002,6 +1004,7 @@ func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true, surface :=
 
 
 func _flush() -> void:
+	_lay_surfaces()   # any decal added after _build_floor
 	for key in _batches:
 		var b: Array = _batches[key]
 		var mi := MeshInstance3D.new()
@@ -1167,52 +1170,51 @@ func _ruins() -> void:
 		placed += 1
 
 
-## Furniture for one storey of a building (loose props): a dining room, a
-## lounge or an office, chosen with the map's seeded random generator.
-## The stairs run along the west / east walls, so the middle is free.
+## Furniture for one storey of a building: a dining room, a lounge or an
+## office, chosen with the map's seeded random generator. Big pieces are
+## fixed in place (_fixed); only chairs are loose. The stairs run along the
+## west / east walls, so the middle is free.
 func _furnish(c: Vector3, sx: float, sz: float, y: float, mirror: bool) -> void:
 	var f := FURN
 	var north := c.z + sz * 0.26
 	var south := c.z - sz * 0.26
-	var top := 0.33 * f + 0.02
 	match _rng.randi() % 3:
 		0:
-			_prop("furniture/Table" if _rng.randf() < 0.5 else "furniture/Table_Cross_Cloth", Vector3(c.x, y, north), 0.0, f, 14.0, mirror)
+			_fixed("furniture/Table" if _rng.randf() < 0.5 else "furniture/Table_Cross_Cloth", Vector3(c.x, y, north), 0.0, f, mirror)
 			for sgn in [-1.0, 1.0]:
 				_prop("furniture/Chair", Vector3(c.x - 0.45, y, north + sgn * 0.85), 0.0 if sgn > 0 else PI, f, 4.0, mirror)
 				_prop("furniture/Chair_Cushion", Vector3(c.x + 0.45, y, north + sgn * 0.85), 0.0 if sgn > 0 else PI, f, 4.0, mirror)
-			_prop("furniture/Books", Vector3(c.x - 0.4, y + top, north), 0.4, f * 1.2, 0.6, mirror)
-			_prop("survival/Bottle", Vector3(c.x + 0.3, y + top, north + 0.1), 0.0, 2.4, 0.4, mirror)
-			_prop("furniture/Kitchen_Fridge", Vector3(c.x + sx * 0.2, y, c.z + sz * 0.5 - 0.75), PI, f, 30.0, mirror)
-			_prop("furniture/Kitchen_Stove", Vector3(c.x + sx * 0.2 - 1.0, y, c.z + sz * 0.5 - 0.85), PI, f, 25.0, mirror)
-			_prop("furniture/Toaster", Vector3(c.x + sx * 0.2 - 1.0, y + 0.45 * f + 0.02, c.z + sz * 0.5 - 0.85), 0.0, f, 0.8, mirror)
+			_fixed("furniture/Kitchen_Fridge", Vector3(c.x + sx * 0.2, y, c.z + sz * 0.5 - 0.75), PI, f, mirror)
+			_fixed("furniture/Kitchen_Stove", Vector3(c.x + sx * 0.2 - 1.0, y, c.z + sz * 0.5 - 0.85), PI, f, mirror)
 		1:
-			_prop("furniture/Lounge_Sofa", Vector3(c.x, y, c.z + sz * 0.5 - 0.9), PI, f, 22.0, mirror)
-			_prop("furniture/Pillow_Blue", Vector3(c.x - 0.5, y + 0.25 * f, c.z + sz * 0.5 - 0.9), 0.3, f, 0.3, mirror)
-			_prop("furniture/Table_Coffee_Glass" if _rng.randf() < 0.5 else "furniture/Table_Coffee", Vector3(c.x, y, north - 0.3), 0.0, f, 9.0, mirror)
-			_prop("furniture/Radio", Vector3(c.x + 0.2, y + 0.23 * f + 0.02, north - 0.3), 0.2, f * 0.8, 0.8, mirror)
+			_fixed("furniture/Lounge_Sofa", Vector3(c.x, y, c.z + sz * 0.5 - 0.9), PI, f, mirror)
+			_fixed("furniture/Table_Coffee_Glass" if _rng.randf() < 0.5 else "furniture/Table_Coffee", Vector3(c.x, y, north - 0.3), 0.0, f, mirror)
 			_prop("furniture/Lounge_Chair", Vector3(c.x - 1.9, y, north - 0.3), PI * 0.5, f, 12.0, mirror)
-			_prop("furniture/Lamp_Round_Floor", Vector3(c.x + 1.5, y, c.z + sz * 0.5 - 0.8), 0.0, f, 3.0, mirror)
-			_prop("furniture/Cabinet_Television", Vector3(c.x - sx * 0.2, y, south - 0.2), 0.0, f, 14.0, mirror)
-			_prop("furniture/Television_Vintage" if _rng.randf() < 0.5 else "furniture/Television_Modern", Vector3(c.x - sx * 0.2, y + 0.31 * f + 0.02, south - 0.2), 0.0, f, 5.0, mirror)
-			_prop("furniture/Potted_Plant", Vector3(c.x + sx * 0.2, y, south - 0.4), 0.0, f, 4.0, mirror)
+			_fixed("furniture/Cabinet_Television", Vector3(c.x - sx * 0.2, y, south - 0.2), 0.0, f, mirror)
+			_fixed("furniture/Television_Vintage" if _rng.randf() < 0.5 else "furniture/Television_Modern", Vector3(c.x - sx * 0.2, y + 0.31 * f + 0.02, south - 0.2), 0.0, f, mirror, "none")
+			_fixed("furniture/Potted_Plant", Vector3(c.x + sx * 0.2, y, south - 0.4), 0.0, f, mirror)
 		_:
-			_prop("furniture/Desk", Vector3(c.x, y, north), 0.0, f, 16.0, mirror)
+			_fixed("furniture/Desk", Vector3(c.x, y, north), 0.0, f, mirror)
 			_prop("furniture/Chair_Desk", Vector3(c.x, y, north - 0.9), PI, f, 6.0, mirror)
-			_prop("furniture/Computer_Screen", Vector3(c.x, y + 0.38 * f + 0.02, north + 0.15), 0.0, f, 2.0, mirror)
-			_prop("furniture/Computer_Keyboard", Vector3(c.x, y + 0.38 * f + 0.02, north - 0.2), 0.0, f, 0.4, mirror)
-			_prop("furniture/Bookcase_Open", Vector3(c.x + 1.6, y, c.z + sz * 0.5 - 0.65), PI, f, 18.0, mirror)
-			_prop("furniture/Bookcase_Closed_Wide", Vector3(c.x - 1.9, y, c.z + sz * 0.5 - 0.65), PI, f, 22.0, mirror)
-			_prop("furniture/Trashcan", Vector3(c.x + 1.1, y, north - 0.4), 0.0, f, 2.0, mirror)
-			for i in 3:
-				_prop("furniture/Cardboard_Box_Closed", Vector3(c.x - sx * 0.18 + (i % 2) * 0.55, y + (i / 2) * 0.62, south - 0.3), i * 0.4, 2.3, 2.0, mirror)
-			_prop("furniture/Bear", Vector3(c.x + sx * 0.2, y, south), 2.6, f, 0.8, mirror)
+			_fixed("furniture/Computer_Screen", Vector3(c.x, y + 0.38 * f + 0.02, north + 0.15), 0.0, f, mirror, "none")
+			_fixed("furniture/Bookcase_Closed_Wide", Vector3(c.x - 1.9, y, c.z + sz * 0.5 - 0.65), PI, f, mirror)
+
+
+## A piece of furniture fixed in place: a static model centred on its
+## footprint (the same placement as a loose _prop), with a box collider
+## unless collide is "none" (things standing on tables and counters).
+func _fixed(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, mirror := true, collide := "box") -> void:
+	var b: AABB = Models.bounds(path)
+	var o := Basis(Vector3.UP, yaw) * (Vector3(b.get_center().x, b.position.y, b.get_center().z) * scl)
+	_model(path, pos - o, yaw, scl, mirror, collide)
 
 
 ## Scatter loose clutter on random walkable spots (called once the nav graph
-## exists), away from spawn points and pickup pads.
+## exists), away from spawn points and pickup pads. Outdoors only: never
+## inside a building, on an upper floor or on an indoor map, where it would
+## clog rooms and doorways.
 func _scatter_props() -> void:
-	if _nav_ids.is_empty():
+	if _nav_ids.is_empty() or indoor:
 		return
 	var count := clampi(int(half_x * half_z / 26.0), 14, 70)
 	var placed := 0
@@ -1226,6 +1228,11 @@ func _scatter_props() -> void:
 				ok = false
 		for s in pickup_spots:
 			if (s[1] as Vector3).distance_to(p) < 2.5:
+				ok = false
+		if p.y > 0.6:
+			ok = false
+		for r in roofs:
+			if (r as Rect2).grow(0.5).has_point(Vector2(p.x, p.z)):
 				ok = false
 		if not ok:
 			continue
@@ -1579,15 +1586,24 @@ func _slab(r: Rect2, y: float, mat: String, holes := [], mirror := true, t := 0.
 
 ## A flat surface decal (visual only) at height y, cut around ground holes.
 ## Ground holes are already mirrored, so `mirror` only mirrors the rectangle.
+## The decals are laid at the end of the layout (_build_floor), once every
+## hole is known, so a floor or path never covers a stairwell or ramp down,
+## whatever order the layout code runs in.
 func _surface(r: Rect2, y: float, mat: String, mirror := true) -> void:
 	var rects := [r]
 	if mirror:
 		rects.append(Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y))
 	for rr in rects:
 		_paved.append(rr)
-		for p in _split(rr, _holes):
+		_pending_surfaces.append([rr, y, mat])
+
+
+func _lay_surfaces() -> void:
+	for s in _pending_surfaces:
+		for p in _split(s[0], _holes):
 			var pr: Rect2 = p
-			_visual(Vector3(pr.get_center().x, y, pr.get_center().y), Vector3(pr.size.x, 0.012, pr.size.y), mat)
+			_visual(Vector3(pr.get_center().x, s[1], pr.get_center().y), Vector3(pr.size.x, 0.012, pr.size.y), s[2])
+	_pending_surfaces.clear()
 
 
 ## Perimeter walls (the ground itself is made by _build_floor after the layout).
@@ -1620,6 +1636,7 @@ func _build_floor() -> void:
 		for off in [3.5, -3.5]:
 			_surface(Rect2(-half_x, off - 0.04, half_x * 2.0, 0.08), 0.016, "rail", false)
 			_surface(Rect2(off - 0.04, -half_z, 0.08, half_z * 2.0), 0.016, "rail", false)
+	_lay_surfaces()
 
 
 # --------------------------------------------------------------------------
@@ -1648,6 +1665,9 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 	var sw := 1.5
 	var flights := floors - 1 if pitched else floors
 	var stair_x := [x0 + t + sw * 0.5 + 0.05, x1 - t - sw * 0.5 - 0.05]
+	roofs.append(Rect2(x0, z0, sx, sz))
+	if mirror:
+		roofs.append(Rect2(-x1, -z1, sx, sz))
 	# A real ground floor (boards or tiles), not the lawn or street outside.
 	_surface(Rect2(x0 + t, z0 + t, sx - t * 2.0, sz - t * 2.0), c.y + 0.015, floor_mat, mirror)
 	for f in floors:
@@ -2835,13 +2855,22 @@ func _build_scenery() -> void:
 	var rich: bool = Settings.v("scenery") == 1
 	if not indoor:
 		# The land carries on to the horizon in the map's own ground colour.
-		var apron := PlaneMesh.new()
-		apron.size = Vector2.ONE * 2400.0
+		# A ring round the arena, not one sheet under it: under the arena it
+		# would cut across every ramp, tunnel and basement below ground.
 		var ground_col: Color = theme.mats.ground[0]
 		var am := StandardMaterial3D.new()
 		am.albedo_color = ground_col.darkened(0.18)
 		am.roughness = 0.9
-		_add(apron, am, Transform3D(Basis(), Vector3(0, -0.6, 0)), false)
+		var E := 1200.0
+		var ix := half_x + 1.0
+		var iz := half_z + 1.0
+		for sgn in [1.0, -1.0]:
+			var ns := PlaneMesh.new()
+			ns.size = Vector2(E * 2.0, E - iz)
+			_add(ns, am, Transform3D(Basis(), Vector3(0, -0.6, sgn * (iz + E) * 0.5)), false)
+			var ew := PlaneMesh.new()
+			ew.size = Vector2(E - ix, iz * 2.0)
+			_add(ew, am, Transform3D(Basis(), Vector3(sgn * (ix + E) * 0.5, -0.6, 0)), false)
 		_horizon()
 	match theme.scenery:
 		"city": _scenery_city(30 if rich else 14, 6.0)

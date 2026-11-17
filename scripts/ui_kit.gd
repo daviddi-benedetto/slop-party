@@ -19,10 +19,10 @@ const PLAYER_COLORS := [
 	Color(0.7, 0.95, 0.25), Color(0.9, 0.93, 1.0),
 ]
 const COLOR_NAMES := ["ORANGE", "BLUE", "GREEN", "YELLOW", "PURPLE", "PINK", "CYAN", "RED", "LIME", "WHITE"]
-const KIND_NAMES := ["BUNNY", "FROG", "DINO", "BIRD", "YETI", "FISH", "MOOSE"]
-## Which 2D face ui_kit.portrait() draws for each kind (0-5 = the animal
-## faces: bear, bunny, cat, dog, fox, frog; 6 = human).
-const PORTRAIT := [1, 5, 4, 2, 0, 2, 3]
+const KIND_NAMES := ["BUNNY", "KITTY", "PUP", "BEAR", "FOX", "PANDA", "DUCK"]
+## Which 2D face ui_kit.portrait() draws for each kind (bear, bunny, cat, dog,
+## fox, -, panda, duck).
+const PORTRAIT := [1, 2, 3, 0, 4, 6, 7]
 const HAT_NAMES := ["NONE", "CAP", "CROWN", "TOP HAT", "PARTY HAT", "HORNS", "HALO", "HEADPHONES", "BOW", "ANTENNA", "MOHAWK",
 	"COWBOY", "WIZARD", "CHEF", "VIKING", "PROPELLER"]
 const BACK_NAMES := ["NONE", "CAPE", "BACKPACK", "WINGS", "BALLOON", "KATANA", "FLAG"]
@@ -119,34 +119,14 @@ static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: i
 	var o := r * 0.13
 	var real_kind := kind
 	kind = PORTRAIT[posmod(kind, PORTRAIT.size())]
-	if kind >= 6:
-		# Human characters: a face with hair / helmet in the player's colour.
-		var skin := Color(0.96, 0.78, 0.62, color.a)
-		ci.draw_circle(c, r + o, ink)
-		ci.draw_circle(c, r, color)
-		ci.draw_circle(c + Vector2(0, 0.18) * r, r * 0.74, skin)
-		ci.draw_arc(c, r * 0.86, PI * 1.05, PI * 1.95, 16, color.darkened(0.25), r * 0.3)
-		if real_kind in [15, 16, 21]:
-			# Helmets / visors.
-			ci.draw_rect(Rect2(c + Vector2(-0.62, -0.12) * r, Vector2(1.24, 0.34) * r), Color(0.15, 0.2, 0.3, color.a))
-		for sx in [-1.0, 1.0]:
-			var eh := c + Vector2(sx * 0.3, 0.08) * r
-			if dead:
-				var dh := r * 0.12
-				ci.draw_line(eh + Vector2(-dh, -dh), eh + Vector2(dh, dh), ink, maxf(1.5, r * 0.1))
-				ci.draw_line(eh + Vector2(-dh, dh), eh + Vector2(dh, -dh), ink, maxf(1.5, r * 0.1))
-			else:
-				ci.draw_circle(eh, r * 0.12, ink)
-		ci.draw_arc(c + Vector2(0, 0.38) * r, r * 0.22, 0.3, PI - 0.3, 8, ink, maxf(1.5, r * 0.08))
-		return
 	# Ears (ink silhouette first, then fill).
 	for pass_i in 2:
 		var col := ink if pass_i == 0 else color
 		var g := o if pass_i == 0 else 0.0
 		for sx in [-1.0, 1.0]:
 			match kind:
-				0:
-					ci.draw_circle(c + Vector2(sx * 0.7, -0.68) * r, r * 0.36 + g, col)
+				0, 6:
+					ci.draw_circle(c + Vector2(sx * 0.7, -0.68) * r, r * 0.36 + g, ink if kind == 6 else col)
 				1:
 					ellipse(ci, c + Vector2(sx * 0.42, -1.15) * r, r * 0.24 + g, r * 0.62 + g, col, sx * 0.18)
 				2:
@@ -155,18 +135,19 @@ static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: i
 					ellipse(ci, c + Vector2(sx * 0.98, -0.1) * r, r * 0.3 + g, r * 0.6 + g, col.darkened(0.25) if pass_i == 1 else col, sx * -0.25)
 				4:
 					poly(ci, c, r + g, [Vector2(sx * 1.0, -0.1), Vector2(sx * 0.95, -1.4), Vector2(sx * 0.1, -0.8)], col)
-				5:
-					ci.draw_circle(c + Vector2(sx * 0.48, -0.82) * r, r * 0.4 + g, col)
+				7:
+					if sx > 0.0:
+						poly(ci, c, r + g, [Vector2(-0.12, -0.9), Vector2(0.05, -1.35), Vector2(0.18, -0.88)], col)
 	ci.draw_circle(c, r + o, ink)
 	ci.draw_circle(c, r, color)
-	if kind == 5:
+	if kind == 6:
 		for sx in [-1.0, 1.0]:
-			ci.draw_circle(c + Vector2(sx * 0.48, -0.82) * r, r * 0.26, Color(1, 1, 1, color.a))
-			ci.draw_circle(c + Vector2(sx * 0.48, -0.82) * r, r * 0.13, ink)
-		ci.draw_arc(c + Vector2(0, 0.05) * r, r * 0.5, 0.35, PI - 0.35, 10, ink, maxf(1.5, r * 0.1))
-		return
-	ellipse(ci, c + Vector2(0, 0.38) * r, r * 0.5, r * 0.38, light)
-	ci.draw_circle(c + Vector2(0, 0.24) * r, r * 0.13, ink)
+			ellipse(ci, c + Vector2(sx * 0.4, -0.1) * r, r * 0.27, r * 0.33, Color(ink, color.a * 0.85), sx * -0.5)
+	if kind == 7:
+		ellipse(ci, c + Vector2(0, 0.42) * r, r * 0.58, r * 0.24, Color(1.0, 0.6, 0.2, color.a))
+	else:
+		ellipse(ci, c + Vector2(0, 0.38) * r, r * 0.5, r * 0.38, light)
+		ci.draw_circle(c + Vector2(0, 0.24) * r, r * 0.13, ink)
 	for sx in [-1.0, 1.0]:
 		var e := c + Vector2(sx * 0.4, -0.12) * r
 		if dead:
