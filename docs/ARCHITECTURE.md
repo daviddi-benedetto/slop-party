@@ -699,6 +699,9 @@ across the UI.
   effect (that was the case from v0.21 until this fix). Screen effects that
   must read the screen (screen_fx.gd) are a 2D post-process instead.
 - **Doors** are off (`map.DOORS`): doorways stay open; door.gd remains.
+- **Hovering sights** (viewmodel `_update_attachments`, `_hover_parts`):
+  scope and red dot have no mount; a glowing ring pair and an additive beam
+  hold them up; `_attach` bobs only when not aiming (ADS alignment).
 - **Mystery boxes** (pickup.gd `_float`): the box floats `FLOAT_Y` above
   the ring and bobs.
 - **Body language** (`character.animate`): player.gd sets `turn_rate`,

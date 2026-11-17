@@ -158,6 +158,9 @@ PLAY** lists every button and **MODES** explains each mode.
   leave smoke (and fire) trails, lava sheds embers, campfires burn, walls
   coming down throw up dust clouds, and muzzle flashes are hot stars.
 - **Mystery boxes** float above their light rings, bobbing gently.
+- **Hovering sights:** scopes and red-dot sights float above the gun on a
+  glowing emitter and beam in your colour, bobbing gently (steady while you
+  aim).
 - **Guns and feet:** brass shell casings fly out of the guns that eject
   them, smoke hangs at the muzzle, paws leave prints that fade, and slides
   kick up dust.

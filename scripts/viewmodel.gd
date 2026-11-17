@@ -127,6 +127,8 @@ var _style := ""
 var _attach: Node3D
 var _lens_mat: ShaderMaterial
 var _attach_key := ""
+var _hover_beam: MeshInstance3D    # the light beam under a hovering sight
+var _hover_mat: StandardMaterial3D
 var _target: Node3D              # where _part() puts new pieces (self or a pivot)
 var _pump: Node3D                # sliding fore-end (Scatter)
 var _drum: Node3D                # revolving cylinder (Magnum, Lobber)
@@ -855,6 +857,7 @@ func _update_attachments(p) -> void:
 			_lens_mat.set_shader_parameter("view", scope_texture)
 		return
 	_attach_key = key
+	_hover_beam = null
 	if _attach != null:
 		_attach.queue_free()
 		_attach = null
@@ -867,7 +870,8 @@ func _update_attachments(p) -> void:
 		_tube(_dark, 0.036, 0.2, Vector3(0, sy, -0.03))
 		_tube(_accent, 0.04, 0.025, Vector3(0, sy, -0.12))
 		_tube(_dark, 0.04, 0.025, Vector3(0, sy, 0.06))
-		_box(_dark, Vector3(0.02, 0.05, 0.04), Vector3(0, sy - 0.045, -0.06))
+		# No mount: the scope hovers on an anti-grav emitter (_hover_parts).
+		_hover_parts(Vector3(0, sy - 0.052, -0.03), 0.042, 0.05)
 		var sh := Shader.new()
 		sh.code = LENS_SHADER
 		_lens_mat = ShaderMaterial.new()
@@ -881,12 +885,44 @@ func _update_attachments(p) -> void:
 		_box(_dark, Vector3(0.05, 0.004, 0.006), Vector3(0, y + 0.07, -0.05))
 		_box(_dark, Vector3(0.004, 0.04, 0.006), Vector3(-0.024, y + 0.05, -0.05))
 		_box(_dark, Vector3(0.004, 0.04, 0.006), Vector3(0.024, y + 0.05, -0.05))
-		_box(_dark, Vector3(0.05, 0.012, 0.05), Vector3(0, y + 0.025, -0.05))
+		_box(_dark, Vector3(0.05, 0.006, 0.05), Vector3(0, y + 0.028, -0.05))
+		_hover_parts(Vector3(0, y + 0.022, -0.05), 0.022, 0.03)
 		var dot := _mat(Color(1.0, 0.1, 0.1), 0.3)
 		dot.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		dot.albedo_color = Color(2.0, 0.2, 0.2)
 		_ball(dot, Vector3(0, y + 0.05, -0.05), Vector3.ONE * 0.0035)
 	_target = self
+
+
+## A hovering sight's emitter: a glowing ring in the player's colour under
+## the sight and a soft beam of light down to the gun (pulses in update()).
+func _hover_parts(at: Vector3, ring_r: float, beam_h: float) -> void:
+	var ring := TorusMesh.new()
+	ring.inner_radius = ring_r * 0.7
+	ring.outer_radius = ring_r
+	ring.rings = 16
+	ring.ring_segments = 6
+	var rm := _mat(_color.lerp(Color.WHITE, 0.35), 0.2)
+	rm.emission_enabled = true
+	rm.emission = _color.lerp(Color.WHITE, 0.3)
+	rm.emission_energy_multiplier = 3.0
+	_part(ring, rm, at).scale = Vector3(1.0, 0.5, 1.0)
+	_part(ring, rm, at - Vector3(0, beam_h * 0.55, 0)).scale = Vector3(0.55, 0.5, 0.55)
+	_hover_mat = StandardMaterial3D.new()
+	_hover_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_hover_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_hover_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_hover_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_hover_mat.albedo_color = Color(_color.lerp(Color.WHITE, 0.4) * 1.6, 0.5)
+	var cone := CylinderMesh.new()
+	cone.top_radius = ring_r * 0.75
+	cone.bottom_radius = ring_r * 0.25
+	cone.height = beam_h
+	cone.radial_segments = 12
+	cone.rings = 1
+	cone.cap_top = false
+	cone.cap_bottom = false
+	_hover_beam = _part(cone, _hover_mat, at - Vector3(0, beam_h * 0.5, 0))
 
 
 func _mat(col: Color, rough: float) -> StandardMaterial3D:
@@ -986,6 +1022,12 @@ func update(delta: float, p) -> void:
 
 	var kick: float = p.recoil * p.stats.recoil_kick * (0.6 + 0.4 * hip)
 	_update_attachments(p)
+	if _attach != null:
+		# The hovering sight bobs on its emitter, steady while aiming so the
+		# sight still lines up with the eye.
+		_attach.position.y = sin(_t * 2.4) * 0.006 * (1.0 - aim)
+		if _hover_beam != null and _hover_mat != null:
+			_hover_mat.albedo_color.a = 0.4 + 0.2 * sin(_t * 7.0)
 	var ads := ADS - Vector3(0, _sight_y - 0.07, 0)
 	if _attach_key == "scope":
 		ads = Vector3(0, -(_sight_y + 0.045), -0.33)
