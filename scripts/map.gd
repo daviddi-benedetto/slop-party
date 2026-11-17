@@ -243,7 +243,7 @@ const THEMES := {
 			"sun_color": Color(0.62, 0.7, 1.0), "sun_energy": 0.6, "ambient": 0.5, "fog": Color(0.05, 0.06, 0.12), "fog_density": 0.004},
 		"sun_yaw": 70.0, "weathers": ["clear", "clear", "rain", "fog"],
 		"leaf": [Color(0.15, 0.4, 0.17), Color(0.22, 0.48, 0.16)], "grass": [Color(0.12, 0.32, 0.1), Color(0.32, 0.6, 0.22)],
-		"scenery": "stadium", "motes": [Color(1.0, 1.0, 0.9), Color(0.9, 0.95, 1.0)], "mote_rise": 0.05,
+		"mown": true, "scenery": "stadium", "motes": [Color(1.0, 1.0, 0.9), Color(0.9, 0.95, 1.0)], "mote_rise": 0.05,
 	},
 	"suburb": {
 		"mats": {
@@ -2520,6 +2520,8 @@ func _grass() -> void:
 		mat.set_shader_parameter("sway", k[4])
 		mats.append(mat)
 	var card := _card_mesh(3)
+	# Sports turf (theme "mown") is kept short and free of weeds.
+	var mown: bool = theme.get("mown", false)
 
 	var density := 5.0 if area < 3000.0 else (3.8 if area < 9000.0 else 2.4)
 	var count := mini(int(area * density), 70000)
@@ -2543,7 +2545,9 @@ func _grass() -> void:
 		var patch := sin(px * 0.21 + 1.3) * cos(pz * 0.17 - 0.6) + 0.5 * sin(px * 0.07 - pz * 0.11)
 		var roll := _rng.randf()
 		var ki := 0
-		if patch > 0.75 and roll < 0.5:
+		if mown:
+			pass                      # a mown pitch: short grass only
+		elif patch > 0.75 and roll < 0.5:
 			ki = 3 + (int(floor((px + 500.0) / 9.0)) + int(floor((pz + 500.0) / 9.0))) % 4
 		elif patch < -0.6 and roll < 0.45:
 			ki = 2
@@ -2566,7 +2570,7 @@ func _grass() -> void:
 		mm.mesh = card
 		mm.instance_count = spots.size()
 		for i in spots.size():
-			var w := _rng.randf_range(k[2], k[3])
+			var w := _rng.randf_range(k[2], k[3]) * (0.32 if mown else 1.0)
 			var hgt := w * _rng.randf_range(0.75, 1.15)
 			var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(w, hgt, w))
 			mm.set_instance_transform(i, Transform3D(basis, spots[i] - centre))
@@ -2813,13 +2817,15 @@ func _layout_frost() -> void:
 func _build_scenery() -> void:
 	var rich: bool = Settings.v("scenery") == 1
 	if not indoor:
+		# The land carries on to the horizon in the map's own ground colour.
 		var apron := PlaneMesh.new()
-		apron.size = Vector2.ONE * maxf(700.0, half_x * 16.0)
+		apron.size = Vector2.ONE * 2400.0
 		var ground_col: Color = theme.mats.ground[0]
 		var am := StandardMaterial3D.new()
-		am.albedo_color = ground_col.darkened(0.4)
-		am.roughness = 0.7
+		am.albedo_color = ground_col.darkened(0.18)
+		am.roughness = 0.9
 		_add(apron, am, Transform3D(Basis(), Vector3(0, -0.6, 0)), false)
+		_horizon()
 	match theme.scenery:
 		"city": _scenery_city(30 if rich else 14, 6.0)
 		"rocks": _scenery_spires(46 if rich else 20, Color(0.2, 0.13, 0.11), theme.accent_a, false)
@@ -2835,6 +2841,137 @@ func _build_scenery() -> void:
 		if theme.scenery == "ice":
 			_snow_drifts()
 		_motes()
+
+
+## The horizon: what stands between the scenery ring and the sky, so the
+## arena sits in a landscape instead of a void. Chosen by the theme's
+## scenery kind: a far skyline for the city maps, rolling hills with
+## mountains behind for the countryside, snow peaks for the ice field, dark
+## crags with a lava glow for the pit. All far enough away that the depth
+## of field and the haze turn them into a soft backdrop.
+func _horizon() -> void:
+	var r0 := sqrt(half_x * half_x + half_z * half_z)
+	var ground: Color = theme.mats.ground[0]
+	match theme.scenery:
+		"city", "stadium":
+			_skyline(r0 + 150.0, 110.0, 90, 30.0, 150.0)
+			_ridge(r0 + 420.0, 60.0, 40.0, 110.0, Color(0.2, 0.24, 0.36), Color(0.36, 0.42, 0.56), 0.0, 11)
+		"suburb":
+			_ridge(r0 + 130.0, 70.0, 10.0, 34.0, ground.darkened(0.1), ground.lightened(0.12), 0.0, 3)
+			_skyline(r0 + 300.0, 90.0, 46, 30.0, 110.0)
+			_ridge(r0 + 460.0, 80.0, 60.0, 140.0, Color(0.34, 0.42, 0.52), Color(0.6, 0.66, 0.74), 0.75, 12)
+		"castle":
+			_ridge(r0 + 120.0, 70.0, 12.0, 40.0, ground.darkened(0.15), ground.lightened(0.08), 0.0, 5)
+			_ridge(r0 + 300.0, 90.0, 70.0, 170.0, Color(0.36, 0.4, 0.42), Color(0.62, 0.64, 0.66), 0.62, 14)
+		"front":
+			_ridge(r0 + 110.0, 80.0, 10.0, 36.0, ground.darkened(0.12), ground.lightened(0.1), 0.0, 7)
+			_ridge(r0 + 330.0, 90.0, 60.0, 150.0, Color(0.32, 0.38, 0.44), Color(0.56, 0.6, 0.66), 0.7, 15)
+		"ice":
+			_ridge(r0 + 120.0, 70.0, 16.0, 50.0, Color(0.62, 0.72, 0.84), Color(0.9, 0.95, 1.0), 0.0, 8)
+			_ridge(r0 + 300.0, 90.0, 80.0, 190.0, Color(0.42, 0.52, 0.68), Color(0.8, 0.88, 0.98), 0.4, 16)
+		"rocks":
+			_ridge(r0 + 110.0, 60.0, 24.0, 70.0, Color(0.16, 0.1, 0.09), Color(0.34, 0.2, 0.15), 0.0, 9, 2.2)
+			_ridge(r0 + 280.0, 90.0, 80.0, 200.0, Color(0.12, 0.07, 0.07), Color(0.4, 0.18, 0.1), 0.0, 17, 2.4)
+			_glow_band(r0 + 190.0, Color(1.0, 0.35, 0.08))
+
+
+## A ring of hills or mountains `radius` away: a ridge line from layered
+## noise between h_min and h_max, a shoulder half-way up for shading, base
+## colour fading to `top` (and to snow above `snow` of the height, 0 = no
+## snow). `jag` > 1 sharpens the peaks.
+func _ridge(radius: float, depth: float, h_min: float, h_max: float, base: Color, top: Color, snow: float, seed_i: int, jag := 1.0) -> void:
+	var noise := FastNoiseLite.new()
+	noise.seed = 1000 + map_index * 37 + seed_i
+	noise.frequency = 1.0
+	var seg := 160
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rows: Array = []
+	for i in seg + 1:
+		var a := TAU * (i % seg) / seg
+		var n := 0.5 + 0.5 * noise.get_noise_2d(cos(a) * 2.2, sin(a) * 2.2)
+		n = n * 0.65 + 0.35 * (0.5 + 0.5 * noise.get_noise_2d(cos(a) * 9.0 + 40.0, sin(a) * 9.0))
+		n = pow(clampf(n, 0.0, 1.0), jag)
+		var h := lerpf(h_min, h_max, n)
+		var dir := Vector3(cos(a), 0, sin(a))
+		rows.append([dir * radius + Vector3(0, -4.0, 0), dir * (radius + depth * 0.45) + Vector3(0, h * 0.55, 0), dir * (radius + depth) + Vector3(0, h, 0), n])
+	for i in seg:
+		var p: Array = rows[i]
+		var q: Array = rows[i + 1]
+		for band in 2:
+			var quad := [p[band], q[band], q[band + 1], p[band], q[band + 1], p[band + 1]]
+			var levels := [band * 0.5, band * 0.5, band * 0.5 + 0.5, band * 0.5, band * 0.5 + 0.5, band * 0.5 + 0.5]
+			var nrm: Vector3 = ((quad[1] as Vector3) - (quad[0] as Vector3)).cross((quad[2] as Vector3) - (quad[0] as Vector3)).normalized()
+			if nrm.dot(-(quad[0] as Vector3)) < 0.0:
+				nrm = -nrm
+			for k in 6:
+				var lvl: float = levels[k]
+				var hn: float = (q[3] if k in [1, 2, 4] else p[3])
+				var col := base.lerp(top, lvl)
+				if snow > 0.0 and lvl * (0.45 + 0.55 * hn) > snow * 0.62:
+					col = col.lerp(Color(0.95, 0.97, 1.0), 0.85)
+				st.set_color(col)
+				st.set_normal(nrm)
+				st.add_vertex(quad[k])
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
+	mat.roughness = 1.0
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+
+
+## A far skyline: a broad ring of towers of mixed heights, hazed towards the
+## sky colour, with lit window bands at dusk and night.
+func _skyline(radius: float, spread: float, count: int, h_min: float, h_max: float) -> void:
+	var body := StandardMaterial3D.new()
+	body.albedo_color = Color(0.07, 0.08, 0.14) if time == "night" else Color(0.42, 0.47, 0.56)
+	body.roughness = 0.6
+	var lit := StandardMaterial3D.new()
+	lit.albedo_color = Color(0.1, 0.1, 0.12)
+	lit.emission_enabled = true
+	lit.emission = Color(1.0, 0.82, 0.5)
+	lit.emission_energy_multiplier = 1.6 * night_amount
+	var box := BoxMesh.new()
+	for i in count:
+		var a := TAU * i / float(count) + _rng.randf_range(-0.03, 0.03)
+		var d := radius + _rng.randf() * spread
+		var w := _rng.randf_range(14.0, 34.0)
+		var h := lerpf(h_min, h_max, pow(_rng.randf(), 1.8))
+		var p := Vector3(cos(a) * d, h * 0.5 - 2.0, sin(a) * d)
+		var yaw := _rng.randf() * TAU
+		_add(box, body, Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(w, h, w * _rng.randf_range(0.7, 1.2))), p), false)
+		if night_amount > 0.0:
+			for b in 3 + _rng.randi() % 5:
+				var y := h * _rng.randf_range(0.15, 0.95) - 2.0
+				_add(box, lit, Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3(w + 0.4, 1.6, w * 0.6)), Vector3(p.x, y, p.z)), false)
+
+
+## A low band of glowing light between two ridges (lava fields far away).
+func _glow_band(radius: float, col: Color) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.albedo_color = col * 1.6
+	mat.emission_enabled = true
+	mat.emission = col
+	mat.emission_energy_multiplier = 2.0
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = radius
+	cyl.bottom_radius = radius
+	cyl.height = 3.0
+	cyl.radial_segments = 64
+	cyl.cap_top = false
+	cyl.cap_bottom = false
+	var mi := MeshInstance3D.new()
+	mi.mesh = cyl
+	mi.material_override = mat
+	mi.position.y = 1.0
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
 
 
 func _ring_spot(i: int, n: int, near: float, far: float) -> Vector3:

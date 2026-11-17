@@ -367,6 +367,11 @@ collision off (the vehicle takes the hits).
 - Clutter is themed: `CLUTTER_SETS[MAPS[i].clutter]`.
 - `_lamp()` = pendant model + warm OmniLight that ignores the time of day
   (distance-faded); `_building` hangs a grid of them on every storey.
+- Horizon (`map._horizon`, by `theme.scenery`): `_ridge()` builds rings of
+  hills / mountains from noise (vertex-coloured, optional snow line),
+  `_skyline()` a far ring of towers with lit bands at night, `_glow_band()`
+  the lava glow. They sit 110-500 m beyond the map; cameras see 1200 m
+  and the ground apron is 2400 m wide.
 - Depth of field (`game._focus`, option `dof`): far blur only. Each frame
   the focus limit is set to where that camera's view leaves the map
   rectangle (clamped 16-220 m, smoothed), so the playable area stays sharp

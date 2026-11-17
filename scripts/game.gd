@@ -339,7 +339,7 @@ func _add_view(player) -> void:
 	var cam := Camera3D.new()
 	cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	cam.near = 0.06
-	cam.far = 400.0
+	cam.far = 1200.0             # the horizon ring (map._horizon) is up to ~700 m away
 	# Soft focus in the distance: the toy-diorama look (option "dof").
 	var lens := CameraAttributesPractical.new()
 	lens.dof_blur_far_enabled = Settings.v("dof")
@@ -398,7 +398,7 @@ func _ensure_scope(v: Dictionary) -> void:
 	add_child(vp)
 	var c := Camera3D.new()
 	c.near = 0.3
-	c.far = 400.0
+	c.far = 1200.0
 	c.cull_mask = v.camera.cull_mask & ~v.player.viewmodel_layer_bit()
 	c.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	vp.add_child(c)

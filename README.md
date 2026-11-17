@@ -55,6 +55,9 @@ arenas with readable colour and atmosphere at every time of day.
   grass, ferns, leafy plants and drifts of flowers (painted foliage cards,
   the way open-world games do it), over gently rolling mounds instead of a
   flat plane.
+- **A horizon on every map:** distant mountains, rolling hills, snow peaks,
+  volcanic crags or a far skyline (by theme) ring each arena, softened by
+  haze and depth of field, so no map floats in a void.
 - **Light:** warm hanging lamps in every room, and sun rays that fan out
   from the sun when you look towards it and are cut by roofs and trees.
 - **A lived-in world:** furnished houses, loose physics props you can kick
