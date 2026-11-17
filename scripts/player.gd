@@ -128,6 +128,8 @@ var second_wind_left := 0
 var kills_life := 0
 var near_pickup = null            # pickup.gd pad we are standing on (set by the pad)
 var crouching := false
+var sprinting := false
+var sprint_amount := 0.0          # smoothed 0..1 (camera FOV, weapon pose)
 var crouch_amount := 0.0          # smoothed 0..1, lowers the camera
 var sliding := 0.0                # seconds of slide left
 var wallrun := 0.0                # seconds into the current wall run (0 = not running)
@@ -820,7 +822,12 @@ func _physics_process(delta: float) -> void:
 		_skydive_tick(delta, wish)
 		_weapon_tick(delta, rush)
 		return
+	# Sprint: forwards only, not while aiming, crouching or taunting.
+	sprinting = brain.sprint and input.y > 0.3 and aim_amount < 0.3 and not crouching and sliding <= 0.0
 	var speed: float = stats.move_speed * (1.0 + rush) * (1.0 - 0.3 * aim_amount) * (1.0 - (slow_amount if slow_left > 0.0 else 0.0))
+	if sprinting:
+		speed *= stats.sprint_mult
+	sprint_amount = move_toward(sprint_amount, 1.0 if sprinting else 0.0, delta * 5.0)
 	var on_floor := is_on_floor()
 	var horiz := Vector3(velocity.x, 0.0, velocity.z)
 	_wall_cd = maxf(0.0, _wall_cd - delta)

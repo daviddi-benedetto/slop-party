@@ -25,6 +25,7 @@ var crouch := false
 var jump_held := false
 var interact := false
 var melee := false
+var sprint := false
 var taunt := -1
 var sens := 1.0
 
@@ -176,6 +177,9 @@ func update_buttons(player, delta: float) -> void:
 			_repath = 3.0
 	else:
 		_stuck = 0.0
+
+	# Run between fights, walk while shooting.
+	sprint = not (_target != null and _has_los) and world_move.length() > 0.1
 
 	# World-space wish direction -> stick input relative to our facing.
 	var local := Basis(Vector3.UP, player.yaw).inverse() * world_move

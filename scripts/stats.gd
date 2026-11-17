@@ -7,8 +7,9 @@ extends RefCounted
 # --- body ---
 var max_health := 100.0
 var move_speed := 7.5
-var jump_velocity := 8.5
-var max_jumps := 1
+var jump_velocity := 9.6     # about 2.1 m high
+var max_jumps := 2           # everyone can double jump; the card adds a third
+var sprint_mult := 1.45      # run speed while sprinting (left-stick click / Shift)
 var gravity_mult := 1.0
 var dash_cooldown := 3.0
 var dash_invuln := false    # cannot be hurt while dashing

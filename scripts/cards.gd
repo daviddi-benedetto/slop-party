@@ -72,7 +72,7 @@ static func deck() -> Array:
 				"apply": func(s): s.pellets += 3; s.damage *= 0.65; s.spread += 0.035},
 			{"name": "Vampire", "icon": "heart", "rarity": RARE, "desc": "Heal for 30% of damage dealt",
 				"apply": func(s): s.lifesteal += 0.3},
-			{"name": "Double Jump", "icon": "jump", "rarity": RARE, "desc": "+1 jump in mid-air",
+			{"name": "Double Jump", "icon": "jump", "rarity": RARE, "desc": "A third jump in mid-air",
 				"apply": func(s): s.max_jumps += 1},
 			{"name": "Regeneration", "icon": "heart", "rarity": RARE, "desc": "Constantly regenerate 6 HP/s",
 				"apply": func(s): s.regen += 6.0},

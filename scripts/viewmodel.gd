@@ -1035,6 +1035,10 @@ func update(delta: float, p) -> void:
 		_shield.visible = up > 0.01
 		_shield.position = Vector3(-0.3, -0.3 + 0.32 * up, -0.12)
 		_shield.rotation = Vector3(0.1, 0.25, 0.08 * (1.0 - up))
+	# Sprinting: the weapon drops and turns across the body.
+	var run: float = p.sprint_amount * hip
+	pos += Vector3(-0.05, -0.05, 0.03) * run
+	rot += Vector3(-0.12, 0.45, 0.1) * run
 	# Parkour poses: tilt away from a wall, lower and roll during a slide.
 	rot.z += p.wall_tilt * 0.3 * hip
 	if p.sliding > 0.0:

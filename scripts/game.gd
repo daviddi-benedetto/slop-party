@@ -470,7 +470,7 @@ func _update_cameras(delta: float) -> void:
 				cam.cull_mask &= ~own_bit
 			# Aim-down-sights zoom narrows the FOV; dashing widens it briefly.
 			var zoomed := rad_to_deg(2.0 * atan(tan(deg_to_rad(v.fov) * 0.5) * p.zoom_factor()))
-			cam.fov = zoomed + (p.fov_kick * 7.0 + (6.0 if p.sliding > 0.0 else 0.0) + (4.0 if p.wallrun > 0.0 else 0.0)) * hip
+			cam.fov = zoomed + (p.fov_kick * 7.0 + p.sprint_amount * 5.0 + (6.0 if p.sliding > 0.0 else 0.0) + (4.0 if p.wallrun > 0.0 else 0.0)) * hip
 			var need_scope: bool = p.stats.scope > 1.0 and p.stats.zoom >= 0.5
 			if need_scope:
 				_ensure_scope(v)

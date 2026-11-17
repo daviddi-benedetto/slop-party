@@ -129,11 +129,12 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Look | Right stick (with aim assist) | Mouse |
 | Fire | RT | Left click |
 | Aim down sights | LT (hold) | Right click (hold) |
-| Jump (hold with jetpack) | A | Space |
+| Jump, and again in the air (hold with jetpack) | A | Space |
 | Crouch (hold) / slide (while running) | B | C or Ctrl |
 | Melee (punch, or swing a melee weapon) | Right-stick click | F or middle mouse |
 | Taunt (Wave / Dance / Nope / Flex) | D-pad up / right / down / left | 1 / 2 / 3 / 4 |
-| Dash | RB or left-stick click | Shift |
+| Sprint | Left-stick click (runs until you ease off) | Shift (hold) |
+| Dash | RB | Alt or V |
 | Block | LB | Q |
 | Reload | X | R |
 | Pick up weapon / open or close a door / get in or out of a vehicle | Y | E |

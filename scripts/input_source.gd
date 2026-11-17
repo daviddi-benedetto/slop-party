@@ -9,7 +9,9 @@ extends RefCounted
 ##   fire      RT                          left mouse
 ##   aim       LT (hold)                   right mouse (hold)
 ##   jump      A                           Space
-##   dash      RB or left-stick click      Shift
+##   sprint    left-stick click (runs      Shift (hold)
+##             until you slow down)
+##   dash      RB                          Alt or V
 ##   block     LB                          Q
 ##   reload    X                           R
 ##   interact  Y (pick up weapon)          E
@@ -37,6 +39,7 @@ var dash := false             # edge triggered
 var block := false            # edge triggered
 var reload := false           # edge triggered
 var interact := false         # edge triggered
+var sprint := false           # held (keyboard) / latched until you slow down (gamepad)
 var melee := false            # edge triggered
 var taunt := -1               # edge triggered: 0-3 = which taunt (D-pad / keys 1-4), -1 none
 var sens := 1.0               # this player's own look-speed multiplier (lobby: LOOK)
@@ -115,7 +118,8 @@ func update_buttons(_player, _delta: float) -> void:
 		jump_held = Input.is_physical_key_pressed(KEY_SPACE)
 		jump = _edge("jump", jump_held)
 		crouch = Input.is_physical_key_pressed(KEY_C) or Input.is_physical_key_pressed(KEY_CTRL)
-		dash = _edge("dash", Input.is_physical_key_pressed(KEY_SHIFT))
+		sprint = Input.is_physical_key_pressed(KEY_SHIFT) and k.y > 0.0
+		dash = _edge("dash", Input.is_physical_key_pressed(KEY_ALT) or Input.is_physical_key_pressed(KEY_V))
 		block = _edge("block", Input.is_physical_key_pressed(KEY_Q))
 		reload = _edge("reload", Input.is_physical_key_pressed(KEY_R))
 		interact = _edge("interact", Input.is_physical_key_pressed(KEY_E))
@@ -136,7 +140,12 @@ func update_buttons(_player, _delta: float) -> void:
 		jump = _edge("jump", jump_held)
 		# B crouches or slides when running; R3 is reserved for melee.
 		crouch = Input.is_joy_button_pressed(device, JOY_BUTTON_B)
-		dash = _edge("dash", Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER) or Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_STICK))
+		# Click the left stick to break into a run; it lasts until you ease off.
+		if _edge("sprint", Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_STICK)):
+			sprint = not sprint
+		if move.y < 0.35 or move.length() < 0.5:
+			sprint = false
+		dash = _edge("dash", Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER))
 		block = _edge("block", Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_SHOULDER))
 		reload = _edge("reload", Input.is_joy_button_pressed(device, JOY_BUTTON_X))
 		interact = _edge("interact", Input.is_joy_button_pressed(device, JOY_BUTTON_Y))

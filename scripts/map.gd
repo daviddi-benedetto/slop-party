@@ -1620,10 +1620,12 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 			_box(Vector3(rail_x, y + 0.5, c.z), Vector3(0.08, 1.0, run), rail_mat, mirror)
 		var is_roof := f == floors
 		if is_roof and pitched:
-			_slab(Rect2(x0, z0, sx, sz), y, roof_mat, [], mirror)
+			_slab(Rect2(x0 + 0.05, z0 + 0.05, sx - 0.1, sz - 0.1), y, roof_mat, [], mirror)
 			_gable(Vector3(c.x, y, c.z), sx + 0.8, sz + 0.8, minf(sz * 0.32, 3.0), roof_mat, mirror)
 		else:
-			_slab(Rect2(x0, z0, sx, sz), y, floor_mat if not is_roof else roof_mat, holes, mirror)
+			# Floors stop just inside the outer wall face: an edge flush with the
+			# wall would shimmer (two surfaces in the same plane).
+			_slab(Rect2(x0 + 0.05, z0 + 0.05, sx - 0.1, sz - 0.1), y, floor_mat if not is_roof else roof_mat, holes, mirror)
 	# Foundation band and corner posts: the building reads as built, not a box.
 	var trim := "trim" if _mats.has("trim") else ("block_a" if mat != "block_a" else "block_c")
 	_box(Vector3(c.x, c.y + 0.14, c.z), Vector3(sx + 0.16, 0.28, sz + 0.16), "dark", mirror, 0.0, false)
@@ -1702,11 +1704,12 @@ func _facade(c: Vector3, sx: float, sz: float, y0: float, f: int, win_x: Array, 
 		# Perimeter string-course only. A full-footprint trim slab here used to
 		# cover the stairwell cutout made by _slab(), so players hit an invisible
 		# floor while climbing.
-		var band := 0.12
-		_box(Vector3(c.x, y0, z0 + band * 0.5), Vector3(sx, band, band), trim, mirror, 0.0, false)
-		_box(Vector3(c.x, y0, z1 - band * 0.5), Vector3(sx, band, band), trim, mirror, 0.0, false)
-		_box(Vector3(x0 + band * 0.5, y0, c.z), Vector3(band, band, sz - 2.0 * band), trim, mirror, 0.0, false)
-		_box(Vector3(x1 - band * 0.5, y0, c.z), Vector3(band, band, sz - 2.0 * band), trim, mirror, 0.0, false)
+		# The band stands 6 cm proud of the wall (never flush with it).
+		var band := 0.18
+		_box(Vector3(c.x, y0, z0 + 0.03), Vector3(sx + 0.12, 0.12, band), trim, mirror, 0.0, false)
+		_box(Vector3(c.x, y0, z1 - 0.03), Vector3(sx + 0.12, 0.12, band), trim, mirror, 0.0, false)
+		_box(Vector3(x0 + 0.03, y0, c.z), Vector3(band, 0.12, sz - 0.26), trim, mirror, 0.0, false)
+		_box(Vector3(x1 - 0.03, y0, c.z), Vector3(band, 0.12, sz - 0.26), trim, mirror, 0.0, false)
 
 
 ## A dense patch of woodland in `r`: mostly light low-poly trees (cheap), a
