@@ -39,6 +39,7 @@ const ITEMS := [
 	# (game.gd::_auto_resolution), so busy six-player moments stay at 60.
 	{"key": "auto_res", "label": "Auto resolution (hold 60 FPS)", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "dof", "label": "Soft focus in the distance", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	{"key": "rays", "label": "Sun rays", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"section": "AUDIO"},
 	{"key": "master", "label": "Master volume", "range": [0, 10], "def": 8},
 	{"key": "music", "label": "Music volume", "range": [0, 10], "def": 6},

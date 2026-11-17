@@ -19,7 +19,7 @@ const PLAYER_COLORS := [
 	Color(0.7, 0.95, 0.25), Color(0.9, 0.93, 1.0),
 ]
 const COLOR_NAMES := ["ORANGE", "BLUE", "GREEN", "YELLOW", "PURPLE", "PINK", "CYAN", "RED", "LIME", "WHITE"]
-const KIND_NAMES := ["BUNNY", "FROG", "DINO", "BIRD", "YETI", "FISH", "MONKEY"]
+const KIND_NAMES := ["BUNNY", "FROG", "DINO", "BIRD", "YETI", "FISH", "MOOSE"]
 ## Which 2D face ui_kit.portrait() draws for each kind (0-5 = the animal
 ## faces: bear, bunny, cat, dog, fox, frog; 6 = human).
 const PORTRAIT := [1, 5, 4, 2, 0, 2, 3]

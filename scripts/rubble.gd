@@ -36,6 +36,7 @@ func _ready() -> void:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color.WHITE
 	mat.vertex_color_use_as_albedo = true
+	mat.vertex_color_is_srgb = true
 	mat.roughness = 0.9
 	bm.material = mat
 	_mm = MultiMesh.new()

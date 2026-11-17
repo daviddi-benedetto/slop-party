@@ -54,6 +54,7 @@ const Fx = preload("res://scripts/fx.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
 const Viewmodel = preload("res://scripts/viewmodel.gd")
 const MotionBlur = preload("res://scripts/motion_blur.gd")
+const SunRays = preload("res://scripts/sun_rays.gd")
 const Results = preload("res://scripts/results.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
 const Pickup = preload("res://scripts/pickup.gd")
@@ -74,6 +75,7 @@ var map
 var players: Array = []
 var kill_target := 15
 var match_over := false
+var _debug_top := false
 var _debug_third := false    # dev flag --third: watch player 1 from the taunt camera
 var debug_aim := false       # dev flag --force-aim: everyone aims down sights
 var frozen := true
@@ -120,6 +122,7 @@ func _ready() -> void:
 		mode = "rounds"
 	debug_aim = "--force-aim" in OS.get_cmdline_user_args()
 	_debug_third = "--third" in OS.get_cmdline_user_args()
+	_debug_top = "--top" in OS.get_cmdline_user_args()
 	world = Node3D.new()
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
@@ -358,6 +361,11 @@ func _add_view(player) -> void:
 		cam.cull_mask = 1 | all_bodies
 	vp.add_child(cam)
 	cam.current = true
+	# Sun rays: a full-screen quad only this camera draws (its own layer).
+	var rays = SunRays.new()
+	rays.layers = 1 << (15 + _views.size())   # bits 15-20: one per view
+	cam.cull_mask |= rays.layers
+	cam.add_child(rays)
 
 	var layer := CanvasLayer.new()
 	layer.layer = 0
@@ -373,7 +381,7 @@ func _add_view(player) -> void:
 	hud.player = player
 	hud.game = self
 	hud_layer.add_child(hud)
-	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "player": player, "fov": 70.0,
+	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "rays": rays, "player": player, "fov": 70.0,
 		"scope_vp": null, "scope_cam": null}
 	_views.append(view)
 
@@ -424,13 +432,22 @@ func _layout() -> void:
 func _update_cameras(delta: float) -> void:
 	var ears: Array = []
 	var shake_amount: float = Settings.v("shake")
+	var to_sun: Vector3 = map.sun_direction()
+	var ray_power: float = 0.0 if map.indoor else {"day": 0.55, "sunset": 0.95, "night": 0.3}.get(map.time, 0.5)
+	for v in _views:
+		v.rays.aim(v.camera, to_sun, map.sun_color(), ray_power, delta)
 	var bob_scale: float = Settings.v("bob")
 	for v in _views:
 		var p = v.player
 		var cam: Camera3D = v.camera
 		if p == null:
 			var a := time * 0.1
-			if map.indoor:
+			if _debug_top:
+				# Dev flag --top: a fixed overhead view of the whole map.
+				cam.look_at_from_position(Vector3(0, maxf(map.half_x * 1.05, map.half_z * 1.75), map.half_z * 0.45), Vector3(0, 0, 0))
+				cam.far = 900.0
+				(cam.attributes as CameraAttributesPractical).dof_blur_far_enabled = false
+			elif map.indoor:
 				cam.look_at_from_position(Vector3(cos(a) * map.half_x * 0.6, 7.5, sin(a) * map.half_z * 0.6), Vector3(0, 2.0, 0))
 			else:
 				cam.look_at_from_position(Vector3(cos(a) * map.half_x * 1.2, map.half_x * 0.55, sin(a) * map.half_z * 1.35), Vector3(0, 1.5, 0))

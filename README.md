@@ -51,6 +51,12 @@ arenas with readable colour and atmosphere at every time of day.
   crumble brick by brick under fire.
 - **Characters hold what they carry:** both hands reach the weapon (arm IK
   on top of the walk, run, jump and crouch animations).
+- **Lush greenery:** every green area is covered in dense, wind-blown
+  grass, ferns, leafy plants and drifts of flowers (painted foliage cards,
+  the way open-world games do it), over gently rolling mounds instead of a
+  flat plane.
+- **Light:** warm hanging lamps in every room, and sun rays that fan out
+  from the sun when you look towards it and are cut by roofs and trees.
 - **A lived-in world:** furnished houses, loose physics props you can kick
   and shoot around (chairs, tables, books, boxes, bottles), window glass that
   shatters, dense forests, camps, sidewalks and crossings. Props never block
@@ -85,10 +91,12 @@ arenas with readable colour and atmosphere at every time of day.
   bleachers, floodlights, locker rooms) and a **Suburb** (houses with stairs,
   yards, pools, a treehouse, a storm drain). Two-storey buildings, tunnels and
   basements on every outdoor map.
-- **Quarantine**, a dedicated large Zombies map with a multi-floor hospital,
-  annex, warehouse, motel, fenced campus, service roads, wooded edges, utility
-  tunnel and underground triage room. Red emergency beacons and blood effects
-  give it a scarier tone while keeping the spaces readable.
+- **Quarantine**, the Zombies map: a sealed-off hospital campus around an
+  army checkpoint on a crossroads. Three-storey hospital with an ambulance
+  bay, car park and rooftop helipad; a clinic joined to it by a covered
+  walkway; a field of triage tents; a warehouse with a mezzanine and a
+  container yard; a motel with fuel pumps; a service tunnel, a morgue
+  cellar, and dead woods pressing on the fence.
 - **Time of day:** each match is day, sunset or night (or pick one in the
   lobby). Weather stays clear; large outdoor maps use a light distance haze.
 - **Castle**, a seventh arena (and Medieval mode's home): curtain walls you
@@ -177,7 +185,7 @@ Reachable from the lobby and from the pause menu:
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing (Off, FXAA,
   MSAA 2x/4x/8x), motion blur slider, render scale, shadows, ambient
-  occlusion, bloom, scenery, soft focus in the distance, and **auto
+  occlusion, bloom, scenery, soft focus in the distance, sun rays, and **auto
   resolution** (on by default): when a busy moment would drop below 60 FPS
   the 3D resolution is lowered for a moment and sharpened back up, so the
   frame rate holds.

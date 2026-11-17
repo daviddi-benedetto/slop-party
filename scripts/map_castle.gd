@@ -156,10 +156,10 @@ static func _courtyard(m) -> void:
 static func _outside(m) -> void:
 	# Siege camp in front of the south gate (and, mirrored, the north one).
 	m._model("castle/Siege_Catapult", Vector3(-13.0, 0, -29.5), -1.1, 3.6)
-	m._model("castle/Siege_Trebuchet", Vector3(16.0, 0, -30.0), -1.9, 4.2)
+	m._model("castle/Siege_Trebuchet", Vector3(17.0, 0, -27.6), -1.9, 3.4)
 	m._model("castle/Siege_Ram", Vector3(7.0, 0, -26.0), PI * 0.5, 2.6)
 	m._model("castle/Siege_Ballista_Demolished", Vector3(-24.0, 0, -27.0), 0.4, 2.8, true, "none")
-	m._camp(Vector3(-33.0, 0, -27.0))
+	m._camp(Vector3(-36.0, 0, -27.0))
 	for p in [Vector3(-8.0, 0, -27.5), Vector3(-9.2, 0, -26.4), Vector3(20.5, 0, -27.0)]:
 		m._prop("fantasy/Barrel", p, 0.0, 1.0, 12.0)
 	# Palisade stakes as cover on the approach.
@@ -172,9 +172,8 @@ static func _outside(m) -> void:
 	m._model("village/Fence", Vector3(34.0, 0, 16.0), 0.0, 4.0)
 	m._model("village/Fence", Vector3(37.2, 0, 16.0), 0.0, 4.0)
 	# Woods and rocks in the corners.
-	m._forest(Rect2(31.0, 20.0, 13.0, 12.0), 16)
+	m._forest(Rect2(33.5, 24.5, 10.5, 8.0), 12)
 	m._forest(Rect2(-44.0, 22.0, 12.0, 10.0), 10)
 	for p in [Vector3(33.0, 0, -24.0), Vector3(40.0, 0, -20.0), Vector3(-41.0, 0, -4.0)]:
 		m._model("castle/Rocks_Large", p, m._rng.randf() * TAU, 3.0)
-	m._lawn(Rect2(-45, -33, 90, 12))
-	m._lawn(Rect2(31, -20, 14, 40))
+

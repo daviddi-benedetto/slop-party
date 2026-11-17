@@ -59,6 +59,28 @@ signal nav_built
 const FURN := 2.15               # scale of the Kenney furniture kit models
 ## Loose clutter scattered on walkable spots after the nav graph exists:
 ## [model, scale, mass].
+## Per-theme clutter (theme / MAPS entry "clutter"); CLUTTER is the fallback.
+const CLUTTER_SETS := {
+	"yard": [["toon/Prop/Crate", 0.9, 5.0], ["toon/Prop/Pallet", 0.8, 7.0], ["toon/Prop/Traffic_Cone", 1.0, 2.0], ["survival/Barrel", 3.0, 10.0],
+		["blaster/Crate_Small", 1.6, 6.0], ["toon/Prop/Exploding_Barrel", 1.0, 10.0], ["toon/Prop/Gas_Can", 0.8, 5.0], ["furniture/Cardboard_Box_Closed", 2.4, 2.0]],
+	"foundry": [["survival/Barrel", 3.0, 10.0], ["toon/Prop/Pallet", 0.8, 7.0], ["toon/Prop/Crate", 0.9, 5.0], ["survival/Bucket", 2.6, 1.5],
+		["toon/Prop/Exploding_Barrel", 1.0, 10.0], ["toon/Prop/Gas_Tank", 0.8, 8.0], ["blaster/Crate_Small", 1.6, 6.0]],
+	"outpost": [["blaster/Crate_Small", 1.6, 6.0], ["survival/Box", 3.0, 5.0], ["survival/Barrel", 3.0, 10.0], ["toon/Prop/Gas_Can", 0.8, 5.0],
+		["toon/Prop/Crate", 0.9, 5.0], ["survival/Bottle", 2.6, 0.5], ["toon/Prop/Exploding_Barrel", 1.0, 10.0]],
+	"museum": [["furniture/Bench", 2.15, 9.0], ["furniture/Potted_Plant", 2.15, 4.0], ["furniture/Stool_Bar", 2.15, 3.0], ["furniture/Books", 2.6, 0.6],
+		["furniture/Cardboard_Box_Closed", 2.4, 2.0], ["furniture/Trashcan", 2.15, 3.0], ["furniture/Chair", 2.15, 4.0]],
+	"stadium": [["toon/Prop/Traffic_Cone", 1.0, 2.0], ["survival/Bottle", 2.6, 0.5], ["furniture/Trashcan", 2.15, 3.0], ["blaster/Target_Large", 2.5, 1.5],
+		["furniture/Bench", 2.15, 9.0], ["survival/Bucket", 2.6, 1.5], ["furniture/Cardboard_Box_Closed", 2.4, 2.0]],
+	"suburb": [["furniture/Trashcan", 2.15, 3.0], ["furniture/Cardboard_Box_Closed", 2.4, 2.0], ["survival/Bottle", 2.6, 0.5], ["survival/Bucket", 2.6, 1.5],
+		["furniture/Chair", 2.15, 4.0], ["toon/Prop/Traffic_Cone", 1.0, 2.0], ["furniture/Potted_Plant", 2.15, 4.0], ["toon/Prop/Gas_Can", 0.8, 5.0]],
+	"quarantine": [["furniture/Cardboard_Box_Closed", 2.4, 2.0], ["survival/Barrel", 3.0, 10.0], ["toon/Prop/Traffic_Cone", 1.0, 2.0], ["survival/Box", 3.0, 5.0],
+		["furniture/Trashcan", 2.15, 3.0], ["toon/Prop/Exploding_Barrel", 1.0, 10.0], ["toon/Prop/Gas_Can", 0.8, 5.0], ["survival/Bottle", 2.6, 0.5]],
+	"front": [["survival/Box", 3.0, 5.0], ["survival/Barrel", 3.0, 10.0], ["toon/Prop/Crate", 0.9, 5.0], ["survival/Tree_Log_Small", 2.4, 9.0],
+		["toon/Prop/Exploding_Barrel", 1.0, 10.0], ["toon/Prop/Gas_Can", 0.8, 5.0], ["toon/Prop/Pallet", 0.8, 7.0]],
+	"castle": [["fantasy/Barrel", 1.0, 12.0], ["fantasy/Crate_Wooden", 0.9, 6.0], ["fantasy/Bucket_Wooden_1", 1.2, 1.5], ["fantasy/Vase_2", 1.0, 2.0],
+		["fantasy/Stool", 1.0, 3.0], ["fantasy/Pot_1", 1.3, 1.0], ["fantasy/FarmCrate_Apple", 1.2, 4.0], ["fantasy/Bag", 1.2, 3.0],
+		["survival/Tree_Log_Small", 2.4, 9.0], ["fantasy/Mug", 1.4, 0.3]],
+}
 const CLUTTER := [["survival/Box", 3.0, 5.0], ["survival/Barrel", 3.0, 10.0], ["toon/Prop/Traffic_Cone", 1.0, 2.0],
 	["furniture/Cardboard_Box_Closed", 2.4, 2.0], ["survival/Bottle", 2.6, 0.5], ["survival/Bucket", 2.6, 1.5],
 	["furniture/Chair", 2.15, 4.0], ["toon/Prop/Pallet", 0.8, 7.0], ["furniture/Trashcan", 2.15, 3.0],
@@ -73,16 +95,16 @@ const CHUNK := 40.0             # batch chunk size on big maps (see _add)
 const LAVA_DPS := 26.0
 
 const MAPS := [
-	{"name": "NEON YARD", "size": "MEDIUM", "theme": "neon", "half": Vector2(32, 24), "wall": 4.5},
-	{"name": "EMBER PIT", "size": "SMALL", "theme": "ember", "half": Vector2(19, 15), "wall": 4.0},
-	{"name": "FROST LINE", "size": "LARGE", "theme": "frost", "half": Vector2(44, 32), "wall": 5.0},
-	{"name": "MUSEUM", "size": "MEDIUM", "theme": "museum", "half": Vector2(26, 20), "wall": 11.0},
-	{"name": "STADIUM", "size": "LARGE", "theme": "stadium", "half": Vector2(46, 30), "wall": 3.0},
-	{"name": "SUBURB", "size": "LARGE", "theme": "suburb", "half": Vector2(40, 30), "wall": 1.6},
+	{"name": "NEON YARD", "size": "MEDIUM", "clutter": "yard", "theme": "neon", "half": Vector2(32, 24), "wall": 4.5},
+	{"name": "EMBER PIT", "size": "SMALL", "clutter": "foundry", "theme": "ember", "half": Vector2(19, 15), "wall": 4.0},
+	{"name": "FROST LINE", "size": "LARGE", "clutter": "outpost", "theme": "frost", "half": Vector2(44, 32), "wall": 5.0},
+	{"name": "MUSEUM", "size": "MEDIUM", "clutter": "museum", "theme": "museum", "half": Vector2(26, 20), "wall": 11.0},
+	{"name": "STADIUM", "size": "LARGE", "clutter": "stadium", "theme": "stadium", "half": Vector2(46, 30), "wall": 3.0},
+	{"name": "SUBURB", "size": "LARGE", "clutter": "suburb", "theme": "suburb", "half": Vector2(40, 30), "wall": 1.6},
 	# Frontline mode only (not in the lobby's map list): 200 x 140 m.
-	{"name": "FRONTLINE", "size": "HUGE", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 20.0},
-	{"name": "QUARANTINE", "size": "HUGE", "theme": "suburb", "half": Vector2(72, 52), "wall": 3.0, "nav_step": 3.0, "nav_top": 16.0},
-	{"name": "CASTLE", "size": "LARGE", "theme": "castle", "half": Vector2(46, 34), "wall": 1.8, "nav_step": 2.0, "nav_top": 16.0},
+	{"name": "FRONTLINE", "size": "HUGE", "clutter": "front", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 20.0},
+	{"name": "QUARANTINE", "size": "HUGE", "clutter": "quarantine", "theme": "suburb", "half": Vector2(72, 52), "wall": 3.0, "nav_step": 3.0, "nav_top": 16.0},
+	{"name": "CASTLE", "size": "LARGE", "clutter": "castle", "theme": "castle", "half": Vector2(46, 34), "wall": 1.8, "nav_step": 2.0, "nav_top": 16.0},
 ]
 const FRONTLINE := 6             # index of the Frontline map; the lobby lists maps below it
 const ZOMBIE := 7                # large Zombies-only indoor/outdoor map
@@ -256,7 +278,7 @@ const THEMES := {
 			"sun_color": Color(0.6, 0.72, 1.0), "sun_energy": 0.75, "ambient": 0.5, "fog": Color(0.05, 0.06, 0.12), "fog_density": 0.004},
 		"sun_yaw": 50.0, "weathers": ["clear", "clear", "rain", "fog", "snow"],
 		"leaf": [Color(0.16, 0.4, 0.15), Color(0.28, 0.5, 0.14)], "grass": [Color(0.12, 0.3, 0.08), Color(0.36, 0.6, 0.2)],
-		"scenery": "suburb", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
+		"cover": true, "scenery": "suburb", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
 	},
 	"castle": {
 		"mats": {
@@ -281,7 +303,7 @@ const THEMES := {
 			"sun_color": Color(0.62, 0.74, 1.0), "sun_energy": 0.8, "ambient": 0.6, "fog": Color(0.06, 0.07, 0.13), "fog_density": 0.004},
 		"sun_yaw": 40.0, "weathers": ["clear"],
 		"leaf": [Color(0.16, 0.38, 0.14), Color(0.3, 0.46, 0.14)], "grass": [Color(0.14, 0.3, 0.08), Color(0.4, 0.6, 0.22)],
-		"scenery": "castle", "motes": [Color(1.0, 0.9, 0.6), Color(0.9, 1.0, 0.7)], "mote_rise": 0.05,
+		"cover": true, "scenery": "castle", "motes": [Color(1.0, 0.9, 0.6), Color(0.9, 1.0, 0.7)], "mote_rise": 0.05,
 	},
 	"front": {
 		"mats": {
@@ -318,7 +340,7 @@ const THEMES := {
 			"sun_color": Color(0.6, 0.72, 1.0), "sun_energy": 0.8, "ambient": 0.55, "fog": Color(0.05, 0.06, 0.12), "fog_density": 0.0035},
 		"sun_yaw": 35.0, "weathers": ["clear", "clear", "rain", "fog"],
 		"leaf": [Color(0.16, 0.38, 0.14), Color(0.3, 0.46, 0.14)], "grass": [Color(0.14, 0.3, 0.08), Color(0.42, 0.6, 0.22)],
-		"scenery": "front", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
+		"cover": true, "scenery": "front", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
 	},
 }
 
@@ -344,6 +366,14 @@ var vehicle_spots: Array = []     # Frontline: [type, Transform3D, team]
 
 var spawn_points: Array = []      # Array of Vector3
 var pickup_spots: Array = []      # [["weapon" | "health", Vector3], ...] read by game.gd
+var _audit := false               # dev flag --audit: report models standing inside other solids
+var _audit_models: Array = []
+var mounds: Array = []            # Vector4(x, z, radius, height): gentle hills (see _mounds)
+var _occ := PackedByteArray()     # ground occupancy grid (see _occ_build)
+var _occ_w := 0
+var _occ_h := 0
+var _occ_extra: Array = []        # Vector3(x, z, radius) blocked spots that have no world collider
+var _paved: Array = []            # Rect2 of every _surface() (roads, paths, courts)
 var lawns: Array = []             # Rect2 (XZ) where grass grows
 var no_grass: Array = []          # Rect2 (XZ) kept clear of grass (drives, paths)
 var nav := AStar3D.new()
@@ -380,6 +410,7 @@ func build(index := 0, time_of_day := "night") -> void:
 	nav_step = info.get("nav_step", NAV_STEP)
 	nav_top = info.get("nav_top", 14.0)
 	_rng.seed = 20240607 + map_index
+	_audit = "--audit" in OS.get_cmdline_user_args()
 	_body = StaticBody3D.new()
 	_body.collision_layer = 1
 	_body.collision_mask = 0
@@ -408,7 +439,11 @@ func build(index := 0, time_of_day := "night") -> void:
 		7: ZombieMap.build(self)
 		8: CastleMap.build(self)
 		_: _layout_yard()
+	if _audit:
+		_audit_report()
 	_ruins()
+	_occ_build()
+	_mounds()
 	_build_floor()
 	_build_scenery()
 	_flush()
@@ -527,7 +562,7 @@ func _build_environment() -> void:
 	env.set_glow_level(4, 0.7)
 	env.set_glow_level(6, 0.25)
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.24
+	env.adjustment_saturation = 1.08 if time == "sunset" else 1.24
 	env.adjustment_contrast = 1.0
 	env.adjustment_brightness = 1.04
 	env.fog_enabled = true
@@ -557,6 +592,15 @@ func _build_environment() -> void:
 
 func _on_settings() -> void:
 	Settings.apply_environment(_env, _sun)
+
+
+## Unit vector pointing at the sun (or moon), and its colour (sun_rays.gd).
+func sun_direction() -> Vector3:
+	return _sun.global_transform.basis.z.normalized()
+
+
+func sun_color() -> Color:
+	return _sun.light_color.lerp(Color(1.0, 0.92, 0.75), 0.35)
 
 
 ## Lightning during rain: a brief flash of the ambient light.
@@ -990,6 +1034,8 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 				_add(mesh, mesh.surface_get_material(si), xf * part[1], shadow, si, "g%d" % mesh.surface_get_format(si))
 		if collide == "box":
 			_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
+		if _audit:
+			_audit_models.append([path, p + rot * (b.get_center() * s3), b.size * s3, y, _body.get_child_count()])
 
 
 ## A loose physics prop (prop.gd) standing at `pos`.
@@ -1043,6 +1089,27 @@ func _weak_wall(pos: Vector3, size: Vector3, yaw := 0.0, col := Color(0.6, 0.56,
 		add_child(r)
 
 
+## A hanging lamp: cord, glowing shade and a warm light that is on at every
+## time of day (interiors are lit by their lamps, not by the sky). `tone`
+## varies the warmth a little from lamp to lamp.
+func _lamp(pos: Vector3, mirror := true, radius := 7.5, tone := 0.0) -> void:
+	var col := Color(1.0, 0.74, 0.46).lerp(Color(1.0, 0.56, 0.3), clampf(tone, 0.0, 1.0))
+	_box(pos + Vector3(0, 0.32, 0), Vector3(0.03, 0.5, 0.03), "dark", mirror, 0.0, false)
+	_cyl(pos + Vector3(0, -0.1, 0), 0.26, 0.2, "dark", mirror, false, 0.1)
+	_ball(pos + Vector3(0, -0.14, 0), Vector3(0.14, 0.12, 0.14), "lamp", mirror)
+	for s in ([pos, Vector3(-pos.x, pos.y, -pos.z)] if mirror else [pos]):
+		var l := OmniLight3D.new()
+		l.position = s + Vector3(0, -0.35, 0)
+		l.light_color = col
+		l.light_energy = 1.25
+		l.omni_range = radius
+		l.omni_attenuation = 1.3
+		l.distance_fade_enabled = true
+		l.distance_fade_begin = 42.0
+		l.distance_fade_length = 12.0
+		add_child(l)
+
+
 ## A wall torch: bracket model plus a warm flickerless light.
 func _torch(pos: Vector3, mirror := true) -> void:
 	_model("fantasy/Torch_Metal", pos, 0.0, 1.5, mirror, "none")
@@ -1091,6 +1158,7 @@ func _ruins() -> void:
 		var len := _rng.randf_range(2.6, 4.2)
 		_weak_wall(Vector3(p.x, 0, p.y), Vector3(len, _rng.randf_range(1.5, 2.4), 0.45), _rng.randf() * PI, col, 110.0, false)
 		boxes.append([p, Vector3(2.5, 1.0, 2.5), 2.5])
+		_occ_extra.append(Vector3(p.x, p.y, len * 0.5 + 0.3))
 		placed += 1
 
 
@@ -1156,7 +1224,8 @@ func _scatter_props() -> void:
 				ok = false
 		if not ok:
 			continue
-		var c: Array = CLUTTER[randi() % CLUTTER.size()]
+		var pool: Array = CLUTTER_SETS.get(MAPS[map_index].get("clutter", ""), CLUTTER)
+		var c: Array = pool[randi() % pool.size()]
 		var n := 1 + (randi() % 3 if float(c[2]) < 6.0 else 0)
 		# Side by side with room between them (never inside one another), dropped
 		# from a hand's height so physics settles them.
@@ -1510,6 +1579,7 @@ func _surface(r: Rect2, y: float, mat: String, mirror := true) -> void:
 	if mirror:
 		rects.append(Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y))
 	for rr in rects:
+		_paved.append(rr)
 		for p in _split(rr, _holes):
 			var pr: Rect2 = p
 			_visual(Vector3(pr.get_center().x, y, pr.get_center().y), Vector3(pr.size.x, 0.012, pr.size.y), mat)
@@ -1588,8 +1658,10 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		# Doors in both ground-floor doorways.
 		if f == 0 and opts.get("doors", true):
 			var dm: String = opts.get("door_model", "doors/Door_Brown" if _rng.randf() < 0.5 else "doors/Door_White")
-			_door(Vector3(c.x - 0.9, y0, z0 + t * 0.5), 0.0, 1.8, 2.5, dm, mirror)
-			_door(Vector3(x1 - t * 0.5, y0, c.z - 0.9), -PI * 0.5, 1.8, 2.5, dm, mirror)
+			# Hung 6 cm clear of the floor and the porch step so the leaf never
+			# scrapes through them as it swings.
+			_door(Vector3(c.x - 0.88, y0 + 0.06, z0 + t * 0.5), 0.0, 1.76, 2.42, dm, mirror)
+			_door(Vector3(x1 - t * 0.5, y0 + 0.06, c.z - 0.88), -PI * 0.5, 1.76, 2.42, dm, mirror)
 		# Glass in every window (not the doors), furniture on every floor.
 		for w in (win_x if opts.get("glass", true) else []):
 			_glass(Vector3(w[0], y0 + 1.625, z1 - t * 0.5), 1.4, 1.35, false, mirror)
@@ -1606,7 +1678,14 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		_wall_x(z1 - t * 0.5, x0, x1, y0, FLOOR_H, mat, win_x, mirror, t)
 		_wall_z(x0 + t * 0.5, z0 + t, z1 - t, y0, FLOOR_H, mat, win_z, mirror, t)
 		_wall_z(x1 - t * 0.5, z0 + t, z1 - t, y0, FLOOR_H, mat, east, mirror, t)
-		_glow(Vector3(c.x, y0 + 2.7, c.z), Color(1.0, 0.82, 0.6), maxf(sx, sz), 1.3 / maxf(light_scale, 0.5), mirror)
+		# Warm lamps on every storey: two or more pools of light per room
+		# instead of one flat glow.
+		var lx := maxi(2, int(round(sx / 7.0)))
+		var lz := 2 if sz > 13.0 else 1
+		for ix in lx:
+			for iz in lz:
+				var lp := Vector3(x0 + sx * (ix + 0.5) / lx, y0 + FLOOR_H - 0.75, z0 + sz * (iz + 0.5) / lz)
+				_lamp(lp, mirror, 7.5, _rng.randf())
 	for f in flights:
 		var y0 := c.y + f * FLOOR_H
 		var even := f % 2 == 0
@@ -1635,7 +1714,16 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 			_slab(Rect2(x0 + 0.05, z0 + 0.05, sx - 0.1, sz - 0.1), y, floor_mat if not is_roof else roof_mat, holes, mirror)
 	# Foundation band and corner posts: the building reads as built, not a box.
 	var trim := "trim" if _mats.has("trim") else ("block_a" if mat != "block_a" else "block_c")
-	_box(Vector3(c.x, c.y + 0.14, c.z), Vector3(sx + 0.16, 0.28, sz + 0.16), "dark", mirror, 0.0, false)
+	# A plinth round the outside, open at both doors. (A solid slab here used
+	# to stand 28 cm proud of the ground floor, swallowing feet and doors.)
+	var fy := c.y + 0.14
+	var has_doors: bool = opts.get("doors", true)
+	_box(Vector3(c.x, fy, z1 + 0.04), Vector3(sx + 0.16, 0.28, 0.08), "dark", mirror, 0.0, false)
+	_box(Vector3(x0 - 0.04, fy, c.z), Vector3(0.08, 0.28, sz), "dark", mirror, 0.0, false)
+	for sgn in [-1.0, 1.0]:
+		var gap := 1.0 if has_doors else 0.0
+		_box(Vector3(c.x + sgn * (gap + (sx * 0.5 + 0.08 - gap) * 0.5), fy, z0 - 0.04), Vector3(sx * 0.5 + 0.08 - gap, 0.28, 0.08), "dark", mirror, 0.0, false)
+		_box(Vector3(x1 + 0.04, fy, c.z + sgn * (gap + (sz * 0.5 - gap) * 0.5)), Vector3(0.08, 0.28, sz * 0.5 - gap), "dark", mirror, 0.0, false)
 	for cx_side in [[x0, 1.0], [x1, -1.0]]:
 		for cz_side in [[z0, 1.0], [z1, -1.0]]:
 			var post_pos := Vector3(cx_side[0] + cx_side[1] * 0.15, c.y + floors * FLOOR_H * 0.5, cz_side[0] + cz_side[1] * 0.15)
@@ -1699,9 +1787,9 @@ func _facade(c: Vector3, sx: float, sz: float, y0: float, f: int, win_x: Array, 
 	if f == 0:
 		# Porches: south door (z0 side) and east door (x1 side).
 		_box(Vector3(c.x, y0 + 2.75, z0 - 0.75), Vector3(3.0, 0.14, 1.6), shut, mirror)
-		_box(Vector3(c.x, y0 + 0.08, z0 - 0.7), Vector3(2.4, 0.16, 1.4), trim, mirror, 0.0, false)
+		_box(Vector3(c.x, y0 + 0.02, z0 - 0.7), Vector3(2.4, 0.04, 1.4), trim, mirror, 0.0, false)
 		_box(Vector3(x1 + 0.75, y0 + 2.75, c.z), Vector3(1.6, 0.14, 3.0), shut, mirror)
-		_box(Vector3(x1 + 0.7, y0 + 0.08, c.z), Vector3(1.4, 0.16, 2.4), trim, mirror, 0.0, false)
+		_box(Vector3(x1 + 0.7, y0 + 0.02, c.z), Vector3(1.4, 0.04, 2.4), trim, mirror, 0.0, false)
 		for sgn in [-1.0, 1.0]:
 			_cyl(Vector3(c.x + sgn * 1.35, y0, z0 - 1.4), 0.07, 2.7, trim, mirror, false)
 			_cyl(Vector3(x1 + 1.4, y0, c.z + sgn * 1.35), 0.07, 2.7, trim, mirror, false)
@@ -1754,14 +1842,15 @@ func _forest(r: Rect2, count: int, mirror := true) -> void:
 func _camp(pos: Vector3, mirror := true) -> void:
 	_model("survival/Campfire", pos, 0.0, 3.2, mirror, "none")
 	_glow(pos + Vector3(0, 1.0, 0), Color(1.0, 0.6, 0.25), 9.0, 2.2 / maxf(light_scale, 0.5), mirror)
-	_model("survival/Tent", pos + Vector3(3.2, 0, 1.0), -1.2, 5.0, mirror)
-	_model("survival/Tent_Canvas", pos + Vector3(-2.6, 0, 2.6), 0.9, 5.0, mirror)
-	_model("survival/Tree_Log", pos + Vector3(0.2, 0, -2.2), PI * 0.5, 2.6, mirror)
-	_model("survival/Bedroll", pos + Vector3(-2.4, 0, -1.2), 0.5, 3.0, mirror, "none")
+	_model("survival/Tent", pos + Vector3(4.6, 0, 1.6), -1.2, 5.0, mirror)
+	_model("survival/Tent_Canvas", pos + Vector3(-4.2, 0, 3.6), 0.9, 5.0, mirror)
+	_model("survival/Tree_Log", pos + Vector3(0.2, 0, -3.0), PI * 0.5, 2.6, mirror)
+	_model("survival/Bedroll", pos + Vector3(-3.0, 0, -1.6), 0.5, 3.0, mirror, "none")
 	_prop("survival/Box", pos + Vector3(2.0, 0.05, -2.0), 0.4, 3.0, 5.0, mirror)
 	_prop("survival/Bucket", pos + Vector3(1.2, 0.05, 1.8), 0.0, 2.6, 1.5, mirror)
 	_prop("survival/Bottle", pos + Vector3(-0.9, 0.05, -1.6), 0.0, 2.6, 0.5, mirror)
 	no_grass.append(Rect2(pos.x - 2.0, pos.z - 2.0, 4.0, 4.0))
+	no_grass.append(Rect2(-pos.x - 2.0, -pos.z - 2.0, 4.0, 4.0))
 
 
 ## A sidewalk with a kerb along a road edge (visual; 6 cm high).
@@ -2057,67 +2146,460 @@ void fragment() {
 """
 
 
-## Grass clumps (3 blades each) over every lawn rect, minus ground holes, in
-## one MultiMesh draw call.
-func _grass() -> void:
-	if lawns.is_empty() or theme.grass.is_empty():
+# --------------------------------------------------------------------------
+# Ground: occupancy grid, gentle mounds, grass / flowers / undergrowth
+# --------------------------------------------------------------------------
+
+const OCC := 0.5                 # occupancy grid cell (m)
+
+## Dev (--audit): print every placed model whose box cuts into a world
+## collider that is not its own (cars in houses, props in walls...).
+func _audit_report() -> void:
+	var boxes: Array = []
+	for i in _body.get_child_count():
+		var cs = _body.get_child(i)
+		if cs is CollisionShape3D and cs.shape is BoxShape3D:
+			var ext: Vector3 = (cs.shape as BoxShape3D).size * 0.5
+			var bx: Vector3 = cs.transform.basis.x.abs() * ext.x + cs.transform.basis.z.abs() * ext.z
+			boxes.append([i, cs.transform.origin, Vector3(bx.x, ext.y, bx.z)])
+	var n := 0
+	for m in _audit_models:
+		var ext2: Vector3 = m[2] * 0.5
+		var rot := Basis(Vector3.UP, m[3])
+		var mx: Vector3 = rot.x.abs() * ext2.x + rot.z.abs() * ext2.z
+		var me := Vector3(mx.x, ext2.y, mx.z) * 0.82
+		for b in boxes:
+			if b[0] == m[4] - 1 or b[1].y + b[2].y < 0.05:
+				continue
+			var d: Vector3 = (m[1] - b[1]).abs()
+			if d.x < me.x + b[2].x - 0.05 and d.y < me.y + b[2].y - 0.05 and d.z < me.z + b[2].z - 0.05 and b[2].x * b[2].z < 400.0:
+				n += 1
+				print("[audit] %s at %s overlaps collider at %s size %s" % [m[0], (m[1] as Vector3).snapped(Vector3.ONE * 0.1), (b[1] as Vector3).snapped(Vector3.ONE * 0.1), ((b[2] as Vector3) * 2.0).snapped(Vector3.ONE * 0.1)])
+				break
+	print("[audit] %s: %d of %d models overlap something" % [MAPS[map_index].name, n, _audit_models.size()])
+
+
+## Mark every ground cell something stands on (walls, buildings, trunks,
+## paved surfaces, holes, no_grass rects). Ground cover and mounds ask
+## _occupied() instead of testing hundreds of boxes per sample.
+func _occ_build() -> void:
+	_occ_w = int(ceil(half_x * 2.0 / OCC)) + 2
+	_occ_h = int(ceil(half_z * 2.0 / OCC)) + 2
+	_occ = PackedByteArray()
+	_occ.resize(_occ_w * _occ_h)
+	for cs in _body.get_children():
+		if not cs is CollisionShape3D:
+			continue
+		var o: Vector3 = cs.transform.origin
+		var ext := Vector3.ZERO
+		if cs.shape is BoxShape3D:
+			ext = (cs.shape as BoxShape3D).size * 0.5
+			# A turned box covers a bit more ground than its own half-size.
+			var bx: Vector3 = cs.transform.basis.x.abs() * ext.x + cs.transform.basis.z.abs() * ext.z
+			ext = Vector3(bx.x, ext.y, bx.z)
+		elif cs.shape is CylinderShape3D:
+			var cy: CylinderShape3D = cs.shape
+			ext = Vector3(cy.radius, cy.height * 0.5, cy.radius)
+		else:
+			continue
+		if o.y - ext.y > 0.45 or o.y + ext.y < 0.03:
+			continue
+		_occ_rect(Rect2(o.x - ext.x, o.z - ext.z, ext.x * 2.0, ext.z * 2.0).grow(0.15))
+	for r in _paved + no_grass + _holes:
+		_occ_rect((r as Rect2).grow(0.1))
+	for c in _occ_extra:
+		_occ_rect(Rect2(c.x - c.z, c.y - c.z, c.z * 2.0, c.z * 2.0))
+
+
+func _occ_rect(r: Rect2) -> void:
+	var x0 := clampi(int(floor((r.position.x + half_x) / OCC)), 0, _occ_w - 1)
+	var x1 := clampi(int(floor((r.end.x + half_x) / OCC)), 0, _occ_w - 1)
+	var z0 := clampi(int(floor((r.position.y + half_z) / OCC)), 0, _occ_h - 1)
+	var z1 := clampi(int(floor((r.end.y + half_z) / OCC)), 0, _occ_h - 1)
+	for z in range(z0, z1 + 1):
+		for x in range(x0, x1 + 1):
+			_occ[z * _occ_w + x] = 1
+
+
+func _occupied(x: float, z: float) -> bool:
+	var cx := int(floor((x + half_x) / OCC))
+	var cz := int(floor((z + half_z) / OCC))
+	if cx < 0 or cz < 0 or cx >= _occ_w or cz >= _occ_h:
+		return true
+	return _occ[cz * _occ_w + cx] != 0
+
+
+## True when a disc of `radius` around (x, z) touches nothing.
+func _clear_disc(x: float, z: float, radius: float) -> bool:
+	if _occupied(x, z):
+		return false
+	for ring in [0.5, 1.0]:
+		for i in 10:
+			var a := TAU * i / 10.0
+			if _occupied(x + cos(a) * radius * ring, z + sin(a) * radius * ring):
+				return false
+	return true
+
+
+## Height of the ground at (x, z): 0, or up a mound.
+func ground_y(x: float, z: float) -> float:
+	var y := 0.0
+	for m in mounds:
+		var d := Vector2(x - m.x, z - m.y).length()
+		if d < m.z:
+			var big: float = (m.z * m.z + m.w * m.w) / (2.0 * m.w)
+			y = maxf(y, sqrt(big * big - d * d) - (big - m.w))
+	return y
+
+
+## Gentle grassy mounds on open ground, so outdoor maps are not one flat
+## plane. Each is a shallow dome (a cap of a big sphere: 4-7 m wide, up to
+## about 1 m high) with a matching convex collider; you walk straight over
+## them and they break up sight lines a little. Seeded per map.
+func _mounds() -> void:
+	if indoor or not theme.get("cover", false) or OS.get_environment("SLOP_TEST") == "nomounds":
 		return
+	var want := clampi(int(half_x * half_z / 150.0), 4, 34)
+	var tries := 0
+	while mounds.size() < want and tries < want * 30:
+		tries += 1
+		var a := _rng.randf_range(3.6, 7.0)
+		var h := a * _rng.randf_range(0.11, 0.17)
+		var x := _rng.randf_range(-half_x + a + 1.0, half_x - a - 1.0)
+		var z := _rng.randf_range(-half_z + a + 1.0, half_z - a - 1.0)
+		if not _clear_disc(x, z, a + 0.8):
+			continue
+		var ok := true
+		for s in spawn_points:
+			if Vector2(s.x - x, s.z - z).length() < a + 2.0:
+				ok = false
+		for s in pickup_spots:
+			if Vector2(s[1].x - x, s[1].z - z).length() < a + 2.0:
+				ok = false
+		for m in mounds:
+			if Vector2(m.x - x, m.y - z).length() < a + m.z:
+				ok = false
+		for hole in _holes:
+			if (hole as Rect2).grow(a + 1.0).has_point(Vector2(x, z)):
+				ok = false
+		if not ok:
+			continue
+		mounds.append(Vector4(x, z, a, h))
+		var big := (a * a + h * h) / (2.0 * h)
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var rings := 7
+		var seg := 28
+		var pts := PackedVector3Array()
+		var grid: Array = []
+		for r in rings + 1:
+			var d := a * r / rings
+			var y := sqrt(big * big - d * d) - (big - h)
+			var row: Array = []
+			for sI in seg:
+				var ang := TAU * sI / seg
+				var v := Vector3(cos(ang) * d, y, sin(ang) * d)
+				row.append(v)
+				if r == 0:
+					break
+			grid.append(row)
+		for r in rings:
+			for sI in seg:
+				var i0: Vector3 = grid[r][0] if r == 0 else grid[r][sI]
+				var i1: Vector3 = grid[r][0] if r == 0 else grid[r][(sI + 1) % seg]
+				var o0: Vector3 = grid[r + 1][sI]
+				var o1: Vector3 = grid[r + 1][(sI + 1) % seg]
+				var tris := [[i0, o1, o0]] if r == 0 else [[i0, i1, o1], [i0, o1, o0]]
+				for tri in tris:
+					for v in tri:
+						st.set_normal((Vector3(v.x, v.y + big - h, v.z)).normalized())
+						st.add_vertex(v)
+		# The collider is a much coarser hull than the mesh (25 points): a
+		# detailed one made every character standing on a mound expensive.
+		pts.append(Vector3(0, h, 0))
+		for ring_d in [0.5, 1.0]:
+			var dd: float = a * ring_d
+			var yy := sqrt(big * big - dd * dd) - (big - h)
+			for sI in 8:
+				var ang2 := TAU * sI / 8.0
+				pts.append(Vector3(cos(ang2) * dd, yy, sin(ang2) * dd))
+		for sI in 8:
+			var ang3 := TAU * sI / 8.0
+			pts.append(Vector3(cos(ang3) * a, -0.4, sin(ang3) * a))
+		_add(st.commit(), _mats["ground"], Transform3D(Basis(), Vector3(x, 0, z)), true, 0, "mound")
+		var shape := ConvexPolygonShape3D.new()
+		shape.points = pts
+		var cs := CollisionShape3D.new()
+		cs.shape = shape
+		cs.position = Vector3(x, 0, z)
+		_body.add_child(cs)
+
+
+const FOLIAGE_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, diffuse_lambert_wrap, specular_disabled, depth_draw_opaque;
+uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_disable;
+uniform float sway = 0.06;
+varying float lift;
+void vertex() {
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	lift = 1.0 - UV.y;
+	float wave = sin(TIME * 1.5 + wp.x * 0.45 + wp.z * 0.6) + 0.5 * sin(TIME * 2.6 + wp.x * 1.2 + wp.z * 0.3);
+	VERTEX.x += wave * sway * lift * lift;
+	VERTEX.z += wave * sway * 0.7 * lift * lift;
+	// Lit as if every card faced the sky: soft, even foliage shading.
+	NORMAL = normalize(vec3(0.0, 1.0, 0.0) + NORMAL * 0.25);
+}
+void fragment() {
+	vec4 c = texture(tex, UV);
+	if (c.a < 0.45) { discard; }
+	ALBEDO = c.rgb * COLOR.rgb * mix(0.62, 1.08, lift);
+	ROUGHNESS = 1.0;
+	BACKLIGHT = c.rgb * 0.35;
+}
+"""
+
+static var _foliage_cache := {}
+
+
+## Painted foliage textures (made once, in code): alpha-cut cards in the
+## Skyrim / Minecraft tradition, where a few flat pictures of many blades or
+## leaves, crossed and repeated densely, read as lush undergrowth.
+##   grass   a fan of tapering blades         fern    arching fronds
+##   leafy   broad leaves on short stems      flower0-2  blooms among blades
+static func _foliage_tex(kind: String, base: Color, tip: Color) -> ImageTexture:
+	var key := "%s_%s_%s" % [kind, base.to_html(), tip.to_html()]
+	if _foliage_cache.has(key):
+		return _foliage_cache[key]
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(Color(tip.r, tip.g, tip.b, 0.0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(kind)
+	var blades := 26 if kind == "grass" else (12 if kind.begins_with("flower") else 0)
+	for i in blades:
+		var x0 := rng.randf_range(n * 0.3, n * 0.7)
+		var length := rng.randf_range(0.5, 1.0) * n * (0.95 if kind == "grass" else 0.6)
+		var bend := rng.randf_range(-0.5, 0.5) * n * 0.7
+		var w0 := rng.randf_range(2.6, 4.6)
+		var shade := rng.randf_range(0.82, 1.15)
+		_paint_blade(img, x0, length, bend, w0, base * shade, tip * shade)
+	if kind == "fern":
+		for i in 7:
+			var ang := lerpf(-1.15, 1.15, i / 6.0) + rng.randf_range(-0.1, 0.1)
+			_paint_frond(img, Vector2(n * 0.5, n - 2.0), ang, n * rng.randf_range(0.6, 0.9), base, tip, rng)
+	elif kind == "leafy":
+		for i in 9:
+			var ang2 := lerpf(-1.25, 1.25, i / 8.0) + rng.randf_range(-0.15, 0.15)
+			var reach := n * rng.randf_range(0.35, 0.72)
+			var c := Vector2(n * 0.5 + sin(ang2) * reach, n - 4.0 - cos(ang2) * reach)
+			_paint_blade(img, n * 0.5, reach, sin(ang2) * reach, 2.0, base * 0.8, base)
+			_paint_leaf(img, c, ang2, n * rng.randf_range(0.13, 0.2), base.lerp(tip, rng.randf_range(0.3, 0.9)))
+	elif kind.begins_with("flower"):
+		var petal: Color = [Color(1.0, 0.97, 0.9), Color(1.0, 0.82, 0.15), Color(1.0, 0.42, 0.62), Color(0.72, 0.5, 1.0), Color(1.0, 0.4, 0.22)][int(kind.substr(6)) % 5]
+		for i in 7:
+			var x1 := rng.randf_range(n * 0.18, n * 0.82)
+			var h := rng.randf_range(0.45, 0.92) * n
+			_paint_blade(img, x1, h, rng.randf_range(-6.0, 6.0), 1.6, base * 0.9, base)
+			var c2 := Vector2(x1 + rng.randf_range(-3.0, 3.0), n - h)
+			var r := rng.randf_range(5.0, 8.5)
+			for p in 6:
+				var pa := TAU * p / 6.0
+				_paint_disc(img, c2 + Vector2(cos(pa), sin(pa)) * r * 0.62, r * 0.55, petal * rng.randf_range(0.9, 1.0))
+			_paint_disc(img, c2, r * 0.38, Color(1.0, 0.8, 0.2) if petal.g > 0.9 and petal.b > 0.5 else Color(0.35, 0.22, 0.1))
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	_foliage_cache[key] = tex
+	return tex
+
+
+static func _paint_blade(img: Image, x0: float, length: float, bend: float, w0: float, base: Color, tip: Color) -> void:
+	var n := img.get_width()
+	var steps := int(length)
+	for s in steps:
+		var t := float(s) / maxf(steps, 1)
+		var cx := x0 + bend * t * t
+		var y := n - 1 - s
+		var half := maxf(0.5, w0 * (1.0 - t * 0.92))
+		var col := base.lerp(tip, t)
+		for dx in range(-int(ceil(half)), int(ceil(half)) + 1):
+			var px := int(round(cx)) + dx
+			if px >= 0 and px < n and y >= 0 and absf(dx) <= half:
+				var edge := 1.0 - absf(dx) / (half + 0.5) * 0.25
+				img.set_pixel(px, y, Color(col.r * edge, col.g * edge, col.b * edge, 1.0))
+
+
+static func _paint_disc(img: Image, c: Vector2, r: float, col: Color) -> void:
+	var n := img.get_width()
+	for y in range(int(c.y - r), int(c.y + r) + 1):
+		for x in range(int(c.x - r), int(c.x + r) + 1):
+			if x >= 0 and y >= 0 and x < n and y < n and Vector2(x, y).distance_to(c) <= r:
+				img.set_pixel(x, y, Color(col.r, col.g, col.b, 1.0))
+
+
+static func _paint_leaf(img: Image, c: Vector2, ang: float, size: float, col: Color) -> void:
+	var n := img.get_width()
+	var axis := Vector2(sin(ang), -cos(ang))
+	var side := Vector2(axis.y, -axis.x)
+	for y in range(int(c.y - size), int(c.y + size) + 1):
+		for x in range(int(c.x - size), int(c.x + size) + 1):
+			if x < 0 or y < 0 or x >= n or y >= n:
+				continue
+			var d := Vector2(x, y) - c
+			var u := d.dot(axis) / size
+			var v := d.dot(side) / (size * 0.55)
+			if u * u + v * v <= 1.0 and absf(v) <= 1.0 - u * 0.5:
+				var rib := 1.15 if absf(v) < 0.12 else (0.9 + 0.1 * (1.0 - absf(v)))
+				img.set_pixel(x, y, Color(col.r * rib, col.g * rib, col.b * rib, 1.0))
+
+
+static func _paint_frond(img: Image, root: Vector2, ang: float, length: float, base: Color, tip: Color, rng: RandomNumberGenerator) -> void:
+	var steps := int(length)
+	for s in steps:
+		var t := float(s) / steps
+		var droop := ang + signf(ang) * t * t * 0.9
+		var p := root + Vector2(sin(droop), -cos(droop)) * s * (1.0 - t * 0.15)
+		var col := base.lerp(tip, t * 0.8)
+		_paint_disc(img, p, 1.1, col * 0.85)
+		if s % 5 == 2:
+			var leaf := length * 0.16 * (1.0 - t * 0.7)
+			for sgn in [-1.0, 1.0]:
+				_paint_leaf(img, p + Vector2(cos(droop), sin(droop)) * sgn * leaf * 0.7, droop + sgn * 1.25, leaf, col * rng.randf_range(0.9, 1.1))
+
+
+## Three crossed upright cards, one metre square, feet on the ground.
+func _card_mesh(planes := 3) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for b in 3:
-		var a := TAU * b / 3.0
-		var side := Vector3(-sin(a), 0, cos(a)) * 0.03
-		var lean := Vector3(cos(a), 0, sin(a)) * 0.06
-		var root := Vector3(cos(a), 0, sin(a)) * 0.04
-		for vtx in [[root - side, Vector2(0, 1)], [root + side, Vector2(1, 1)], [root + Vector3(0, 0.26, 0) + lean, Vector2(0.5, 0)]]:
+	for q in planes:
+		var a := PI * q / planes
+		var ax := Vector3(cos(a), 0, sin(a)) * 0.5
+		var nrm := Vector3(-sin(a), 0, cos(a))
+		var quad := [[-ax, Vector2(0, 1)], [ax, Vector2(1, 1)], [ax + Vector3.UP, Vector2(1, 0)], [-ax, Vector2(0, 1)], [ax + Vector3.UP, Vector2(1, 0)], [-ax + Vector3.UP, Vector2(0, 0)]]
+		for vtx in quad:
 			st.set_uv(vtx[1])
-			st.set_normal(Vector3.UP)
+			st.set_normal(nrm)
 			st.add_vertex(vtx[0])
-	var sh := Shader.new()
-	sh.code = GRASS_SHADER
-	var mat := ShaderMaterial.new()
-	mat.shader = sh
-	mat.set_shader_parameter("base", theme.grass[0])
-	mat.set_shader_parameter("tip", theme.grass[1])
+	return st.commit()
+
+
+## Ground cover. Where the theme says "cover" the whole open ground grows
+## grass, ferns, leafy plants and flowers (everything the occupancy grid
+## leaves free); other maps only grow it on their `lawns` rects.
+## Everything is textured cards (_foliage_tex) in MultiMeshes split into
+## 16 m chunks that are only drawn near a camera, so a lush meadow stays
+## cheap in six-player splitscreen. Cards follow the mounds (ground_y) and
+## sway in the wind (FOLIAGE_SHADER).
+func _grass() -> void:
+	if theme.grass.is_empty() or OS.get_environment("SLOP_TEST") == "nograss":
+		return
+	var whole: bool = theme.get("cover", false) and not indoor
+	if not whole and lawns.is_empty():
+		return
+	var areas: Array = [Rect2(-half_x, -half_z, half_x * 2.0, half_z * 2.0)] if whole else lawns
 	var area := 0.0
-	for r in lawns:
+	for r in areas:
 		area += (r as Rect2).get_area()
-	var count := mini(int(area * 9.0), 60000)
-	var spots: Array = []
+	var base: Color = theme.grass[0]
+	var tip: Color = theme.grass[1]
+	var sh := Shader.new()
+	sh.code = FOLIAGE_SHADER
+	# kind -> [texture kind, share of the cover, min size, max size, sway]
+	var kinds := [["grass", 0.72, 0.5, 1.0, 0.07], ["leafy", 0.09, 0.5, 0.9, 0.04], ["fern", 0.08, 0.6, 1.1, 0.05],
+		["flower0", 0.03, 0.45, 0.7, 0.06], ["flower1", 0.03, 0.45, 0.7, 0.06], ["flower2", 0.025, 0.45, 0.7, 0.06], ["flower3", 0.025, 0.45, 0.7, 0.06]]
+	var mats: Array = []
+	for k in kinds:
+		var mat := ShaderMaterial.new()
+		mat.shader = sh
+		var b2 := base if not k[0].begins_with("f") or k[0] == "fern" else base.lerp(tip, 0.3)
+		mat.set_shader_parameter("tex", _foliage_tex(k[0], b2, tip if k[0] != "fern" else tip.lerp(base, 0.35)))
+		mat.set_shader_parameter("sway", k[4])
+		mats.append(mat)
+	var card := _card_mesh(3)
+
+	var density := 5.0 if area < 3000.0 else (3.8 if area < 9000.0 else 2.4)
+	var count := mini(int(area * density), 70000)
+	var chunks := {}
+	var placed := 0
 	var tries := 0
-	while spots.size() < count and tries < count * 3:
+	# Flowers and ferns grow in patches: a slowly varying field picks the kind.
+	while placed < count and tries < count * 2:
 		tries += 1
 		var pick := _rng.randf() * area
-		var rr: Rect2 = lawns[0]
-		for r in lawns:
+		var rr: Rect2 = areas[0]
+		for r in areas:
 			pick -= (r as Rect2).get_area()
 			if pick <= 0.0:
 				rr = r
 				break
-		var p := Vector2(_rng.randf_range(rr.position.x, rr.end.x), _rng.randf_range(rr.position.y, rr.end.y))
-		var blocked := false
-		for h in _holes + no_grass:
-			if (h as Rect2).grow(0.2).has_point(p):
-				blocked = true
-				break
-		if not blocked:
-			spots.append(Vector3(p.x, 0.0, p.y))
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_colors = true
-	mm.mesh = st.commit()
-	mm.instance_count = spots.size()
-	for i in spots.size():
-		var scl := _rng.randf_range(0.6, 1.4)
-		var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(scl, scl * _rng.randf_range(0.7, 1.3), scl))
-		mm.set_instance_transform(i, Transform3D(basis, spots[i]))
-		var tone := _rng.randf_range(0.8, 1.15)
-		mm.set_instance_color(i, Color(tone, tone, tone))
-	var mmi := MultiMeshInstance3D.new()
-	mmi.multimesh = mm
-	mmi.material_override = mat
-	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mmi)
+		var px := _rng.randf_range(rr.position.x, rr.end.x)
+		var pz := _rng.randf_range(rr.position.y, rr.end.y)
+		if _occupied(px, pz):
+			continue
+		var patch := sin(px * 0.21 + 1.3) * cos(pz * 0.17 - 0.6) + 0.5 * sin(px * 0.07 - pz * 0.11)
+		var roll := _rng.randf()
+		var ki := 0
+		if patch > 0.75 and roll < 0.5:
+			ki = 3 + (int(floor((px + 500.0) / 9.0)) + int(floor((pz + 500.0) / 9.0))) % 4
+		elif patch < -0.6 and roll < 0.45:
+			ki = 2
+		elif roll < 0.1:
+			ki = 1
+		elif roll < 0.13:
+			ki = 3 + _rng.randi() % 4
+		var key := Vector3i(floori(px / 16.0), floori(pz / 16.0), ki)
+		if not chunks.has(key):
+			chunks[key] = []
+		chunks[key].append(Vector3(px, ground_y(px, pz) - 0.03, pz))
+		placed += 1
+	for key in chunks:
+		var k: Array = kinds[key.z]
+		var centre := Vector3((key.x + 0.5) * 16.0, 0.4, (key.y + 0.5) * 16.0)
+		var spots: Array = chunks[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = card
+		mm.instance_count = spots.size()
+		for i in spots.size():
+			var w := _rng.randf_range(k[2], k[3])
+			var hgt := w * _rng.randf_range(0.75, 1.15)
+			var basis := Basis(Vector3.UP, _rng.randf() * TAU).scaled(Vector3(w, hgt, w))
+			mm.set_instance_transform(i, Transform3D(basis, spots[i] - centre))
+			var tone := _rng.randf_range(0.8, 1.15)
+			mm.set_instance_color(i, Color(tone, tone * _rng.randf_range(0.96, 1.06), tone * _rng.randf_range(0.85, 1.0)))
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = mats[key.z]
+		mmi.position = centre
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = 52.0
+		mmi.visibility_range_end_margin = 6.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		add_child(mmi)
+	if not whole:
+		return
+	# Bigger undergrowth models (bushes, plants, pebbles), thicker towards the
+	# edges of the map.
+	var plants := clampi(int(area / 45.0), 30, 240)
+	var done := 0
+	tries = 0
+	while done < plants and tries < plants * 8:
+		tries += 1
+		var px3 := _rng.randf_range(-half_x + 1.0, half_x - 1.0)
+		var pz3 := _rng.randf_range(-half_z + 1.0, half_z - 1.0)
+		var edge := maxf(absf(px3) / half_x, absf(pz3) / half_z)
+		if _rng.randf() > 0.35 + edge * 0.65 or not _clear_disc(px3, pz3, 0.7):
+			continue
+		var pos := Vector3(px3, ground_y(px3, pz3), pz3)
+		var roll2 := _rng.randf()
+		if roll2 < 0.3:
+			_bush(pos, _rng.randf_range(0.7, 1.2), false)
+		elif roll2 < 0.42:
+			_model(_pick(["nature/Rock/Pebble_Round_1", "nature/Rock/Pebble_Round_2", "nature/Rock/Pebble_Round_3", "nature/Rock/Pebble_Round_4"]), pos, _rng.randf() * TAU, _rng.randf_range(1.0, 2.2), false, "none", false)
+		else:
+			_plant(pos, _rng.randf_range(0.8, 1.5), false)
+		done += 1
 
 
 # --------------------------------------------------------------------------

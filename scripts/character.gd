@@ -123,6 +123,7 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 		scarf_h.emission_energy_multiplier = 0.25
 		_accent = scarf_h
 		_build_human(with_gun)
+		_build_scarf(col)
 		_build_hat()
 		_build_back()
 		return
@@ -550,6 +551,46 @@ func _mesh(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3, _outlined :=
 	return mi
 
 
+## A bandana in the player's colour round the neck: who is who, without
+## dyeing the whole animal.
+func _build_scarf(col: Color) -> void:
+	var skel: Skeleton3D = null
+	for s in _human.find_children("*", "Skeleton3D", true, false):
+		skel = s
+	if skel == null or skel.find_bone("Neck") < 0:
+		return
+	var att := BoneAttachment3D.new()
+	att.bone_name = "Neck"
+	skel.add_child(att)
+	var cloth := StandardMaterial3D.new()
+	cloth.albedo_color = col
+	cloth.roughness = 0.85
+	cloth.emission_enabled = true
+	cloth.emission = col
+	cloth.emission_energy_multiplier = 0.35
+	var ring := TorusMesh.new()
+	ring.inner_radius = 0.42
+	ring.outer_radius = 0.66
+	ring.rings = 20
+	ring.ring_segments = 8
+	var mi := MeshInstance3D.new()
+	mi.mesh = ring
+	mi.material_override = cloth
+	mi.layers = _layers
+	mi.scale = Vector3(1.0, 0.75, 1.0)
+	mi.position = Vector3(0, 0.02, 0)
+	att.add_child(mi)
+	var knot := PrismMesh.new()
+	knot.size = Vector3(0.5, 0.55, 0.12)
+	var tail := MeshInstance3D.new()
+	tail.mesh = knot
+	tail.material_override = cloth
+	tail.layers = _layers
+	tail.position = Vector3(0, -0.3, 0.6)
+	tail.rotation = Vector3(0.4, 0, PI)
+	att.add_child(tail)
+
+
 ## Start the melee animation (player._melee_start).
 func swing(with_weapon: bool) -> void:
 	_swing_t = 0.0
@@ -722,7 +763,9 @@ func _build_human(with_gun: bool) -> void:
 	# overlay used for the hit flash.
 	_tint = StandardMaterial3D.new()
 	_tint.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	_tint.albedo_color = Color(color.lerp(Color.WHITE, 0.15), 0.24 if _creature else 0.2)
+	# The animals keep their own natural colours; only a faint wash of the
+	# player's colour goes over them (the scarf, hat and name tag carry it).
+	_tint.albedo_color = Color(color.lerp(Color.WHITE, 0.3), 0.07)
 	_tint.roughness = 0.9
 	# A soft rim of light gives the models a plush, toy-like silhouette.
 	_tint.rim_enabled = true

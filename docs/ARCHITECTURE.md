@@ -348,6 +348,34 @@ collision off (the vehicle takes the hits).
 - `tools/weapon_sheet.gd` (`-- --sheet=out.png --ids=24,26`) renders
   weapon models side-on and first-person for tuning.
 
+### Ground cover, mounds, lamps, sun rays (`map.gd`, `sun_rays.gd`)
+
+- `_occ_build()` rasterises everything standing on the ground (collider
+  boxes, trunks, `_surface` rects, `no_grass`, holes) into a 0.5 m
+  occupancy grid; `_occupied()` / `_clear_disc()` answer "is this ground
+  free" in O(1). Mounds, grass and undergrowth all use it.
+- `_mounds()` (themes with `"cover": true`): shallow sphere-cap hills with
+  a deliberately coarse 25-point convex collider. A detailed hull made
+  every character standing on one expensive (it caused the v0.14 hitching
+  during development). `ground_y(x, z)` gives the height for foliage.
+- `_grass()`: textured cards, not polygons-per-blade. `_foliage_tex()`
+  paints grass / fern / leafy / flower textures in code (cached);
+  `_card_mesh()` is three crossed quads; `FOLIAGE_SHADER` alpha-cuts,
+  sways and lights them as if facing the sky. One MultiMesh per kind per
+  16 m chunk with `visibility_range_end`, so only nearby foliage draws.
+  Whole-map cover where the theme says `cover`, else only `lawns`.
+- Clutter is themed: `CLUTTER_SETS[MAPS[i].clutter]`.
+- `_lamp()` = pendant model + warm OmniLight that ignores the time of day
+  (distance-faded); `_building` hangs a grid of them on every storey.
+- `sun_rays.gd`: a full-screen quad on each camera (its own layer, bits
+  15-20). The shader marches from each pixel towards the sun's screen
+  position counting open sky in the depth buffer. Option `rays`.
+- Dev: `--top` (views=0) is an overhead camera; `--audit` prints models
+  whose box cuts into another collider; the `--shot` report now includes
+  slow-frame and worst-frame counts (hitches hide in averages);
+  environment variable `SLOP_TEST=nograss|nomounds` switches those off for
+  A/B timing.
+
 ### Doors, breakables, crumbling walls (`door.gd`, `prop.gd`, `rubble.gd`, `debris.gd`)
 
 - Everything breakable is in group "props" and answers `knock(impulse, at)`

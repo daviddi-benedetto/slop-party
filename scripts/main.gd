@@ -118,6 +118,25 @@ func _end_match() -> void:
 	tw.tween_property(_fade, "color:a", 0.0, 0.4)
 
 
+var _fr_n := 0
+var _fr_sum := 0.0
+var _fr_slow := 0
+var _fr_worst := 0.0
+var _fr_last := 0
+
+## Dev: frame-time statistics for the --shot report (hitches, not averages).
+func _process(_delta: float) -> void:
+	var now := Time.get_ticks_usec()
+	if _fr_last != 0 and now > 8000000:
+		var dt := (now - _fr_last) / 1000000.0
+		_fr_n += 1
+		_fr_sum += dt
+		_fr_worst = maxf(_fr_worst, dt)
+		if dt > 0.025:
+			_fr_slow += 1
+	_fr_last = now
+
+
 func _screenshot_later(delay: float, path: String) -> void:
 	await get_tree().create_timer(delay, true, false, true).timeout
 	await RenderingServer.frame_post_draw
@@ -128,6 +147,7 @@ func _screenshot_later(delay: float, path: String) -> void:
 		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])
 	print("[shot] nodes=%d objects=%d process_ms=%.2f physics_ms=%.2f" % [Performance.get_monitor(Performance.OBJECT_NODE_COUNT), Performance.get_monitor(Performance.OBJECT_COUNT),
 		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0])
+	print("[shot] frames %d, avg %.1f ms, slow (>25 ms) %d, worst %.0f ms (after the first 8 s)" % [_fr_n, _fr_sum / maxf(_fr_n, 1) * 1000.0, _fr_slow, _fr_worst * 1000.0])
 	print("[shot] physics active=%d pairs=%d islands=%d  render scale=%.2f" % [Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS),
 		Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS), Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT), Settings.res_factor])
 	if game != null:

@@ -362,7 +362,8 @@ static func suburb(m) -> void:
 	m._surface(Rect2(22.2, 6.5, 6.0, 4.5), 0.02, "path")
 	m._surface(Rect2(15.1, 6.5, 1.8, 4.5), 0.02, "path")
 	m.no_grass.append_array([Rect2(22.2, 6.5, 6.0, 4.5), Rect2(15.1, 6.5, 1.8, 4.5), Rect2(-28.2, -11.0, 6.0, 4.5), Rect2(-16.9, -11.0, 1.8, 4.5)])
-	_car(m, Vector3(25.2, 0, 8.6), PI * 0.5, "car_white")
+	# On the drive, clear of the garage porch.
+	_car(m, Vector3(25.2, 0, 7.9), 0.0, "car_white")
 	_fence_x(m, 6.9, 7.0, 15.0)
 	_fence_x(m, 6.9, 17.0, 21.6)
 	_fence_x(m, 20.6, 28.6, 39.8)
