@@ -17,6 +17,7 @@ const Viewmodel = preload("res://scripts/viewmodel.gd")
 const GUN_SCALE := 1.6
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
+const ArmIk = preload("res://scripts/arm_ik.gd")
 
 ## Every selectable character is an imported, rigged animal model driven by
 ## its shared creature animations. The human roster remains in the asset pack
@@ -51,6 +52,14 @@ var _gun_scale := GUN_SCALE
 var _with_gun := true
 var _back_node: Node3D
 var _creature := false
+var taunt := -1                # player.TAUNTS index while taunting, else -1
+var _swing_t := 9.0            # seconds since swing() (melee animation)
+var _swing_weapon := false
+var _swing_n := 0
+var _ik                        # arm_ik.gd on the skeleton (hands hold the weapon)
+var _grip_r: Node3D
+var _grip_l: Node3D
+var _gun_rest := Vector3.ZERO
 
 var rig: Node3D                # squash / stretch / lean
 var head: Node3D
@@ -111,7 +120,7 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 	if true:
 		var scarf_h := _plush(Color.from_hsv(fmod(col.h + 0.45, 1.0), 0.55, 1.0), false)
 		scarf_h.emission = scarf_h.albedo_color
-		scarf_h.emission_energy_multiplier = 0.9
+		scarf_h.emission_energy_multiplier = 0.25
 		_accent = scarf_h
 		_build_human(with_gun)
 		_build_hat()
@@ -422,14 +431,20 @@ func set_weapon(id: int) -> void:
 		return
 	_weapon = id
 	for c in _gun.get_children():
-		c.queue_free()
-	# The same model as the first-person gun, scaled up to the plush proportions.
+		if c != _grip_r and c != _grip_l:
+			c.queue_free()
+	# The same model as the first-person weapon, sized for the character.
 	var model = Viewmodel.new()
 	_gun.add_child(model)
 	model.build(color, _layers, id, false)
 	model.position = Vector3(0, -0.02, 0.08)
 	model.scale = Vector3.ONE * _gun_scale
-	muzzle.position = _gun.position + Vector3(0, 0.0, 0.08 + model.muzzle_z() * _gun_scale)
+	muzzle.position = _gun.position + Vector3(0, -0.02, 0.08) + model.muzzle_local() * _gun_scale
+	# Where the hands go (arm IK): both on a long gun, one on a blade.
+	if _grip_r != null:
+		_grip_r.position = model.position + model.grip_r * _gun_scale
+		_grip_l.position = model.position + model.grip_l * _gun_scale
+		_grip_l.visible = model.two_handed
 
 
 func _plush(col: Color, furry := true) -> StandardMaterial3D:
@@ -533,6 +548,15 @@ func _mesh(parent: Node3D, mesh: Mesh, mat: Material, pos: Vector3, _outlined :=
 	mi.layers = _layers
 	parent.add_child(mi)
 	return mi
+
+
+## Start the melee animation (player._melee_start).
+func swing(with_weapon: bool) -> void:
+	_swing_t = 0.0
+	_swing_weapon = with_weapon
+	_swing_n += 1
+	if _anim != null and not with_weapon:
+		_anim.stop()
 
 
 func hit_flash() -> void:
@@ -752,8 +776,25 @@ func _build_human(with_gun: bool) -> void:
 	_gun_scale = 1.2
 	if with_gun:
 		_gun = Node3D.new()
-		_gun.position = Vector3(0.3, 0.0, -0.5) if _creature else Vector3(0.12, 0.02, -0.42)
+		_gun.position = Vector3(0.24, -0.02, -0.4) if _creature else Vector3(0.12, 0.02, -0.42)
+		_gun_rest = _gun.position
 		aim.add_child(_gun)
+		if skel != null and _creature:
+			# The hands reach for grip markers on the weapon (arm_ik.gd).
+			_grip_r = Node3D.new()
+			_gun.add_child(_grip_r)
+			_grip_l = Node3D.new()
+			_gun.add_child(_grip_l)
+			_ik = ArmIk.new()
+			skel.add_child(_ik)
+			var palm := 0.62
+			var mid := skel.find_bone("Middle1.R")
+			var low := skel.find_bone("LowerArm.R")
+			if mid >= 0 and low >= 0:
+				palm = skel.get_bone_global_rest(mid).origin.distance_to(skel.get_bone_global_rest(low).origin) + 0.12
+			# The model faces +Z inside the rig, so its right side is -X.
+			_ik.set_target(_ik.add_arm("UpperArm.R", "LowerArm.R", palm, Vector3(-0.5, -1.0, 0.2)), _grip_r)
+			_ik.set_target(_ik.add_arm("UpperArm.L", "LowerArm.L", palm, Vector3(0.5, -1.0, 0.2)), _grip_l)
 		set_weapon(0)
 	_play_h("Idle" if _creature or not with_gun else "Idle_Gun_Pointing")
 
@@ -775,7 +816,47 @@ func _animate_human(delta: float, speed: float, on_floor: bool, pitch: float, re
 	rig.scale = Vector3(1.0, 1.0 - (0.0 if _creature else crouch * 0.28), 1.0) * pop
 	var hop := 0.0
 	if _creature:
-		# Creature rig: Idle / Walk / Run / Jump_Idle / Duck / Wave / No.
+		# Creature rig: Idle / Walk / Run / Jump_Idle / Duck / Wave / No / Yes /
+		# Punch / Weapon. Taunts and punches play with the arms free; otherwise
+		# the arm IK keeps both hands on the weapon.
+		_swing_t += delta
+		var busy := taunt >= 0 or emote != "" or (_swing_t < 0.45 and not _swing_weapon)
+		if _ik != null:
+			_ik.influence = move_toward(_ik.influence, 0.0 if busy else 1.0, delta * 9.0)
+		if _gun != null:
+			_gun.visible = taunt < 0
+			# Swing the held weapon: chop for blades, a jab otherwise.
+			var sw := sin(clampf(_swing_t / 0.36, 0.0, 1.0) * PI)
+			var side := 1.0 if _swing_n % 2 == 0 else -1.0
+			if _swing_weapon:
+				_gun.rotation = Vector3(-1.3 * sw, side * 0.5 * sw, side * 0.7 * sw)
+				_gun.position = _gun_rest + Vector3(0, 0.12 * sw, -0.22 * sw)
+			else:
+				_gun.rotation = Vector3.ZERO
+				_gun.position = _gun_rest
+		rig.rotation.y = 0.0
+		if taunt >= 0:
+			match taunt:
+				0:
+					_play_h("Wave", 1.5)
+				1:
+					_play_h("Yes", 2.2)
+					rig.rotation.y = _t * 7.0
+					hop = absf(sin(_t * 8.0)) * 0.22
+				2:
+					_play_h("No", 1.6)
+				_:
+					_play_h("Punch", 1.5)
+					hop = absf(sin(_t * 5.0)) * 0.08
+			rig.position.y = hop
+			rig.rotation.z = 0.0
+			aim.rotation.x = 0.0
+			return
+		if _swing_t < 0.45 and emote == "" and not _swing_weapon:
+			_play_h("Punch", 1.9)
+			rig.position.y = 0.0
+			aim.rotation.x = pitch
+			return
 		match emote:
 			"cheer":
 				hop = absf(sin(_t * 6.5)) * 0.25

@@ -42,7 +42,24 @@ const GLB := {
 	"sticky": ["blaster/Blaster_D", "+z", 0.86, 0.0],
 	"longshot": ["toon/Weapon/Sniper_2", "-x", 1.15, 0.0],
 	"frost": ["blaster/Blaster_Q", "+z", 0.7, 0.0],
+	"crossbow": ["medieval/Skeleton_Crossbow", "+z", 0.8, 0.0],
 }
+
+## Hand-held items that stand upright in the fist (blade / shaft along the
+## model's +Y): [model, length, where along it the hand grips (0 = bottom),
+## forward tilt, roll, optional width scale x / z and yaw]. Swords, axes and spears are swung (player melee);
+## staffs cast from the tip; knives and bombs are thrown.
+const UPRIGHT := {
+	"sword": ["medieval/Sword_1", 0.95, 0.1, -0.5, 0.25],
+	"axe": ["medieval/Skeleton_Axe", 0.95, 0.12, -0.45, 0.2],
+	"spear": ["medieval/Weapon_Spear", 1.9, 0.38, -1.4, 0.0, 0.35, 0.35, 0.0],
+	"knives": ["medieval/Dagger", 0.42, 0.15, -0.6, 0.2],
+	"staff_storm": ["medieval/Skeleton_Staff", 1.5, 0.45, -0.38, 0.12],
+	"staff_arcane": ["medieval/Skeleton_Staff", 1.5, 0.45, -0.38, 0.12],
+	"bow": ["medieval/Weapon_Bow", 1.05, 0.5, -0.08, 0.3, 0.4, 1.0, PI],
+	"bomb": ["medieval/Bomb", 0.26, 0.3, 0.0, 0.0],
+}
+const MELEE_STYLES := ["sword", "axe", "spear"]
 
 const HIP := Vector3(0.27, -0.25, -0.58)
 const ADS := Vector3(0.0, -0.155, -0.5)
@@ -72,6 +89,14 @@ var _with_paw := true
 var _flash: MeshInstance3D
 var _spin: Node3D                # rotating barrel cluster (Spinner)
 var _muzzle_z := -0.3
+var _muzzle_xy := Vector2.ZERO   # muzzle offset from the bore axis (staff tip, mage orb)
+var _blade: Node3D               # pivot of an UPRIGHT item
+var _arrow: Node3D               # nocked arrow (bow) / spare item
+var _orb: MeshInstance3D         # glowing spell orb (magic weapons)
+var _shield: Node3D              # Medieval mode: the block is a shield on the left arm
+var grip_r := Vector3(0, -0.08, 0.12)    # where the right / left hand holds it
+var grip_l := Vector3(0, -0.05, -0.16)   # (third person: character.gd arm IK)
+var two_handed := true
 var _sight_y := 0.07             # height of the sight line above the barrel axis
 var _last_yaw := 0.0
 var _last_pitch := 0.0
@@ -140,6 +165,14 @@ func set_weapon(id: int) -> void:
 		remove_child(c)
 		c.queue_free()
 	_spin = null
+	_blade = null
+	_arrow = null
+	_orb = null
+	_shield = null
+	_muzzle_xy = Vector2.ZERO
+	grip_r = Vector3(0, -0.08, 0.12)
+	grip_l = Vector3(0, -0.05, -0.16)
+	two_handed = true
 	_pump = null
 	_drum = null
 	_warhead = null
@@ -150,7 +183,7 @@ func set_weapon(id: int) -> void:
 	_build_gun(_style)
 	_attach = null
 	_attach_key = ""
-	if _with_paw:
+	if _with_paw and not _style.begins_with("hands_"):
 		var plush := _mat(_color.lerp(Color(1, 0.97, 0.9), 0.25), 0.95)
 		plush.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 		plush.rim_enabled = true
@@ -163,7 +196,7 @@ func set_weapon(id: int) -> void:
 	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	fmat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	fmat.albedo_color = Color(_color.lerp(Color(1.0, 0.9, 0.6), 0.6) * 2.0, 0.9)
-	_flash = _ball(fmat, Vector3(0, 0, _muzzle_z), Vector3.ONE * 0.05)
+	_flash = _ball(fmat, Vector3(_muzzle_xy.x, _muzzle_xy.y, _muzzle_z), Vector3.ONE * 0.05)
 	_flash.visible = false
 	_swap = 0.0
 
@@ -175,7 +208,12 @@ func muzzle_z() -> float:
 
 ## World-space bore exit for shots and muzzle effects.
 func muzzle_position() -> Vector3:
-	return global_transform * Vector3(0.0, 0.0, _muzzle_z)
+	return global_transform * Vector3(_muzzle_xy.x, _muzzle_xy.y, _muzzle_z)
+
+
+## Same point in this model's own space (character.gd).
+func muzzle_local() -> Vector3:
+	return Vector3(_muzzle_xy.x, _muzzle_xy.y, _muzzle_z)
 
 
 ## Weapon models. Bore axis = the Z axis (y = 0), muzzle towards -Z, the
@@ -184,6 +222,12 @@ func muzzle_position() -> Vector3:
 ## the receiver / furniture, glowing strips mark the sci-fi parts.
 ## _sight_y = height of the iron-sight line (aiming lines it up with the eye).
 func _build_gun(style: String) -> void:
+	if UPRIGHT.has(style):
+		_build_upright(style, UPRIGHT[style])
+		return
+	if style.begins_with("hands_"):
+		_build_hands(style)
+		return
 	var key := style if GLB.has(style) else ("_" if style != "spinner" else "")
 	if key != "":
 		_build_glb(style, GLB[key])
@@ -458,6 +502,109 @@ func _build_gun(style: String) -> void:
 			_box(_dark, Vector3(0.04, 0.075, 0.12), Vector3(0, -0.015, 0.26))
 			_box(_accent, Vector3(0.042, 0.085, 0.02), Vector3(0, -0.018, 0.325))
 			_muzzle_z = -0.49
+
+
+## A sword, axe, spear, staff, bow, knife or bomb held upright in the fist.
+## The model hangs on the _blade pivot (at the hand) so swings can turn it.
+func _build_upright(style: String, spec: Array) -> void:
+	var path: String = spec[0]
+	var b: AABB = Models.bounds(path)
+	var length: float = spec[1]
+	var k: float = length / b.size.y
+	var grip: float = spec[2]
+	_blade = _node(Vector3(0, -0.07, 0.1))
+	_blade.rotation = Vector3(spec[3], 0.0, spec[4])
+	var off := Vector3(-b.get_center().x * k, -(b.position.y + grip * b.size.y) * k, -b.get_center().z * k)
+	var xf := Transform3D(Basis.from_scale(Vector3.ONE * k), off)
+	if spec.size() > 7:
+		# Chunky toy models are slimmed down (and the bow turned belly-forward).
+		xf = Transform3D(Basis(Vector3.UP, spec[7]) * Basis.from_scale(Vector3(spec[5], 1.0, spec[6])), Vector3.ZERO) * xf
+	for part in Models.parts(path):
+		var mi := MeshInstance3D.new()
+		mi.mesh = part[0]
+		mi.transform = xf * part[1]
+		mi.layers = _layer
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if _with_paw else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_blade.add_child(mi)
+	var tip: Vector3 = _blade.transform * Vector3(0, (1.0 - grip) * length, 0)
+	two_handed = false
+	grip_r = Vector3(0, -0.07, 0.1)
+	_sight_y = 0.02
+	_muzzle_z = -0.3
+	if style.begins_with("staff_"):
+		# The spell leaves from a glowing orb at the head of the staff.
+		var col := Color(0.55, 0.8, 1.0) if style == "staff_storm" else Color(0.85, 0.45, 1.0)
+		_target = _blade
+		_orb = _ball(_spell_mat(col), Vector3(0, (1.0 - grip) * length + 0.03, 0), Vector3.ONE * 0.06)
+		_target = self
+		_muzzle_xy = Vector2(tip.x, tip.y)
+		_muzzle_z = tip.z
+	elif style == "bow":
+		# A nocked arrow lies through the grip, pointing down range.
+		_arrow = _node(Vector3(0.015, -0.07, 0.1))
+		var ab: AABB = Models.bounds("medieval/Weapon_Arrow")
+		var ak: float = 0.78 / ab.size.z
+		for part in Models.parts("medieval/Weapon_Arrow"):
+			var am := MeshInstance3D.new()
+			am.mesh = part[0]
+			am.transform = Transform3D(Basis.from_scale(Vector3.ONE * ak), Vector3(0, 0, -0.12) - ab.get_center() * ak) * part[1]
+			am.layers = _layer
+			am.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			am.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+			_arrow.add_child(am)
+		two_handed = true
+		grip_l = Vector3(0, -0.07, 0.1)
+		grip_r = Vector3(0.03, -0.07, 0.42)
+		_muzzle_z = -0.5
+	elif style == "spear":
+		grip_l = Vector3(0, -0.07, -0.3)
+		two_handed = true
+
+
+## Mage hands: two open hands with a ball of fire or frost between them.
+func _build_hands(style: String) -> void:
+	var fire := style == "hands_fire"
+	var col := Color(1.0, 0.5, 0.12) if fire else Color(0.55, 0.85, 1.0)
+	var skin := _mat(_color.lerp(Color(1, 0.95, 0.88), 0.35), 0.8)
+	skin.rim_enabled = true
+	skin.rim = 0.4
+	var cuff := _mat(Color(0.2, 0.14, 0.3) if not fire else Color(0.32, 0.1, 0.08), 0.7)
+	if _with_paw:
+		for sx in [0.0, -0.54]:
+			var inward := 1.0 if sx == 0.0 else -1.0
+			var hand := _node(Vector3(sx, 0.02, -0.04))
+			hand.rotation = Vector3(-0.35, inward * 0.5, inward * 0.5)
+			_target = hand
+			_ball(skin, Vector3(0, 0, 0), Vector3(0.05, 0.022, 0.06))
+			for f in 4:
+				var fx := (f - 1.5) * 0.024
+				_tilt(_tube(skin, 0.0105, 0.07 - absf(f - 1.5) * 0.008, Vector3(fx, 0.012, -0.085), true), 0.25).rotation.y = -fx * 5.0
+			var thumb := _tube(skin, 0.012, 0.05, Vector3(-inward * 0.05, 0.0, -0.02), true)
+			thumb.rotation.y = inward * 1.0
+			_tube(skin, 0.036, 0.3, Vector3(0, -0.02, 0.2), true)
+			_tube(cuff, 0.046, 0.07, Vector3(0, -0.012, 0.09))
+			_tube(_glow, 0.048, 0.012, Vector3(0, -0.012, 0.06))
+			_target = self
+	_orb = _ball(_spell_mat(col), Vector3(-0.27, 0.1, -0.2), Vector3.ONE * (0.055 if _with_paw else 0.11))
+	if not _with_paw:
+		_orb.position = Vector3(-0.12, 0.0, -0.1)
+	_muzzle_xy = Vector2(_orb.position.x, _orb.position.y)
+	_muzzle_z = _orb.position.z - 0.08
+	_sight_y = 0.05
+	grip_r = Vector3(0.02, -0.02, 0.05)
+	grip_l = Vector3(-0.26, -0.02, 0.05)
+
+
+static var _spell_mats := {}
+
+static func _spell_mat(col: Color) -> StandardMaterial3D:
+	if not _spell_mats.has(col):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = col.lerp(Color.WHITE, 0.25) * 2.4
+		_spell_mats[col] = m
+	return _spell_mats[col]
 
 
 ## An imported gun model, turned so its barrel points down -Z, scaled to
@@ -828,6 +975,66 @@ func update(delta: float, p) -> void:
 			rot.z += exp(-st * 8.0) * 0.5 * hip
 		"burst":
 			rot.x += exp(-st * 14.0) * 0.12
+		"knives", "bomb":
+			var flick := exp(-st * 9.0)
+			rot.x -= flick * 0.9
+			pos.z -= flick * 0.14
+			if _blade != null:
+				_blade.visible = st > 0.16 and p.reload_left <= 0.0
+		"bow":
+			rot.z += exp(-st * 12.0) * 0.12
+			pos.z += exp(-st * 10.0) * 0.03
+			if _arrow != null:
+				_arrow.visible = st > 0.4 and p.reload_left <= 0.0
+				_arrow.position.z = 0.1 + clampf(st - 0.4, 0.0, 0.3) * 0.5 * hip
+		"staff_storm", "staff_arcane":
+			rot.x -= exp(-st * 7.0) * 0.4
+			pos.z -= exp(-st * 7.0) * 0.08
+		"hands_fire", "hands_frost":
+			pos.z -= exp(-st * 8.0) * 0.12
+			pos.y += sin(_t * 2.2) * 0.004
+	if _orb != null:
+		var pulse := 1.0 + sin(_t * 7.0) * 0.12 + exp(-st * 6.0) * 0.9
+		_orb.scale = Vector3.ONE * (0.055 if _style.begins_with("hands_") and _with_paw else 0.06) * pulse
+	# Melee: weapons slash or thrust; anything else is a quick butt strike.
+	var mdur: float = 0.34 if not _style in MELEE_STYLES else clampf(p.stats.fire_interval * 0.75, 0.3, 0.5)
+	if p.melee_t < mdur:
+		var mf: float = p.melee_t / mdur
+		var sw := sin(mf * PI)
+		var sgn := 1.0 if p.melee_n % 2 == 0 else -1.0
+		match _style:
+			"spear":
+				pos.z -= sw * 0.55
+				pos.y += sw * 0.05
+			"sword", "axe":
+				rot.x += 0.35 * (1.0 - mf) - 1.45 * sw
+				rot.z += sgn * (0.9 - 1.9 * mf) * sw
+				rot.y += sgn * 0.5 * sw
+				pos.x -= sgn * 0.14 * sw + 0.08 * sw
+				pos.z -= 0.14 * sw
+			_:
+				rot.x -= 0.45 * sw
+				rot.y += 0.95 * sw
+				pos.z -= 0.2 * sw
+				pos.x -= 0.1 * sw
+	# Medieval mode: blocking raises a shield in front of you.
+	if p.game.mode == "medieval" and _with_paw:
+		if _shield == null or not is_instance_valid(_shield):
+			_shield = _node(Vector3.ZERO)
+			var sb: AABB = Models.bounds("medieval/Skeleton_Shield_Large_A")
+			var sk: float = 0.5 / sb.size.y
+			for part in Models.parts("medieval/Skeleton_Shield_Large_A"):
+				var sm := MeshInstance3D.new()
+				sm.mesh = part[0]
+				sm.transform = Transform3D(Basis(Vector3.UP, PI) * Basis.from_scale(Vector3.ONE * sk), -sb.get_center() * sk) * part[1]
+				sm.layers = _layer
+				sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				sm.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+				_shield.add_child(sm)
+		var up: float = clampf(p.block_left * 8.0, 0.0, 1.0)
+		_shield.visible = up > 0.01
+		_shield.position = Vector3(-0.3, -0.3 + 0.32 * up, -0.12)
+		_shield.rotation = Vector3(0.1, 0.25, 0.08 * (1.0 - up))
 	# Parkour poses: tilt away from a wall, lower and roll during a slide.
 	rot.z += p.wall_tilt * 0.3 * hip
 	if p.sliding > 0.0:

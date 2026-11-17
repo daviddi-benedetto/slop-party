@@ -62,8 +62,11 @@ const Zombies = preload("res://scripts/zombies.gd")
 const Frontline = preload("res://scripts/frontline.gd")
 const Pet = preload("res://scripts/pet.gd")
 
-const MODES := ["rounds", "zombies", "frontline"]
-const MODE_NAMES := {"rounds": "ROUNDS", "zombies": "ZOMBIES", "frontline": "FRONTLINE"}
+const GunGame = preload("res://scripts/gungame.gd")
+const Medieval = preload("res://scripts/medieval.gd")
+
+const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
+const MODE_NAMES := {"rounds": "ROUNDS", "zombies": "ZOMBIES", "frontline": "FRONTLINE", "gungame": "GUN GAME", "medieval": "MEDIEVAL"}
 
 var config := {}
 var world: Node3D
@@ -71,6 +74,7 @@ var map
 var players: Array = []
 var kill_target := 15
 var match_over := false
+var _debug_third := false    # dev flag --third: watch player 1 from the taunt camera
 var debug_aim := false       # dev flag --force-aim: everyone aims down sights
 var frozen := true
 var winner = null
@@ -84,6 +88,7 @@ var rules = null              # zombies.gd / frontline.gd node (null in Rounds)
 var actors: Array = []        # other damageable things: zombies, vehicles
 var vehicles: Array = []
 var pets: Array = []
+var melee_strike := false     # true while a melee swing is dealing its damage
 var _dmg_cache: Array = []
 var _dmg_frame := -1
 
@@ -104,11 +109,13 @@ var _last_count := 99
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	add_to_group("game")
 	kill_target = config.get("kill_target", 15)
 	mode = config.get("mode", "rounds")
 	if not mode in MODES:
 		mode = "rounds"
 	debug_aim = "--force-aim" in OS.get_cmdline_user_args()
+	_debug_third = "--third" in OS.get_cmdline_user_args()
 	world = Node3D.new()
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
@@ -119,12 +126,18 @@ func _ready() -> void:
 		map_i = Map.ZOMBIE
 	elif mode == "frontline":
 		map_i = Map.FRONTLINE
-	elif map_i >= Map.FRONTLINE:
+	elif mode == "medieval":
+		map_i = Map.CASTLE
+	elif not map_i in Map.ARENAS:
 		map_i = 0
 	if mode == "zombies":
 		rules = Zombies.new()
 	elif mode == "frontline":
 		rules = Frontline.new()
+	elif mode == "gungame":
+		rules = GunGame.new()
+	elif mode == "medieval":
+		rules = Medieval.new()
 	var tod: String = config.get("time", "random")
 	if not tod in Map.TIMES:
 		tod = Map.TIMES[randi() % Map.TIMES.size()]
@@ -157,6 +170,8 @@ func _ready() -> void:
 		else:
 			p.pname = "P%d" % (i + 1)
 			p.brain = InputSource.new(part.device)
+			# Each player's own look speed (lobby: LOOK 1-10, 5 = the global setting).
+			p.brain.sens = 0.4 + 0.12 * float(part.get("sens", 5))
 			if part.device == InputSource.KEYBOARD:
 				_kb_brain = p.brain
 		p.wants_view = part.get("view", not part.bot)
@@ -191,14 +206,13 @@ func _ready() -> void:
 	if rules != null:
 		rules.start()
 	else:
-		var spots: Array = map.spawn_points.duplicate()
-		spots.shuffle()
-		for i in players.size():
-			var pos: Vector3 = spots[i % spots.size()]
-			players[i].spawn(pos, _yaw_to_centre(pos))
+		spawn_all_default()
 	map.nav_built.connect(_spawn_pets)
 	map.build_nav()
+	var pads: bool = rules == null or not rules.has_method("weapon_pads") or rules.weapon_pads()
 	for spot in map.pickup_spots:
+		if spot[0] == "weapon" and not pads:
+			continue
 		var pk = Pickup.new()
 		pk.kind = spot[0]
 		pk.game = self
@@ -220,6 +234,10 @@ func _prewarm() -> void:
 	Fx.sparks(world, p, Color.WHITE, 4, 1.0)
 	Fx.light(world, p, Color.WHITE, 1.0, 2.0, 0.2)
 	Fx.damage_number(world, p, 1.0, false, 0)
+	Fx.blood_spray(world, p, Vector3.UP, 4)
+	Fx.blood_splat(world, p, 0.2)
+	Fx.bolt(world, p, p + Vector3(1, 0, 0), Color.WHITE)
+	preload("res://scripts/debris.gd").burst(world, Transform3D(Basis(), p), Vector3.ONE, Vector3.ONE * 0.2, Color.GRAY, 1, Vector3.ZERO, 0.5)
 
 
 func _exit_tree() -> void:
@@ -421,6 +439,22 @@ func _update_cameras(delta: float) -> void:
 				p.yaw + sin(time * 47.0 + 1.3) * sh,
 				-p.strafe_amount * 0.028 * bob_scale + p.wall_tilt * 0.16 + (0.05 if p.sliding > 0.0 else 0.0) + cos(ph) * 0.005 * amt + sin(time * 53.0 + 2.1) * sh * 0.8)
 			cam.global_transform = Transform3D(Basis.from_euler(euler), eye)
+			# Taunting pulls the camera out in front of the character.
+			var tv: float = 1.0 if (_debug_third and p.index == 0) else p.taunt_view
+			var own_bit: int = p.body_layer_bit()
+			if tv > 0.01:
+				var feet: Vector3 = p.get_global_transform_interpolated().origin
+				var look_at: Vector3 = feet + Vector3(0, 1.05 * p.stats.size, 0)
+				var want: Vector3 = feet + Basis(Vector3.UP, p.yaw) * Vector3(0.9, 1.7, -3.3) * p.stats.size
+				var tq := PhysicsRayQueryParameters3D.create(look_at, want, 1)
+				var th := cam.get_world_3d().direct_space_state.intersect_ray(tq)
+				if th:
+					want = th.position + (look_at - want).normalized() * 0.3
+				var third := Transform3D(Basis.looking_at(look_at - want), want)
+				cam.global_transform = cam.global_transform.interpolate_with(third, smoothstep(0.0, 1.0, tv))
+				cam.cull_mask |= own_bit
+			elif cam.cull_mask & own_bit:
+				cam.cull_mask &= ~own_bit
 			# Aim-down-sights zoom narrows the FOV; dashing widens it briefly.
 			var zoomed := rad_to_deg(2.0 * atan(tan(deg_to_rad(v.fov) * 0.5) * p.zoom_factor()))
 			cam.fov = zoomed + (p.fov_kick * 7.0 + (6.0 if p.sliding > 0.0 else 0.0) + (4.0 if p.wallrun > 0.0 else 0.0)) * hip
@@ -439,7 +473,7 @@ func _update_cameras(delta: float) -> void:
 			cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
 		v.gun.update(delta, p)
 		v.blur.track(cam)
-		if p.vehicle != null or p.picking:
+		if p.vehicle != null or p.picking or p.taunt_view > 0.05 or (_debug_third and p.index == 0):
 			v.gun.visible = false
 		ears.append(cam.global_position)
 	Sfx.listeners = ears
@@ -734,11 +768,24 @@ func respawn_later(p, delay: float) -> void:
 			respawn(p))
 
 
-## Spawn as far from living enemies as possible (random among the best three).
+## Everyone on a different spawn point (the free-for-all modes).
+func spawn_all_default() -> void:
+	var spots: Array = map.spawn_points.duplicate()
+	spots.shuffle()
+	for i in players.size():
+		var pos: Vector3 = spots[i % spots.size()]
+		players[i].spawn(pos, _yaw_to_centre(pos))
+
+
 func respawn(p) -> void:
 	if rules != null:
 		rules.respawn(p)
 		return
+	respawn_default(p)
+
+
+## Spawn as far from living enemies as possible (random among the best three).
+func respawn_default(p) -> void:
 	var scored: Array = []
 	for spot in map.spawn_points:
 		var nearest := 1e9
@@ -765,8 +812,15 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 			var dp: float = p.global_position.distance_to(pos)
 			p.shake = maxf(p.shake, clampf(1.2 - dp / (radius * 4.0), 0.0, 1.0))
 	for prop in get_tree().get_nodes_in_group("props"):
+		if not is_instance_valid(prop) or prop.is_queued_for_deletion():
+			continue
 		var away: Vector3 = prop.global_position - pos
 		if away.length() < radius * 1.6:
+			# Breakables take the blast (walls get theirs through knock()).
+			if prop.has_method("hurt") and not prop.has_method("_collapse"):
+				prop.hurt(damage * (1.0 - away.length() / (radius * 1.6)), shooter)
+				if prop.is_queued_for_deletion():
+					continue
 			prop.knock((away.normalized() + Vector3(0, 0.6, 0)) * (1.0 - away.length() / (radius * 1.6)) * 14.0 * minf(prop.mass, 15.0), pos)
 	for p in damageables():
 		if not p.alive or p == direct_victim:
@@ -779,6 +833,13 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 		if not p.has_method("seat_count"):
 			p.velocity += (to_p.normalized() + Vector3(0, 0.4, 0)) * 9.0 * f
 		p.take_damage(damage * f * (0.5 if p == shooter else 1.0), shooter)
+
+
+## A blast a moment from now (fuel barrels: chains read as a chain).
+func explode_later(pos: Vector3, radius: float, damage: float, shooter) -> void:
+	get_tree().create_timer(0.1, false).timeout.connect(func():
+		if true:
+			explode(pos, radius, damage, shooter if shooter != null and is_instance_valid(shooter) else null, null))
 
 
 func ranked() -> Array:
@@ -856,6 +917,19 @@ func hostiles(who) -> Array:
 	return out
 
 
+## Weapon ids the current mode allows ([] = all of them).
+func weapon_pool() -> Array:
+	if rules != null and rules.has_method("weapon_pool"):
+		return rules.weapon_pool()
+	return []
+
+
+## The hand of cards offered to `p` (after a KO, or between zombie waves).
+func draw_cards(p) -> Array:
+	var banned: Array = rules.banned_cards() if rules != null and rules.has_method("banned_cards") else []
+	return Cards.draw(p.stats.card_draw, p.weapon, weapon_pool(), banned)
+
+
 ## Where a bot should head when it has nobody to fight (null = wander).
 func bot_goal(p):
 	if rules != null:
@@ -898,6 +972,14 @@ func pet_near(p):
 	for pet in pets:
 		if is_instance_valid(pet) and pet.global_position.distance_to(p.global_position) < 1.9:
 			return pet
+	return null
+
+
+## A door within arm's reach of `p` (door.gd), or null.
+func door_near(p):
+	for d in get_tree().get_nodes_in_group("doors"):
+		if not d.is_queued_for_deletion() and d.centre().distance_to(p.global_position + Vector3(0, 1.0, 0)) < 2.1:
+			return d
 	return null
 
 

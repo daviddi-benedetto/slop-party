@@ -24,6 +24,9 @@ var block := false
 var crouch := false
 var jump_held := false
 var interact := false
+var melee := false
+var taunt := -1
+var sens := 1.0
 
 var skill := 0.6            # 0..1, scales turn speed and accuracy
 
@@ -39,6 +42,7 @@ var _strafe_t := 0.0
 var _wobble := Vector2.ZERO
 var _wobble_t := 0.0
 var _stuck := 0.0
+var _gloated := false
 
 
 func label() -> String:
@@ -56,6 +60,8 @@ func update_buttons(player, delta: float) -> void:
 	dash = false
 	reload = false
 	block = false
+	melee = false
+	taunt = -1
 	if not player.alive:
 		_path = PackedVector3Array()
 		_target = null
@@ -86,8 +92,14 @@ func update_buttons(player, delta: float) -> void:
 		var t: float = dist / player.stats.bullet_speed
 		var aim: Vector3 = tpos + _target.velocity * t * 0.8 + Vector3.UP * 0.5 * player.stats.bullet_gravity * t * t
 		var err := _turn_toward(player, aim - eye, delta, lerpf(3.0, 7.0, skill), _wobble)
-		if err < 0.12 and _los_time > lerpf(0.55, 0.2, skill) and dist < 55.0:
+		var swinger: bool = player.stats.melee_weapon
+		if swinger:
+			fire = dist < player.stats.melee_range + 0.3 and err < 0.5
+		elif err < 0.12 and _los_time > lerpf(0.55, 0.2, skill) and dist < 55.0:
 			fire = true
+		# Anyone who gets in our face gets punched.
+		if not swinger and dist < 2.2 and err < 0.6 and randf() < (1.5 + skill * 3.0) * delta:
+			melee = true
 		var to_t := (tpos - eye)
 		to_t.y = 0.0
 		to_t = to_t.normalized()
@@ -95,7 +107,9 @@ func update_buttons(player, delta: float) -> void:
 		var fwd := 0.0
 		# Short-range weapons (Scatter) have to get close.
 		var reach: float = player.stats.bullet_speed * player.stats.bullet_life
-		if dist > minf(16.0, reach * 0.45):
+		if swinger:
+			fwd = 1.0 if dist > 1.6 else 0.0
+		elif dist > minf(16.0, reach * 0.45):
 			fwd = 1.0
 		elif dist < 6.0:
 			fwd = -1.0
@@ -138,6 +152,15 @@ func update_buttons(player, delta: float) -> void:
 			_turn_toward(player, world_move, delta, 6.0, Vector2.ZERO)
 		if player.ammo < player.stats.mag_size / 2:
 			reload = true
+
+	# Gloat over a fresh KO now and then (when nobody is shooting at us).
+	if player.kill_flash > 0.9:
+		if not _gloated:
+			_gloated = true
+			if randf() < 0.3 and player.since_damage > 2.0 and not (_target != null and _has_los):
+				taunt = randi() % 4
+	else:
+		_gloated = false
 
 	# Unstick: if we want to move but aren't, hop and shuffle.
 	var hspeed := Vector2(player.velocity.x, player.velocity.z).length()

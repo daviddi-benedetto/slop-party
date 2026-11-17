@@ -108,7 +108,8 @@ func _sig_ammo():
 
 func _sig_strip():
 	if game.rules != null:
-		return [size, game.rules.strip_sig()]
+		if game.rules.has_method("strip_sig"):
+			return [size, game.rules.strip_sig()]
 	var sig: Array = [size, game.kill_target]
 	for p in game.players:
 		sig.append(p.kills)
@@ -281,6 +282,10 @@ func _draw_ammo(ci: Control) -> void:
 		var rf: float = 1.0 - player.reload_left / player.stats.reload_time
 		_t(Vector2(0, h - 44 * s), "RELOADING", 15, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, ax, 700, ci)
 		UiKit.bar(ci, Rect2(ax - 130 * s, h - 36 * s, 130 * s, 12 * s), rf, UiKit.GOLD, s)
+	elif player.stats.melee_weapon:
+		# Blades need no ammunition: show the swing recharging instead.
+		var sf: float = 1.0 - clampf(player.melee_cd / maxf(player.stats.fire_interval, 0.05), 0.0, 1.0)
+		UiKit.bar(ci, Rect2(ax - 130 * s, h - 36 * s, 130 * s, 12 * s), sf, UiKit.GOLD if sf >= 1.0 else Color(0.8, 0.8, 0.9), s)
 	else:
 		var mag := "/%d" % player.stats.mag_size
 		var mw := UiKit.text_width(mag, 18 * s)
@@ -494,7 +499,7 @@ func _draw_card(card: Dictionary, centre: Vector2, sz: Vector2, rot: float, scl:
 # --------------------------------------------------------------------------
 
 func _draw_score_strip(ci: Control) -> void:
-	if game.rules != null:
+	if game.rules != null and game.rules.has_method("draw_strip"):
 		game.rules.draw_strip(self, ci, s)
 		return
 	var w := size.x

@@ -1,6 +1,8 @@
-# Fragdeck
+# Slop Game
 
-Local splitscreen first-person shooter for 1–6 players on one PC, with three
+*(formerly Fragdeck: the repository, the project folder and the settings file keep the old name.)*
+
+Local splitscreen first-person shooter for 1–6 players on one PC, with five
 game modes:
 
 - **Rounds** (default) – free-for-all deathmatch. Every time you die you are
@@ -15,10 +17,37 @@ game modes:
   the CPU), conquest flags A/B/C, tickets, parachute drops, a town with
   four-storey towers, warehouses, bunkers and trenches, and vehicles –
   buggies, tanks and helicopters.
+- **Gun Game** – free-for-all where every KO hands you the next weapon on a
+  ladder of all 31 (guns, then magic, then medieval arms, ending on the
+  Sword). Being finished off with a punch knocks you one rung down. First to
+  score with the last weapon wins. No cards, quick respawns.
+- **Medieval** – a free-for-all in the **Castle** with medieval arms only:
+  Sword, Battle Axe, Spear, Longbow, Crossbow, Throwing Knives and Powder
+  Bombs. Your block is a shield (it lasts longer and returns sooner), and
+  cards and weapon pads only deal medieval weapons.
 
 You play as one of seven customisable, rigged animal characters in stylised
 arenas with readable colour and atmosphere at every time of day.
 
+- **Melee with anything in hand:** click the right stick (or F) for a punch
+  that also smashes props, doors and crumbling walls. Eight melee cards
+  upgrade it (Brass Knuckles, Backstab, Haymaker, Parry, Bloodthirst, Bull
+  Rush...). Swords, axes and spears swing on the fire button and cleave
+  everyone in reach; every on-hit card (poison, frost, knockback, chain
+  lightning, lifesteal...) works on melee hits too.
+- **Magic:** Fire Hands (mage hands hurling fireballs), Frost Hands, the
+  Storm Staff (chain lightning) and the Arcane Staff (seeking missiles).
+  They are ordinary weapons under the hood, so every card works on them.
+- **Taunts:** four per player on the D-pad (keys 1–4): Wave, Dance, Nope and
+  Flex. Your camera pulls out so you can watch yourself; everyone else sees
+  the emote and a speech bubble.
+- **A world you can break:** doors open and close (Y / E; bots and zombies
+  open them themselves) and splinter when shot; chairs, crates, TVs and
+  barrels break apart; red fuel barrels and gas cans explode; ruined wall
+  stubs and the castle's bricked-up breach crumble brick by brick under
+  fire.
+- **Characters hold what they carry:** both hands reach the weapon (arm IK
+  on top of the walk, run, jump and crouch animations).
 - **A lived-in world:** furnished houses, loose physics props you can kick
   and shoot around (chairs, tables, books, boxes, bottles), window glass that
   shatters, dense forests, camps, sidewalks and crossings. Props never block
@@ -28,9 +57,10 @@ arenas with readable colour and atmosphere at every time of day.
 - **Seven selectable animals:** Bunny, Frog, Dino, Bird, Yeti, Fish and
   Monkroose. Each uses the imported creature rig and animations, with colour,
   hat and face customisation.
-- **20 weapons**, including Tesla (chain lightning), Cluster, Vortex, Ripper,
-  Sticky, Longshot, Frostbite and the akimbo Twins.
-- **69 powerup cards**, among them block perks that turn your block into a
+- **31 weapons**: 20 guns (including Tesla, Cluster, Vortex, Ripper, Sticky,
+  Longshot, Frostbite and the akimbo Twins), 4 magic weapons and 7 medieval
+  ones.
+- **77 powerup cards**, among them block perks that turn your block into a
   weapon (Blink Guard, Frost Guard, Radiant Guard, Echo Guard, Empower...)
   and oddities like Tiny, Giant, Goomba Stomp, Ground Slam, Buddy Drone and
   Chain Reaction.
@@ -58,30 +88,34 @@ arenas with readable colour and atmosphere at every time of day.
   give it a scarier tone while keeping the spaces readable.
 - **Time of day:** each match is day, sunset or night (or pick one in the
   lobby). Weather stays clear; large outdoor maps use a light distance haze.
-- **Character customisation:** animal, colour, hat and face per player,
-  remembered between sessions.
+- **Castle**, a seventh arena (and Medieval mode's home): curtain walls you
+  can walk on, towers, gatehouses with gates you can open or smash, a
+  three-storey keep, a market courtyard and a siege camp outside.
+- **Character customisation:** animal, colour, hat, back accessory and your
+  own **look speed** (LOOK, 1–10) per player, remembered between sessions.
 
 Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript.
-The map layouts, plush characters, textures, icons, sounds and music are
-generated in code. Guns, zombies, cars, trees, rocks and props are free
-public-domain (CC0) 3D models by [Quaternius](https://quaternius.com) in
-`assets/models/` (see `assets/models/LICENSE.txt`); the UI font is Fredoka
-(SIL Open Font License, see `fonts/OFL.txt`).
+The map layouts, textures, icons, sounds and music are generated in code.
+Characters, weapons, zombies, cars, trees, furniture, doors and castle
+pieces are public-domain (CC0) 3D models by Quaternius, Kenney and Kay
+Lousberg. **[ASSETS.md](ASSETS.md) lists every asset, its author, licence
+and download source**; `THIRD_PARTY_LICENSES.txt` carries the notices that
+ship with the game. The UI font is Fredoka (SIL Open Font License).
 
 ## Play
 
-Double-click **`Play.bat`**. It runs `build\Fragdeck.exe` if it exists,
+Double-click **`Play.bat`**. It runs `build\SlopGame.exe` if it exists,
 otherwise it runs the project from source with the bundled engine.
 
 In the lobby each player presses **A** on their own gamepad to take a seat
 (Space joins a keyboard + mouse player). Up/down picks what to customise
-(animal, colour, hat, face) and left/right changes it.
+(animal, colour, hat, back, look speed) and left/right changes it.
 
 | Lobby | Gamepad | Keyboard |
 |---|---|---|
 | Join / leave | A / B | Space / Backspace |
 | Customise | D-pad or left stick | WASD or arrows |
-| Game mode (Rounds / Zombies / Frontline) | RT | G |
+| Game mode (Rounds / Zombies / Frontline / Gun Game / Medieval) | RT | G |
 | Bots (Zombies: CPU allies; Frontline: teams versus / co-op) | Y | B |
 | Kill target (Frontline: tickets) | X | K |
 | Next map (Rounds and Zombies) | RB | M |
@@ -97,11 +131,12 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Aim down sights | LT (hold) | Right click (hold) |
 | Jump (hold with jetpack) | A | Space |
 | Crouch (hold) / slide (while running) | B | C or Ctrl |
-| Melee | Right-stick click | F |
+| Melee (punch, or swing a melee weapon) | Right-stick click | F or middle mouse |
+| Taunt (Wave / Dance / Nope / Flex) | D-pad up / right / down / left | 1 / 2 / 3 / 4 |
 | Dash | RB or left-stick click | Shift |
 | Block | LB | Q |
 | Reload | X | R |
-| Pick up weapon / get in or out of a vehicle | Y | E |
+| Pick up weapon / open or close a door / get in or out of a vehicle | Y | E |
 | Open parachute (Frontline drops and high falls) | A | Space |
 | Wall run | Jump at a wall and keep moving forward | same |
 | Mantle | Move forward into a ledge in the air | same |
@@ -122,8 +157,9 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 
 Reachable from the lobby and from the pause menu:
 
-- **Display:** fullscreen, V-Sync, frame rate limit (60 by default; with V-Sync
-  on a 60 Hz display the limiter steps aside so V-Sync alone paces frames).
+- **Display:** fullscreen, V-Sync, frame rate limit. The default limit is
+  **Display**: frames are paced by your screen's own refresh rate, which is
+  the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing (Off, FXAA,
   MSAA 2x/4x/8x), motion blur slider, render scale, shadows, ambient
   occlusion, bloom, scenery.
@@ -153,10 +189,10 @@ fonts/                Fredoka UI font + its licence
 docs/                 architecture + handoff notes
 tools/                build.bat, setup_engine.ps1
 engine/               bundled Godot editor + export templates  (not in git)
-build/Fragdeck.exe    standalone single-file game              (not in git)
+build/SlopGame.exe    standalone single-file game              (not in git)
 ```
 
-`build\Fragdeck.exe` on its own is also fully portable: it is a single file
+`build\SlopGame.exe` on its own is also fully portable: it is a single file
 with the game data embedded.
 
 ### Restoring from GitHub
@@ -170,7 +206,7 @@ tools\build.bat
 ```
 
 The first command re-downloads Godot 4.7.2 into `engine/`; the second
-re-exports `build\Fragdeck.exe`. A ready-made build is also attached to the
+re-exports `build\SlopGame.exe`. A ready-made build is also attached to the
 repository's GitHub Releases.
 
 ## Developing

@@ -38,6 +38,8 @@ var block := false            # edge triggered
 var reload := false           # edge triggered
 var interact := false         # edge triggered
 var melee := false            # edge triggered
+var taunt := -1               # edge triggered: 0-3 = which taunt (D-pad / keys 1-4), -1 none
+var sens := 1.0               # this player's own look-speed multiplier (lobby: LOOK)
 var ui_left := false          # edge triggered
 var ui_right := false         # edge triggered
 var ui_accept := false        # edge triggered
@@ -48,6 +50,7 @@ var stick_sens := 3.5
 
 var _prev := {}
 var _boost := 0.0
+var _look := Vector2.ZERO     # lightly smoothed right-stick vector
 
 
 func _init(dev := KEYBOARD) -> void:
@@ -80,16 +83,19 @@ func update_look(player, delta: float) -> void:
 	var zoom: float = player.zoom_factor()
 	var inv := -1.0 if Settings.v("invert_y") else 1.0
 	if device == KEYBOARD:
-		var ms: float = mouse_sens * (0.4 + Settings.v("mouse") * 0.15) * zoom
+		var ms: float = mouse_sens * (0.4 + Settings.v("mouse") * 0.15) * zoom * sens
 		player.yaw -= mouse_accum.x * ms
 		player.pitch -= mouse_accum.y * ms * inv
 		mouse_accum = Vector2.ZERO
 	else:
-		var v := _stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y, 1.6)
+		# A few milliseconds of smoothing takes the plastic jitter out of the
+		# thumbstick without adding lag you can feel.
+		_look = _look.lerp(_stick(JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y, 1.6), 1.0 - exp(-delta * 45.0))
+		var v := _look
 		# Held hard over: ramp the turn rate up for fast 180s.
 		_boost = minf(1.0, _boost + delta * 3.0) if absf(v.x) > 0.9 else 0.0
 		var f: float = player.game.aim_friction(player) if Settings.v("aim_assist") else 1.0
-		var ss: float = stick_sens * (0.4 + Settings.v("stick") * 0.15) * f * zoom
+		var ss: float = stick_sens * (0.4 + Settings.v("stick") * 0.15) * f * zoom * sens
 		player.yaw -= v.x * ss * (1.0 + 0.6 * _boost) * delta
 		player.pitch -= v.y * ss * 0.72 * delta * inv
 	player.pitch = clampf(player.pitch, -1.5, 1.5)
@@ -113,7 +119,11 @@ func update_buttons(_player, _delta: float) -> void:
 		block = _edge("block", Input.is_physical_key_pressed(KEY_Q))
 		reload = _edge("reload", Input.is_physical_key_pressed(KEY_R))
 		interact = _edge("interact", Input.is_physical_key_pressed(KEY_E))
-		melee = _edge("melee", Input.is_physical_key_pressed(KEY_F))
+		melee = _edge("melee", Input.is_physical_key_pressed(KEY_F) or Input.is_mouse_button_pressed(MOUSE_BUTTON_MIDDLE))
+		taunt = -1
+		for i in 4:
+			if _edge("taunt%d" % i, Input.is_physical_key_pressed(KEY_1 + i)):
+				taunt = i
 		ui_left = _edge("ui_left", Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 		ui_right = _edge("ui_right", Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))
 		ui_accept = _edge("ui_accept", Input.is_physical_key_pressed(KEY_SPACE) or Input.is_physical_key_pressed(KEY_ENTER) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
@@ -131,6 +141,11 @@ func update_buttons(_player, _delta: float) -> void:
 		reload = _edge("reload", Input.is_joy_button_pressed(device, JOY_BUTTON_X))
 		interact = _edge("interact", Input.is_joy_button_pressed(device, JOY_BUTTON_Y))
 		melee = _edge("melee", Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_STICK))
+		taunt = -1
+		var pad := [JOY_BUTTON_DPAD_UP, JOY_BUTTON_DPAD_RIGHT, JOY_BUTTON_DPAD_DOWN, JOY_BUTTON_DPAD_LEFT]
+		for i in 4:
+			if _edge("taunt%d" % i, Input.is_joy_button_pressed(device, pad[i])):
+				taunt = i
 		var sx := Input.get_joy_axis(device, JOY_AXIS_LEFT_X)
 		ui_left = _edge("ui_left", Input.is_joy_button_pressed(device, JOY_BUTTON_DPAD_LEFT) or sx < -0.6)
 		ui_right = _edge("ui_right", Input.is_joy_button_pressed(device, JOY_BUTTON_DPAD_RIGHT) or sx > 0.6)

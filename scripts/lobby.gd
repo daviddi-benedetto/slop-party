@@ -28,14 +28,16 @@ const Map = preload("res://scripts/map.gd")
 const MAX_PLAYERS := 6
 const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
-const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK"]
-const KEYS := ["kind", "color", "hat", "back"]
+const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK", "LOOK"]
+const KEYS := ["kind", "color", "hat", "back", "sens"]
+const SENS_STEPS := 10          # LOOK: this player's own look speed, 1-10
 const TIME_OPTS := ["random", "day", "sunset", "night"]
-const MODES := ["rounds", "zombies", "frontline"]
-const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE"]
+const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
+const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE", "GUN GAME", "MEDIEVAL"]
 const TICKETS := [50, 100, 150, 200, 300]
 const TAGLINES := ["FREE-FOR-ALL  -  EVERY KO DEALS YOU A POWERUP", "CO-OP SURVIVAL  -  ENDLESS WAVES OF ZOMBIES",
-	"TEAM WAR  -  FLAGS, TANKS, HELICOPTERS, PARACHUTES"]
+	"TEAM WAR  -  FLAGS, TANKS, HELICOPTERS, PARACHUTES", "EVERY KO HANDS YOU THE NEXT WEAPON  -  FINISH THE LADDER TO WIN",
+	"SWORDS, BOWS, AXES AND SHIELDS  -  A FREE-FOR-ALL IN THE CASTLE"]
 
 var seats: Array = []        # [{device, kind, color, hat, face, row}] in join order
 var bots := 0
@@ -70,11 +72,10 @@ func _ready() -> void:
 			"back": randi() % UiKit.BACK_NAMES.size()})
 	bots = int(Settings.lobby.get("bots", 0))
 	target_i = clampi(int(Settings.lobby.get("target", 2)), 0, KILL_TARGETS.size() - 1)
-	map_i = clampi(int(Settings.lobby.get("map", 0)), 0, Map.MAPS.size() - 1)
+	map_i = clampi(int(Settings.lobby.get("map", 0)), 0, Map.ARENAS.size() - 1)
 	time_i = clampi(int(Settings.lobby.get("time", 0)), 0, TIME_OPTS.size() - 1)
 	mode_i = clampi(int(Settings.lobby.get("mode", 0)), 0, MODES.size() - 1)
 	versus = bool(Settings.lobby.get("versus", true))
-	map_i = mini(map_i, Map.FRONTLINE - 1)
 	_options = SettingsMenu.new()
 	add_child(_options)
 	_options.closed.connect(func():
@@ -230,7 +231,7 @@ func _process(delta: float) -> void:
 			var room := MAX_PLAYERS - seats.size()
 			bots = 0 if bots >= room else bots + 1
 		Sfx.play("tick", -8.0)
-	if target_step and mode != "zombies":
+	if target_step and mode != "zombies" and mode != "gungame":
 		target_i = (target_i + 1) % KILL_TARGETS.size()
 		Sfx.play("tick", -8.0)
 	if time_step:
@@ -239,13 +240,17 @@ func _process(delta: float) -> void:
 	if map_step:
 		if mode == "frontline":
 			_say("Frontline is fought on its own huge map")
+		elif mode == "zombies":
+			_say("Zombies is played in the Quarantine zone")
+		elif mode == "medieval":
+			_say("Medieval is fought in the Castle")
 		else:
-			map_i = (map_i + 1) % Map.FRONTLINE
+			map_i = (map_i + 1) % Map.ARENAS.size()
 			Sfx.play("tick", -6.0, 1.2)
 	if want_start:
 		if seats.is_empty():
 			_say("Someone has to join first!")
-		elif mode == "rounds" and seats.size() + bots < 2:
+		elif mode in ["rounds", "gungame", "medieval"] and seats.size() + bots < 2:
 			_say("Need 2 or more fighters - add a player or a bot")
 		else:
 			_start()
@@ -271,7 +276,9 @@ func _join(device: int, quiet := false) -> void:
 		return
 	var i := seats.size()
 	var saved: Array = Settings.lobby.get("seat%d" % i, [])
-	var seat := {"device": device, "kind": [0, 15, 2, 18, 4, 19][i % 6], "color": i, "hat": 0, "face": 0, "back": 0, "row": 0}
+	var seat := {"device": device, "kind": i % UiKit.KIND_NAMES.size(), "color": i, "hat": 0, "face": 0, "back": 0, "sens": 4, "row": 0}
+	if saved.size() >= 6:
+		seat.sens = clampi(int(saved[5]), 0, SENS_STEPS - 1)
 	if saved.size() >= 5:
 		seat.back = posmod(int(saved[4]), UiKit.BACK_NAMES.size())
 	if saved.size() >= 4:
@@ -302,7 +309,11 @@ func _edit(seat_i: int, dh: int, dv: int) -> void:
 	if dh == 0:
 		return
 	var key: String = KEYS[seat.row]
-	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.BACK_NAMES.size()][seat.row]
+	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.BACK_NAMES.size(), SENS_STEPS][seat.row]
+	if key == "sens":
+		seat.sens = clampi(seat.sens + dh, 0, SENS_STEPS - 1)
+		Sfx.play("tick", -8.0, 0.8 + seat.sens * 0.06)
+		return
 	seat[key] = posmod(seat[key] + dh, count)
 	if key == "color":
 		# Two players never share a colour.
@@ -360,7 +371,7 @@ func _sync_stage() -> void:
 
 func _remember() -> void:
 	for i in seats.size():
-		Settings.lobby["seat%d" % i] = [seats[i].kind, seats[i].color, seats[i].hat, seats[i].face, seats[i].back]
+		Settings.lobby["seat%d" % i] = [seats[i].kind, seats[i].color, seats[i].hat, seats[i].face, seats[i].back, seats[i].sens]
 	Settings.lobby["bots"] = bots
 	Settings.lobby["target"] = target_i
 	Settings.lobby["map"] = map_i
@@ -378,9 +389,10 @@ func _start() -> void:
 		var look := _look(i)
 		var human := i < seats.size()
 		parts.append({"device": seats[i].device if human else -2, "bot": not human, "view": human,
-			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back})
+			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back,
+			"sens": (seats[i].sens + 1) if human else 5})
 	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
-	start.emit({"participants": parts, "kill_target": target, "map": map_i, "time": TIME_OPTS[time_i], "mode": mode,
+	start.emit({"participants": parts, "kill_target": target, "map": Map.ARENAS[map_i], "time": TIME_OPTS[time_i], "mode": mode,
 		"teams": "versus" if versus else "coop"})
 
 
@@ -395,7 +407,7 @@ func _draw() -> void:
 	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.0, 0.0, 0.03, 0.55))
 
 	# Bouncing logo.
-	var title := "FRAGDECK"
+	var title := "SLOP GAME"
 	var px := 150.0 * s
 	var total := 0.0
 	var widths: Array = []
@@ -428,7 +440,7 @@ func _draw() -> void:
 	var by := h - 162 * s
 	var pad: bool = not Input.get_connected_joypads().is_empty()
 	var mode: String = MODES[mode_i]
-	var map_info: Dictionary = Map.MAPS[Map.FRONTLINE if mode == "frontline" else (Map.ZOMBIE if mode == "zombies" else map_i)]
+	var map_info: Dictionary = Map.MAPS[{"frontline": Map.FRONTLINE, "zombies": Map.ZOMBIE, "medieval": Map.CASTLE}.get(mode, Map.ARENAS[map_i])]
 	var bot_chip := ["Y" if pad else "B", "BOTS", str(bots), 200.0]
 	var goal_chip := ["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i], 230.0]
 	if mode == "frontline":
@@ -437,6 +449,8 @@ func _draw() -> void:
 	elif mode == "zombies":
 		bot_chip = ["Y" if pad else "B", "ALLIES", str(bots), 210.0]
 		goal_chip = ["X" if pad else "K", "WAVES", "ENDLESS", 250.0]
+	elif mode == "gungame":
+		goal_chip = ["X" if pad else "K", "LADDER", "ALL WEAPONS", 300.0]
 	var chips := [
 		["RT" if pad else "G", "MODE", MODE_LABELS[mode_i], 300.0],
 		bot_chip,
@@ -476,7 +490,7 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(-mw * 0.5, 9 * s), message, 26 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, mw, 700, 0.12)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B crouch  -  R3 melee  -  RB dash  -  LB block  -  X reload  -  Y pick up          KEYBOARD   LMB  -  RMB  -  F melee  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
+	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B crouch  -  R3 melee  -  RB dash  -  LB block  -  X reload  -  Y use  -  D-pad taunt          KEYBOARD   LMB  -  RMB  -  F melee  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
 		16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w, 500, 0.12)
 
 
@@ -500,8 +514,8 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 			var tr := Rect2(r.position.x + 14 * s + c * tab_w, 38 * s, tab_w - 4 * s, 24 * s)
 			var on: bool = c == seat.row
 			UiKit.panel(self, tr, col if on else Color(1, 1, 1, 0.08), 12 * s)
-			draw_string(UiKit.font(700), tr.position + Vector2(0, 17 * s), CATEGORIES[c], HORIZONTAL_ALIGNMENT_CENTER, tr.size.x, int(13 * s), UiKit.INK if on else Color(1, 1, 1, 0.6))
-		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back]][seat.row]
+			draw_string(UiKit.font(700), tr.position + Vector2(0, 17 * s), CATEGORIES[c], HORIZONTAL_ALIGNMENT_CENTER, tr.size.x, int(11 * s), UiKit.INK if on else Color(1, 1, 1, 0.6))
+		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back], "SPEED %d" % (seat.sens + 1)][seat.row]
 		var wob := sin(_t * 6.0) * 3 * s
 		UiKit.text(self, Vector2(r.position.x + 20 * s - wob, 102 * s), "<", 30 * s, UiKit.GOLD)
 		UiKit.text(self, Vector2(r.position.x, 102 * s), ">", 30 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, pw - 20 * s - wob)

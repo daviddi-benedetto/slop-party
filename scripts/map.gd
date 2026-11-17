@@ -50,6 +50,9 @@ const Models = preload("res://scripts/models.gd")
 const Prop = preload("res://scripts/prop.gd")
 const Glass = preload("res://scripts/glass.gd")
 const ZombieMap = preload("res://scripts/map_zombie.gd")
+const CastleMap = preload("res://scripts/map_castle.gd")
+const Door = preload("res://scripts/door.gd")
+const Rubble = preload("res://scripts/rubble.gd")
 
 signal nav_built
 
@@ -60,7 +63,8 @@ const CLUTTER := [["survival/Box", 3.0, 5.0], ["survival/Barrel", 3.0, 10.0], ["
 	["furniture/Cardboard_Box_Closed", 2.4, 2.0], ["survival/Bottle", 2.6, 0.5], ["survival/Bucket", 2.6, 1.5],
 	["furniture/Chair", 2.15, 4.0], ["toon/Prop/Pallet", 0.8, 7.0], ["furniture/Trashcan", 2.15, 3.0],
 	["blaster/Crate_Small", 1.6, 6.0], ["furniture/Books", 2.6, 0.6], ["survival/Tree_Log_Small", 2.4, 9.0],
-	["furniture/Stool_Bar", 2.15, 3.0], ["blaster/Target_Large", 2.5, 1.5]]
+	["furniture/Stool_Bar", 2.15, 3.0], ["blaster/Target_Large", 2.5, 1.5],
+	["toon/Prop/Exploding_Barrel", 1.0, 10.0], ["toon/Prop/Gas_Can", 0.8, 5.0], ["fantasy/Crate_Wooden", 0.9, 6.0], ["fantasy/Barrel", 1.0, 12.0]]
 
 const DEPTH := 3.6
 const FLOOR_H := 3.4
@@ -78,9 +82,12 @@ const MAPS := [
 	# Frontline mode only (not in the lobby's map list): 200 x 140 m.
 	{"name": "FRONTLINE", "size": "HUGE", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 20.0},
 	{"name": "QUARANTINE", "size": "HUGE", "theme": "suburb", "half": Vector2(72, 52), "wall": 3.0, "nav_step": 3.0, "nav_top": 16.0},
+	{"name": "CASTLE", "size": "LARGE", "theme": "castle", "half": Vector2(46, 34), "wall": 1.8, "nav_step": 2.0, "nav_top": 16.0},
 ]
 const FRONTLINE := 6             # index of the Frontline map; the lobby lists maps below it
 const ZOMBIE := 7                # large Zombies-only indoor/outdoor map
+const CASTLE := 8                # Medieval mode's home; also in the lobby's map list
+const ARENAS := [0, 1, 2, 3, 4, 5, 8]   # maps the lobby offers (Rounds, Gun Game)
 const TIMES := ["day", "sunset", "night"]
 
 const DAY := {
@@ -251,6 +258,31 @@ const THEMES := {
 		"leaf": [Color(0.16, 0.4, 0.15), Color(0.28, 0.5, 0.14)], "grass": [Color(0.12, 0.3, 0.08), Color(0.36, 0.6, 0.2)],
 		"scenery": "suburb", "motes": [Color(1.0, 1.0, 0.7), Color(0.8, 1.0, 0.6)], "mote_rise": 0.05,
 	},
+	"castle": {
+		"mats": {
+			"ground": [Color(0.28, 0.42, 0.18), "lawn", 0.1, 0.9, 0.0],
+			"path": [Color(0.5, 0.48, 0.44), "rock", 0.22, 0.85, 0.0],
+			"road": [Color(0.4, 0.31, 0.22), "soft", 0.15, 0.95, 0.0],
+			"wall": [Color(0.58, 0.56, 0.52), "bricks", 0.3, 0.9, 0.0],
+			"block_a": [Color(0.66, 0.63, 0.58), "bricks", 0.35, 0.9, 0.0],
+			"block_b": [Color(0.45, 0.43, 0.42), "rock", 0.3, 0.9, 0.0],
+			"block_c": [Color(0.27, 0.28, 0.33), "shingles", 0.4, 0.8, 0.0],
+			"roof_red": [Color(0.5, 0.2, 0.16), "shingles", 0.4, 0.8, 0.0],
+			"deck": [Color(0.46, 0.32, 0.2), "planks", 0.5, 0.75, 0.0],
+			"crate": [Color(0.5, 0.36, 0.22), "planks", 0.6, 0.7, 0.0],
+			"trim": [Color(0.74, 0.7, 0.62), "", 1.0, 0.8, 0.0],
+			"hay": [Color(0.8, 0.66, 0.32), "soft", 0.5, 0.95, 0.0],
+			"metal": [Color(0.4, 0.4, 0.44), "", 1.0, 0.4, 0.8],
+			"soil": [Color(0.3, 0.22, 0.15), "soft", 0.3, 0.9, 0.0],
+		},
+		"accent_a": Color(1.0, 0.62, 0.25), "accent_b": Color(0.8, 0.2, 0.2), "neon": false, "paths": false,
+		"night": {"sky": {"top": Color(0.01, 0.02, 0.07), "horizon": Color(0.12, 0.14, 0.28), "ground": Color(0.02, 0.02, 0.05),
+			"sun": Color(0.85, 0.9, 1.0), "cloud_color": Color(0.13, 0.14, 0.24), "clouds": 0.5, "stars": 1.0, "aurora": 0.0},
+			"sun_color": Color(0.62, 0.74, 1.0), "sun_energy": 0.8, "ambient": 0.6, "fog": Color(0.06, 0.07, 0.13), "fog_density": 0.004},
+		"sun_yaw": 40.0, "weathers": ["clear"],
+		"leaf": [Color(0.16, 0.38, 0.14), Color(0.3, 0.46, 0.14)], "grass": [Color(0.14, 0.3, 0.08), Color(0.4, 0.6, 0.22)],
+		"scenery": "castle", "motes": [Color(1.0, 0.9, 0.6), Color(0.9, 1.0, 0.7)], "mote_rise": 0.05,
+	},
 	"front": {
 		"mats": {
 			"ground": [Color(0.3, 0.42, 0.2), "lawn", 0.08, 0.9, 0.0],
@@ -374,7 +406,9 @@ func build(index := 0, time_of_day := "night") -> void:
 		5: Places.suburb(self)
 		6: Front.frontline(self)
 		7: ZombieMap.build(self)
+		8: CastleMap.build(self)
 		_: _layout_yard()
+	_ruins()
 	_build_floor()
 	_build_scenery()
 	_flush()
@@ -399,7 +433,11 @@ func _physics_process(delta: float) -> void:
 
 ## Song for this map (a key of sfx.gd TRACKS).
 func music_key() -> String:
-	return "frontline" if map_index == FRONTLINE else "map%d" % map_index
+	if map_index == FRONTLINE:
+		return "frontline"
+	if map_index == ZOMBIE:
+		return "zombies"
+	return "castle" if map_index == CASTLE else "map%d" % map_index
 
 
 func label() -> String:
@@ -938,6 +976,86 @@ func _glass(pos: Vector3, w: float, h: float, along_z := false, mirror := true) 
 		add_child(g)
 
 
+## A hinged door (door.gd). `hinge` is the hinge post at floor level; the
+## leaf runs from there along +X turned by `yaw`. It opens for bots, on the
+## interact button for humans, and can be smashed.
+func _door(hinge: Vector3, yaw := 0.0, w := 1.7, h := 2.45, model := "doors/Door_Brown", mirror := true, hp := 110.0, label := "DOOR") -> void:
+	for k in (2 if mirror else 1):
+		var d = Door.new()
+		d.width = w
+		d.height = h
+		d.model = model
+		d.hp = hp
+		d.label = label
+		d.position = hinge if k == 0 else Vector3(-hinge.x, hinge.y, -hinge.z)
+		d.rotation.y = yaw + (PI if k == 1 else 0.0)
+		add_child(d)
+
+
+## A wall that crumbles under fire (rubble.gd). `pos` = middle of its foot,
+## `size` = length, height, thickness; the length runs along X turned by yaw.
+func _weak_wall(pos: Vector3, size: Vector3, yaw := 0.0, col := Color(0.6, 0.56, 0.5), hp := 150.0, mirror := true) -> void:
+	for k in (2 if mirror else 1):
+		var r = Rubble.new()
+		r.size = size
+		r.color = col
+		r.hp = hp
+		r.position = pos if k == 0 else Vector3(-pos.x, pos.y, -pos.z)
+		r.rotation.y = yaw + (PI if k == 1 else 0.0)
+		add_child(r)
+
+
+## A wall torch: bracket model plus a warm flickerless light.
+func _torch(pos: Vector3, mirror := true) -> void:
+	_model("fantasy/Torch_Metal", pos, 0.0, 1.5, mirror, "none")
+	_glow(pos + Vector3(0, 0.9, 0.3), Color(1.0, 0.6, 0.25), 9.0, 1.5, mirror)
+
+
+## Free-standing ruined wall stubs on open ground: cover that falls apart
+## when shot or blown up. Seeded, kept away from spawns, pads, holes and
+## whatever the layout already built.
+func _ruins() -> void:
+	if indoor:
+		return
+	var want := clampi(int(half_x * half_z / 260.0), 3, 9)
+	var boxes: Array = []
+	for cs in _body.get_children():
+		if cs is CollisionShape3D and cs.shape is BoxShape3D:
+			var ext: Vector3 = (cs.shape as BoxShape3D).size * 0.5
+			var r := maxf(ext.x, ext.z)
+			var o: Vector3 = cs.transform.origin
+			if o.y - ext.y < 2.5 and o.y + ext.y > 0.2:
+				boxes.append([Vector2(o.x, o.z), ext, r])
+	var col: Color = theme.mats.block_a[0] if theme.mats.has("block_a") else Color(0.6, 0.56, 0.5)
+	var placed := 0
+	var tries := 0
+	while placed < want and tries < 200:
+		tries += 1
+		var p := Vector2(_rng.randf_range(-half_x + 5.0, half_x - 5.0), _rng.randf_range(-half_z + 5.0, half_z - 5.0))
+		var ok := p.length() > 4.0
+		for b in boxes:
+			var d: Vector2 = (p - b[0]).abs()
+			if d.x < b[1].x + 3.2 and d.y < b[1].z + 3.2:
+				ok = false
+				break
+		if ok:
+			for h in _holes:
+				if (h as Rect2).grow(2.5).has_point(p):
+					ok = false
+			for s in spawn_points:
+				if Vector2(s.x, s.z).distance_to(p) < 3.5:
+					ok = false
+			for s in pickup_spots:
+				if Vector2(s[1].x, s[1].z).distance_to(p) < 3.5:
+					ok = false
+		if not ok:
+			continue
+		var len := _rng.randf_range(2.6, 4.2)
+		_weak_wall(Vector3(p.x, 0, p.y), Vector3(len, _rng.randf_range(1.5, 2.4), 0.45), _rng.randf() * PI, col, 110.0, false)
+		boxes.append([p, Vector3(2.5, 1.0, 2.5), 2.5])
+		placed += 1
+
+
 ## Furniture for one storey of a building (loose props): a dining room, a
 ## lounge or an office, chosen with the map's seeded random generator.
 ## The stairs run along the west / east walls, so the middle is free.
@@ -1423,12 +1541,17 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		if f == 0:
 			south = [[c.x, 1.8, 0.0, 2.5]]
 			east = [[c.z, 1.8, 0.0, 2.5]]
+		# Doors in both ground-floor doorways.
+		if f == 0 and opts.get("doors", true):
+			var dm: String = opts.get("door_model", "doors/Door_Brown" if _rng.randf() < 0.5 else "doors/Door_White")
+			_door(Vector3(c.x - 0.9, y0, z0 + t * 0.5), 0.0, 1.8, 2.5, dm, mirror)
+			_door(Vector3(x1 - t * 0.5, y0, c.z - 0.9), -PI * 0.5, 1.8, 2.5, dm, mirror)
 		# Glass in every window (not the doors), furniture on every floor.
-		for w in win_x:
+		for w in (win_x if opts.get("glass", true) else []):
 			_glass(Vector3(w[0], y0 + 1.625, z1 - t * 0.5), 1.4, 1.35, false, mirror)
 			if f > 0:
 				_glass(Vector3(w[0], y0 + 1.625, z0 + t * 0.5), 1.4, 1.35, false, mirror)
-		for w in win_z:
+		for w in (win_z if opts.get("glass", true) else []):
 			_glass(Vector3(x0 + t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
 			if f > 0:
 				_glass(Vector3(x1 - t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
@@ -2170,6 +2293,7 @@ func _build_scenery() -> void:
 		"ice": _scenery_spires(54 if rich else 22, Color(0.25, 0.42, 0.52), theme.accent_a, true)
 		"suburb": _scenery_suburb(rich)
 		"front": Front.scenery(self, rich)
+		"castle": _scenery_trees(46 if rich else 18, 5.0, 40.0)
 		"stadium":
 			_scenery_city(22 if rich else 10, 40.0)
 			_scenery_trees(30 if rich else 12, 4.0, 30.0)

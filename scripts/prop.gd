@@ -13,16 +13,25 @@ extends RigidBody3D
 const Models = preload("res://scripts/models.gd")
 
 const LAYER := 4
+const Debris = preload("res://scripts/debris.gd")
+const Fx = preload("res://scripts/fx.gd")
+## Models that blow up when they break.
+const EXPLOSIVE := ["toon/Prop/Exploding_Barrel", "toon/Prop/Gas_Can", "toon/Prop/Gas_Tank"]
 
 var is_glass := false
 var _path := ""
 var _scl := 1.0
+var hp := 40.0                # damage it takes before it breaks (hurt())
+var _size := Vector3.ONE
+var _tint := Color(0.55, 0.42, 0.3)
+var _dead := false
 
 
 func setup(path: String, scl: float, weight: float) -> void:
 	_path = path
 	_scl = scl
 	mass = weight
+	hp = 18.0 + weight * 5.0
 
 
 func _ready() -> void:
@@ -43,6 +52,12 @@ func _ready() -> void:
 		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		if b.size.length() * _scl < 2.6:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_size = b.size * _scl
+	for part in Models.parts(_path):
+		var m0: Material = (part[0] as Mesh).surface_get_material(0)
+		if m0 is StandardMaterial3D and (m0 as StandardMaterial3D).albedo_texture == null:
+			_tint = (m0 as StandardMaterial3D).albedo_color
+			break
 	var shape := BoxShape3D.new()
 	shape.size = (b.size * _scl).max(Vector3(0.06, 0.06, 0.06))
 	var cs := CollisionShape3D.new()
@@ -63,6 +78,28 @@ func knock(impulse: Vector3, at: Vector3) -> void:
 	if impulse.length() > limit:
 		impulse = impulse.normalized() * limit
 	apply_impulse(impulse, at - global_position)
+
+
+## Damage from bullets, melee and explosions. At 0 the prop breaks into
+## splinters; fuel barrels and gas cans go off like a bomb a moment later.
+func hurt(amount: float, who = null) -> void:
+	if _dead:
+		return
+	hp -= amount
+	if hp > 0.0:
+		return
+	_dead = true
+	var world := get_parent()
+	var centre := global_transform * Vector3(0, _size.y * 0.5, 0)
+	var chunk := (_size * 0.3).clamp(Vector3.ONE * 0.06, Vector3.ONE * 0.35)
+	Debris.burst(world, Transform3D(global_transform.basis.orthonormalized(), centre), _size * 0.8, chunk, _tint, clampi(int(_size.length() * 5.0), 3, 9), linear_velocity * 0.5, 3.0)
+	Fx.puff(world, centre, Color(_tint.lightened(0.4), 0.6), 5, _size.length() * 0.4)
+	Sfx.play_at("wood", global_position, -5.0, randf_range(0.9, 1.3))
+	if _path in EXPLOSIVE:
+		var game = get_tree().get_first_node_in_group("game")
+		if game != null:
+			game.explode_later(centre, 4.2, 75.0, who if who != null and is_instance_valid(who) else null)
+	queue_free()
 
 
 ## Shove every prop (and break every glass pane) within `radius` of `pos`,

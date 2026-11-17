@@ -277,3 +277,41 @@ static func damage_number(parent: Node, pos: Vector3, amount: float, crit: bool,
 	tw.tween_property(l, "modulate:a", 0.0, 0.25).set_delay(0.45)
 	tw.tween_property(l, "outline_modulate:a", 0.0, 0.25).set_delay(0.45)
 	tw.chain().tween_callback(l.queue_free)
+
+
+## A jagged lightning bolt from a to b that fades in a blink.
+static func bolt(parent: Node, a: Vector3, b: Vector3, color: Color, width := 0.04) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.albedo_color = Color(color.lerp(Color(0.7, 0.9, 1.0), 0.6) * 2.0, 1.0)
+	var root := Node3D.new()
+	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	parent.add_child(root)
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = width
+	mesh.bottom_radius = width
+	mesh.height = 1.0
+	mesh.radial_segments = 5
+	mesh.rings = 1
+	var n := clampi(int(a.distance_to(b) / 2.5), 2, 7)
+	var prev := a
+	for i in range(1, n + 1):
+		var p := a.lerp(b, float(i) / n)
+		if i < n:
+			p += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * minf(0.45, a.distance_to(b) * 0.06)
+		var d := p - prev
+		if d.length() > 0.01:
+			var mi := MeshInstance3D.new()
+			mi.mesh = mesh
+			mi.material_override = mat
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			var y := d.normalized()
+			var x := y.cross(Vector3.UP if absf(y.y) < 0.95 else Vector3.RIGHT).normalized()
+			mi.transform = Transform3D(Basis(x, y * d.length(), x.cross(y)), (prev + p) * 0.5)
+			root.add_child(mi)
+		prev = p
+	var tw := root.create_tween()
+	tw.tween_property(mat, "albedo_color:a", 0.0, 0.2)
+	tw.tween_callback(root.queue_free)

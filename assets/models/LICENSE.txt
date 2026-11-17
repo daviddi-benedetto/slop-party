@@ -20,3 +20,11 @@ Added later, from the same mirror, all CC0 1.0 (public domain):
   houses/     City Kit (Suburban) - Kenney
   survival/   Survival Kit - Kenney
   animals/    Ultimate Monsters (bipedal creatures) - Quaternius
+
+Added for v0.12 (castle, fantasy, village, medieval, doors, retro): Kenney
+Castle Kit / Modular Buildings / Retro Fantasy Kit / Graveyard Kit / Mini
+kits, Quaternius Fantasy Props MegaKit / Medieval Village / Pirate Kit, and
+KayKit Skeletons / RPG Tools by Kay Lousberg. All CC0 1.0.
+
+The complete, per-file list with authors and download links is ASSETS.md in
+the project root.

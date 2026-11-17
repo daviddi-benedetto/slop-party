@@ -90,7 +90,8 @@ func _fill() -> void:
 	for c in _holder.get_children():
 		c.queue_free()
 	if kind == "weapon":
-		weapon_id = 1 + randi() % (Weapons.LIST.size() - 1)
+		var allowed: Array = game.weapon_pool() if game != null else []
+		weapon_id = allowed[randi() % allowed.size()] if not allowed.is_empty() else 1 + randi() % (Weapons.LIST.size() - 1)
 		var model = Viewmodel.new()
 		_holder.add_child(model)
 		model.build(Color(1.0, 0.75, 0.25), 1, weapon_id, false)

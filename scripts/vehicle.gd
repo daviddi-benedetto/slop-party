@@ -93,7 +93,7 @@ func setup(kind_name: String, xf: Transform3D, team_id: int, team_color: Color) 
 
 func _ready() -> void:
 	collision_layer = 2
-	collision_mask = 1 | 2
+	collision_mask = 1 | 2 | 8
 	floor_max_angle = deg_to_rad(42.0)
 	floor_snap_length = 0.0 if type == "heli" else 0.7
 	var size: Vector3 = _spec.size

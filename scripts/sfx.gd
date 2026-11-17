@@ -48,6 +48,9 @@ const TRACKS := {
 	# Suburb: sunny slap-bass groove.
 	"map5": {"bpm": 108.0, "bass": "slap", "keys": "stab", "drums": "funk", "lead": 0.17, "pad": 0.0, "lead_shift": 5,
 		"chords": [[31, 59, 62, 66, 69], [36, 60, 64, 67, 71], [28, 59, 62, 67, 71], [33, 57, 61, 64, 69]]},
+	# Castle / Medieval: a slow modal march with bells.
+	"castle": {"bpm": 96.0, "bass": "pump", "keys": "bell", "drums": "half", "lead": 0.18, "pad": 0.08, "lead_shift": 0,
+		"chords": [[38, 57, 62, 65, 69], [36, 55, 60, 64, 67], [41, 57, 60, 65, 69], [33, 57, 60, 64, 69]]},
 	# Zombies: dark, tense half-time.
 	"zombies": {"bpm": 92.0, "bass": "pump", "keys": "bell", "drums": "half", "lead": 0.12, "pad": 0.07, "lead_shift": 3,
 		"chords": [[28, 55, 59, 64, 67], [24, 55, 60, 64, 67], [26, 57, 62, 65, 69], [23, 54, 59, 62, 66]]},
@@ -199,6 +202,27 @@ func _build_effects() -> void:
 	for pair in [["twins", "burst"], ["tesla", "zapper"], ["cluster", "lobber"], ["vortex", "bubbler"], ["ripper", "pinball"],
 			["sticky", "lobber"], ["longshot", "rail"], ["frost", "flamer"]]:
 		_streams["shot_" + pair[0]] = _streams["shot_" + pair[1]]
+	# Melee, taunts, magic, medieval weapons, doors and breaking things.
+	_streams["swing"] = _make(0.2, 0.3, func(t, d): return _noise() * 0.6 * pow(sin(PI * t / d), 2.0) * (0.6 + 0.4 * sin(t * 60.0)))
+	_streams["thump"] = _make(0.2, 0.2, func(t, _d): return (_sweep(t, 170.0, 60.0, 26.0) * 1.0 + _noise() * 0.5 * exp(-t * 60.0)) * exp(-t * 20.0))
+	_streams["slash"] = _make(0.25, 1.0, func(t, _d): return _noise() * 0.35 * exp(-t * 24.0) + _bell(t, 2400.0, 16.0) * 0.14 + _bell(t, 3300.0, 20.0) * 0.1)
+	_streams["taunt0"] = _make(0.5, 1.0, func(t, _d): return (_bell(t, 784.0, 10.0) + _bell(t - 0.14, 1046.0, 9.0)) * 0.3)
+	_streams["taunt1"] = _make(0.8, 1.0, func(t, _d): return (_bell(t, 523.0, 12.0) + _bell(t - 0.12, 659.0, 12.0) + _bell(t - 0.24, 784.0, 12.0) + _bell(t - 0.36, 1046.0, 12.0) + _bell(t - 0.48, 784.0, 12.0) + _bell(t - 0.6, 1046.0, 8.0)) * 0.24)
+	_streams["taunt2"] = _make(0.5, 0.6, func(t, _d): return (_sweep(t, 420.0, 260.0, 6.0) * 0.4 * exp(-t * 9.0) + _sweep(t - 0.2, 330.0, 200.0, 6.0) * (0.4 if t > 0.2 else 0.0) * exp(-(t - 0.2) * 9.0)))
+	_streams["taunt3"] = _make(0.6, 1.0, func(t, _d): return (_bell(t, 392.0, 8.0) + _bell(t - 0.1, 523.0, 8.0) + _bell(t - 0.2, 784.0, 6.0)) * 0.3)
+	_streams["door"] = _make(0.35, 0.25, func(t, d): return (sin(TAU * (160.0 + 90.0 * sin(t * 25.0)) * t) * 0.3 + _noise() * 0.15) * sin(PI * t / d))
+	_streams["wood"] = _make(0.35, 0.35, func(t, _d): return _noise() * 0.9 * exp(-t * 26.0) + _sweep(t, 300.0, 110.0, 20.0) * 0.6 * exp(-t * 18.0) + (_noise() * 0.5 * exp(-(t - 0.08) * 50.0) if t > 0.08 else 0.0))
+	_streams["crumble"] = _make(1.1, 0.14, func(t, _d): return _noise() * (1.1 * exp(-t * 4.0)) * (0.6 + 0.4 * sin(t * 47.0)) + _sweep(t, 80.0, 36.0, 5.0) * 0.7 * exp(-t * 5.0))
+	_streams["shot_hands_fire"] = _make(0.4, 0.25, func(t, d): return _noise() * 0.7 * sin(PI * minf(t / d, 1.0)) * exp(-t * 5.0) + _sweep(t, 300.0, 90.0, 9.0) * 0.5 * exp(-t * 9.0))
+	_streams["shot_staff_storm"] = _make(0.4, 1.0, func(t, _d): return ((1.0 if fmod(t * (700.0 + 3000.0 * t), 1.0) < 0.5 else -1.0) * 0.3 + _noise() * 0.5 * exp(-t * 30.0)) * exp(-t * 9.0) + _noise() * 0.2 * exp(-t * 5.0))
+	_streams["shot_hands_frost"] = _make(0.25, 1.0, func(t, _d): return (_bell(t, 2093.0, 16.0) + _bell(t - 0.03, 3136.0, 18.0)) * 0.22 + _noise() * 0.25 * exp(-t * 30.0))
+	_streams["shot_staff_arcane"] = _make(0.22, 0.8, func(t, _d): return sin(TAU * (500.0 * t + 2400.0 * t * t) + sin(t * 110.0) * 1.2) * 0.4 * exp(-t * 12.0))
+	_streams["shot_bow"] = _make(0.3, 0.6, func(t, _d): return sin(TAU * 190.0 * t + sin(t * 300.0) * 2.0) * 0.5 * exp(-t * 20.0) + _noise() * 0.3 * exp(-t * 40.0))
+	_streams["shot_crossbow"] = _make(0.3, 0.35, func(t, _d): return (_noise() * 0.9 * exp(-t * 55.0) + _sweep(t, 260.0, 90.0, 22.0) * 0.8 * exp(-t * 16.0)))
+	_streams["shot_knives"] = _streams["swing"]
+	_streams["shot_bomb"] = _streams["swing"]
+	for melee_style in ["sword", "axe", "spear"]:
+		_streams["shot_" + melee_style] = _streams["swing"]
 	_streams["zap"] = _make(0.22, 1.0, func(t, _d): return ((1.0 if fmod(t * (900.0 + 2400.0 * t), 1.0) < 0.5 else -1.0) * 0.3 + _noise() * 0.3) * exp(-t * 16.0))
 	# Extra layers for bullet effects.
 	_streams["mod_boom"] = _make(0.3, 0.2, func(t, _d): return _sweep(t, 90.0, 40.0, 10.0) * 0.9 * exp(-t * 10.0))

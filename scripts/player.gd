@@ -39,7 +39,10 @@ const EYE_HEIGHT := 1.6
 const GRAVITY := 22.0
 const WORLD_MASK := 1
 const PLAYER_MASK := 2
+const DOOR_MASK := 8            # doors (door.gd): block bodies, not the nav graph
 const BLOCK_TIME := 0.38
+## [name shown to the taunter, speech bubble, seconds]
+const TAUNTS := [["WAVE", "HEY!", 1.9], ["DANCE", "WOO!", 2.6], ["NOPE", "NOPE!", 1.8], ["FLEX", "TOO EASY!", 2.0]]
 
 const BAR_SHADER := """
 shader_type spatial;
@@ -93,6 +96,18 @@ var ammo := 8
 var reload_left := 0.0
 var fire_cd := 0.0
 var melee_cd := 0.0
+var melee_t := 9.0                # seconds since the last swing started (animations)
+var melee_n := 0                  # swings so far (alternates the swing direction)
+var parry_left := 0.0             # Parry card: projectiles bounce off while > 0
+var taunt := -1                   # index into TAUNTS while taunting
+var taunt_t := 0.0
+var taunt_view := 0.0             # 0 first person .. 1 third-person taunt camera
+var _taunt_age := 0.0
+var _melee_pending := -1.0        # time until the swing connects
+var _melee_weapon := false
+var _melee_kill := false
+var _chute_manual := false        # parachute after a roof jump: opened by hand only
+var _bubble: Label3D
 var burst_left := 0
 var burst_t := 0.0
 var dash_cd := 0.0
@@ -201,7 +216,8 @@ func viewmodel_layer_bit() -> int:
 
 func _ready() -> void:
 	collision_layer = 0
-	collision_mask = WORLD_MASK | PLAYER_MASK
+	add_to_group("door_users")
+	collision_mask = WORLD_MASK | PLAYER_MASK | DOOR_MASK
 	floor_max_angle = deg_to_rad(50.0)
 	floor_snap_length = 0.3
 
@@ -283,6 +299,20 @@ func _ready() -> void:
 	_aura.light_energy = 0.3
 	_aura.omni_range = 4.0
 	add_child(_aura)
+
+	# Speech bubble for taunts.
+	_bubble = Label3D.new()
+	_bubble.font = UiKit.font(700)
+	_bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_bubble.font_size = 96
+	_bubble.pixel_size = 0.0042
+	_bubble.outline_size = 24
+	_bubble.outline_modulate = UiKit.INK
+	_bubble.modulate = Color.WHITE
+	_bubble.position.y = 3.05
+	_bubble.layers = body_layer_bit()
+	_bubble.visible = false
+	add_child(_bubble)
 
 	_build_chute()
 	# Buddy drone (card): a little glowing ball that hovers over the shoulder.
@@ -374,6 +404,8 @@ func rebuild_stats() -> void:
 	Weapons.apply(weapon, s)
 	for card in picked:
 		card.apply.call(s)
+	if game.rules != null and game.rules.has_method("modify_stats"):
+		game.rules.modify_stats(s, self)
 	stats = s
 	ammo = mini(ammo, stats.mag_size)
 	character.set_weapon(weapon)
@@ -389,7 +421,9 @@ func rebuild_stats() -> void:
 	health_bar.position.y = 2.34 * stats.size
 	# Bullets, trails and muzzle flashes take on the colour of their effect.
 	attr_color = color
-	if stats.frost > 0.0:
+	if stats.chain > 0 and stats.bolt:
+		attr_color = Color(0.6, 0.8, 1.0)
+	elif stats.frost > 0.0:
 		attr_color = Color(0.5, 0.85, 1.0)
 	elif stats.poison > 0.0 and not stats.flame:
 		attr_color = Color(0.45, 1.0, 0.3)
@@ -426,8 +460,10 @@ func shield_ready() -> bool:
 	return stats.shield_cd > 0.0 and shield_timer <= 0.0
 
 
+## True while projectiles bounce off us: the block, or the split second of
+## a Parry swing (which stops bullets but not other damage).
 func is_blocking() -> bool:
-	return alive and block_left > 0.0
+	return alive and (block_left > 0.0 or parry_left > 0.0)
 
 
 ## How much the view is zoomed (1 = hip fire). Also scales look sensitivity.
@@ -520,6 +556,10 @@ func on_kill(victim = null) -> void:
 		get_tree().create_timer(0.12, false).timeout.connect(func():
 			if is_instance_valid(self):
 				game.explode(at, stats.corpse_bomb, 55.0, self, self))
+	if game.melee_strike and stats.melee_heal > 0.0:
+		heal(stats.melee_heal)
+		ammo = stats.mag_size
+		reload_left = 0.0
 	if stats.kill_heal > 0.0:
 		heal(stats.kill_heal)
 	if stats.kill_reload and alive:
@@ -576,6 +616,11 @@ func spawn(pos: Vector3, facing_yaw: float) -> void:
 	picking = false
 	skydive = false
 	chute_open = false
+	_chute_manual = false
+	_melee_pending = -1.0
+	melee_cd = 0.0
+	parry_left = 0.0
+	_end_taunt()
 	_chute.visible = false
 	if vehicle != null and is_instance_valid(vehicle):
 		vehicle.eject(self)
@@ -626,6 +671,8 @@ func _process(delta: float) -> void:
 	notice_t = maxf(0.0, notice_t - delta)
 	spawn_time += delta
 	shot_t += delta
+	melee_t += delta
+	taunt_view = move_toward(taunt_view, 1.0 if (taunt >= 0 and alive) else 0.0, delta * 4.5)
 	crouch_amount = move_toward(crouch_amount, 1.0 if crouching else 0.0, delta * 7.0)
 	wall_tilt = lerpf(wall_tilt, wall_side, clampf(delta * 8.0, 0.0, 1.0))
 	if health_ghost > health:
@@ -689,8 +736,22 @@ func _physics_process(delta: float) -> void:
 		vehicle.control(self, delta)
 		return
 	melee_cd = maxf(0.0, melee_cd - delta)
+	parry_left = maxf(0.0, parry_left - delta)
+	if _melee_pending >= 0.0:
+		_melee_pending -= delta
+		if _melee_pending < 0.0:
+			_melee_strike()
+			if not alive:
+				return
 	if brain.melee and melee_cd <= 0.0:
-		_melee_attack()
+		_melee_start()
+	if taunt >= 0:
+		taunt_t -= delta
+		_taunt_age += delta
+		if taunt_t <= 0.0 or brain.fire or brain.jump or brain.dash or brain.block or since_damage < 0.2 or (_taunt_age > 0.5 and brain.move.length() > 0.6 and not is_bot):
+			_end_taunt()
+	elif brain.taunt >= 0 and is_on_floor() and not skydive:
+		start_taunt(brain.taunt)
 
 	# --- timers / status effects ---
 	fire_cd = maxf(0.0, fire_cd - delta)
@@ -729,10 +790,15 @@ func _physics_process(delta: float) -> void:
 				return
 		elif not is_bot:
 			var pet = game.pet_near(self)
+			var door = game.door_near(self) if pet == null else null
 			if pet != null:
 				pickup_prompt = "PET THE " + pet.label
 				if brain.interact:
 					pet.pet(self)
+			elif door != null:
+				pickup_prompt = door.prompt()
+				if brain.interact:
+					door.interact(self)
 	near_pickup = null
 
 	# --- block ---
@@ -747,7 +813,7 @@ func _physics_process(delta: float) -> void:
 	_drone_tick(delta)
 
 	# --- movement ---
-	var input: Vector2 = brain.move
+	var input: Vector2 = brain.move if taunt < 0 else Vector2.ZERO
 	var flat := Basis(Vector3.UP, yaw)
 	var wish := flat * Vector3(input.x, 0.0, -input.y)
 	if skydive:
@@ -892,14 +958,16 @@ func _physics_process(delta: float) -> void:
 	velocity.x = horiz.x
 	velocity.z = horiz.z
 	move_and_slide()
-	# Frontline parachutes also work after any high fall, including a roof or
-	# tower jump. Give the player time to press Jump before the auto-open zone.
-	if not is_on_floor() and velocity.y < -2.0 and not skydive:
+	# Frontline: jumping off a roof or tower lets you pull your parachute
+	# (Jump). It never opens by itself here, and the other modes keep their
+	# normal air control (jump pads, jetpacks, wall runs).
+	if game.mode == "frontline" and not is_on_floor() and velocity.y < -6.0 and not skydive and not _slamming:
 		var height_ray := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3(0, -32.0, 0), WORLD_MASK)
 		var ground_hit := get_world_3d().direct_space_state.intersect_ray(height_ray)
-		if not ground_hit.is_empty() and global_position.y - ground_hit.position.y >= 7.0:
+		if ground_hit.is_empty() or global_position.y - ground_hit.position.y >= 6.0:
 			skydive = true
 			chute_open = false
+			_chute_manual = true
 	if _slamming and is_on_floor():
 		_slamming = false
 		land_dip = 1.0
@@ -956,7 +1024,7 @@ func _skydive_tick(delta: float, wish: Vector3) -> void:
 		return
 	if not chute_open:
 		var ground := PhysicsRayQueryParameters3D.create(global_position, global_position + Vector3(0, -24.0, 0), WORLD_MASK)
-		if brain.jump or not get_world_3d().direct_space_state.intersect_ray(ground).is_empty():
+		if brain.jump or (not _chute_manual and not get_world_3d().direct_space_state.intersect_ray(ground).is_empty()):
 			chute_open = true
 			_chute.visible = true
 			_chute.scale = Vector3(0.2, 0.2, 0.2)
@@ -1003,6 +1071,15 @@ func exit_vehicle(pos: Vector3) -> void:
 
 
 func _weapon_tick(delta: float, rush: float) -> void:
+	if stats.melee_weapon:
+		# Swords, axes and spears: the trigger swings, nothing to reload.
+		ammo = stats.mag_size
+		reload_left = 0.0
+		if brain.fire and melee_cd <= 0.0 and taunt < 0:
+			_melee_start(rush)
+		return
+	if taunt >= 0:
+		return
 	if burst_left > 0:
 		burst_t -= delta
 		if ammo <= 0:
@@ -1065,7 +1142,14 @@ func _fire_round() -> void:
 	if space.intersect_ray(block) or target.distance_to(eye) < 1.2:
 		muzzle = eye
 	var flash_col := Color(attr_color.lerp(Color(1.0, 0.95, 0.7), 0.5), 0.9)
-	Fx.flash(game.world, muzzle, flash_col, 0.08, 0.22 + 0.1 * stats.recoil_kick, 0.07, viewmodel_layer_bit() if has_view else body_layer_bit())
+	# The shooter sees the flash at their first-person muzzle, everyone else
+	# at the weapon the character is holding.
+	if has_view:
+		Fx.flash(game.world, muzzle, flash_col, 0.08, 0.22 + 0.1 * stats.recoil_kick, 0.07, viewmodel_layer_bit())
+	Fx.flash(game.world, character.muzzle_position(), flash_col, 0.08, 0.22 + 0.1 * stats.recoil_kick, 0.07, body_layer_bit())
+	if stats.bolt:
+		Fx.bolt(game.world, muzzle, target, attr_color)
+		Fx.light(game.world, muzzle, attr_color, 3.0, 8.0, 0.15)
 	if stats.recoil_kick > 1.5:
 		Fx.sparks(game.world, muzzle, color.lerp(Color.WHITE, 0.5), 6, 6.0, -basis.z, 55.0, 0.4, viewmodel_layer_bit() if has_view else body_layer_bit())
 
@@ -1082,22 +1166,181 @@ func _fire_round() -> void:
 		b.reset_physics_interpolation()
 
 
-func _melee_attack() -> void:
-	melee_cd = 0.62
-	var origin := eye_position()
-	var direction := -aim_basis().z
-	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 2.15, WORLD_MASK | PLAYER_MASK)
-	query.exclude = [get_rid()]
-	var hit := get_world_3d().direct_space_state.intersect_ray(query)
-	if not hit.is_empty():
-		var target = hit.collider
-		if target != null and target.has_method("take_damage") and game.is_enemy(self, target):
-			target.take_damage(58.0, self)
-			Fx.sparks(game.world, hit.position, color.lerp(Color.WHITE, 0.55), 12, 4.5, direction, 75.0, 0.25)
-			Sfx.play("hit", -5.0, 0.82)
-			return
-	Fx.puff(game.world, origin + direction * 1.7, Color(color.lerp(Color.WHITE, 0.5), 0.65), 5, 0.24)
-	Sfx.play("dash", -9.0, 1.4)
+# --------------------------------------------------------------------------
+# Melee and taunts
+# --------------------------------------------------------------------------
+
+## Start a swing. Everyone can do this with any weapon in hand (R3 / F): a
+## punch / gun-butt using the stats.melee_* numbers. With a melee weapon
+## (stats.melee_weapon: sword, axe, spear) the fire button swings the weapon
+## itself, using stats.damage / fire_interval / melee_range / melee_arc.
+## The hit lands a moment later in _melee_strike().
+func _melee_start(rush := 0.0) -> void:
+	_melee_weapon = stats.melee_weapon
+	melee_cd = (stats.fire_interval / (1.0 + rush)) if _melee_weapon else stats.melee_cd
+	melee_t = 0.0
+	melee_n += 1
+	_melee_pending = 0.1 if not _melee_weapon else minf(0.16, stats.fire_interval * 0.3)
+	_end_taunt()
+	recoil = maxf(recoil, 0.5)
+	if stats.melee_parry:
+		parry_left = 0.32
+	var fwd := Basis(Vector3.UP, yaw) * Vector3.FORWARD
+	if stats.melee_charge > 0.0:
+		dash_dir = fwd
+		dash_left = 0.14
+		fov_kick = 0.8
+	elif is_on_floor():
+		velocity += fwd * 3.5
+	character.swing(_melee_weapon)
+	Sfx.play_at("swing", global_position, -5.0, 0.8 if _melee_weapon and stats.fire_interval > 0.8 else 1.1)
+
+
+func _melee_strike() -> void:
+	var weapon_swing := _melee_weapon
+	var eye := eye_position()
+	var basis := aim_basis()
+	var fwd := -basis.z
+	var reach: float = (stats.melee_range if weapon_swing else 2.3 * stats.melee_reach) * maxf(stats.size, 0.8)
+	var arc: float = stats.melee_arc if weapon_swing else 0.75
+	var dmg: float = stats.damage if weapon_swing else stats.melee_damage
+	dmg *= 1.0 + minf(kills_life, 5) * stats.rampage
+	if _empower > 0.0:
+		dmg *= 1.0 + stats.block_empower
+		_empower = 0.0
+	if stats.speed_dmg > 0.0:
+		dmg *= 1.0 + stats.speed_dmg * clampf(Vector2(velocity.x, velocity.z).length() / (stats.move_speed * 1.5), 0.0, 1.0)
+	if stats.air_dmg > 0.0 and not is_on_floor():
+		dmg *= 1.0 + stats.air_dmg
+	var space := get_world_3d().direct_space_state
+	# Everyone in the arc, nearest first. Fists hit one; weapons cleave.
+	var found: Array = []
+	for d in game.damageables():
+		if d == self or not d.alive or not game.is_enemy(self, d):
+			continue
+		var c: Vector3 = d.chest_position()
+		var to := c - eye
+		var r: float = d.hit_radius() if d.has_method("hit_radius") else 0.5
+		var dist := to.length()
+		if dist > reach + r:
+			continue
+		if dist > 1.0 and fwd.angle_to(to) > arc + r / dist:
+			continue
+		var q := PhysicsRayQueryParameters3D.create(eye, c, WORLD_MASK)
+		if not space.intersect_ray(q).is_empty():
+			continue
+		found.append([dist, d])
+	found.sort_custom(func(x, y): return x[0] < y[0])
+	var hits := 0
+	game.melee_strike = true
+	for f in found:
+		var d = f[1]
+		if not d.alive:
+			continue
+		var c: Vector3 = d.chest_position()
+		var to: Vector3 = (c - eye).normalized()
+		if d.is_blocking():
+			# Parried: the guard holds and the attacker is left open.
+			if d.has_method("_blocked"):
+				d._blocked(self)
+			fire_cd = maxf(fire_cd, 0.5)
+			melee_cd += 0.4
+			shake = maxf(shake, 0.5)
+			hits += 1
+			if not weapon_swing:
+				break
+			continue
+		var m := dmg
+		var crit := false
+		if stats.melee_backstab > 0.0 and "yaw" in d:
+			var their_fwd: Vector3 = Basis(Vector3.UP, d.yaw) * Vector3.FORWARD
+			if their_fwd.dot(to) > 0.3:
+				m *= 1.0 + stats.melee_backstab
+				crit = true
+		var dealt: float = d.take_damage(m, self, false, crit)
+		if dealt > 0.0:
+			hits += 1
+			Fx.sparks(game.world, c, color.lerp(Color.WHITE, 0.55), 10, 5.0, fwd, 80.0, 0.25)
+			if d.alive:
+				if stats.poison > 0.0:
+					d.apply_poison(dealt * stats.poison, self)
+				if stats.frost > 0.0:
+					d.apply_slow(stats.frost)
+				if not d.has_method("seat_count"):
+					var push := Vector3(to.x, 0.0, to.z).normalized()
+					push.y = 0.35
+					d.velocity += push * (3.0 + stats.knockback + stats.melee_knock)
+			if stats.chain > 0:
+				var left: int = stats.chain
+				for o in game.hostiles(self):
+					if left <= 0:
+						break
+					if o == d or not o.alive or o.chest_position().distance_to(c) > 9.0:
+						continue
+					left -= 1
+					o.take_damage(m * 0.5, self)
+					Fx.bolt(game.world, c, o.chest_position(), color)
+				if left < stats.chain:
+					Sfx.play_at("zap", c, -5.0)
+			if stats.explosive > 0.0 and weapon_swing:
+				game.explode(c, stats.explosive * 0.6, m * 0.4, self, d)
+		if not weapon_swing:
+			break
+	game.melee_strike = false
+	# Loose props, glass, doors and breakables in front of us.
+	var sphere := SphereShape3D.new()
+	sphere.radius = 0.95
+	var sq := PhysicsShapeQueryParameters3D.new()
+	sq.shape = sphere
+	sq.transform = Transform3D(Basis(), eye + fwd * minf(reach * 0.6, 1.5))
+	sq.collision_mask = 4 | DOOR_MASK
+	for h in space.intersect_shape(sq, 6):
+		var c2 = h.collider
+		if c2 == null:
+			continue
+		if c2.has_method("hurt"):
+			c2.hurt(dmg, self)
+			hits += 1
+		if c2.has_method("knock"):
+			c2.knock((fwd + Vector3(0, 0.3, 0)) * minf(dmg * 0.4, 30.0), eye + fwd)
+			hits += 1
+	# Crumbling walls (world layer) take melee damage too.
+	var wq := PhysicsRayQueryParameters3D.create(eye, eye + fwd * reach, WORLD_MASK)
+	var wall := space.intersect_ray(wq)
+	if wall and wall.collider.has_method("hurt"):
+		wall.collider.hurt(dmg, self)
+		hits += 1
+	if hits > 0:
+		shake = maxf(shake, 0.35)
+		Sfx.play_at("thump", global_position, -2.0, 0.85 if weapon_swing else 1.0)
+		if weapon_swing:
+			Sfx.play_at("slash", global_position, -6.0)
+		if not is_bot and brain.device >= 0 and Settings.v("rumble"):
+			Input.start_joy_vibration(brain.device, 0.5, 0.5, 0.12)
+
+
+## Taunts: four per player (D-pad / keys 1-4). The body plays the emote, a
+## speech bubble pops up for everyone else and the taunter's own camera pulls
+## out to third person (game.gd). Moving, shooting or being hit cancels it.
+func start_taunt(i: int) -> void:
+	taunt = clampi(i, 0, TAUNTS.size() - 1)
+	taunt_t = TAUNTS[taunt][2]
+	_taunt_age = 0.0
+	aim_amount = 0.0
+	character.taunt = taunt
+	_bubble.text = TAUNTS[taunt][1]
+	_bubble.visible = true
+	Sfx.play_at("taunt%d" % taunt, global_position, -2.0)
+	say(TAUNTS[taunt][0])
+
+
+func _end_taunt() -> void:
+	if taunt < 0:
+		return
+	taunt = -1
+	taunt_t = 0.0
+	character.taunt = -1
+	_bubble.visible = false
 
 
 func launch(v: Vector3) -> void:
@@ -1220,7 +1463,9 @@ func _die(attacker) -> void:
 	_slamming = false
 	_echo_t = 0.0
 	_drone.visible = false
-	card_choices = Cards.draw(stats.card_draw, weapon) if (game.rules == null or game.rules.cards_on_death()) else []
+	card_choices = game.draw_cards(self) if (game.rules == null or game.rules.cards_on_death()) else []
+	_end_taunt()
+	_melee_pending = -1.0
 	skydive = false
 	chute_open = false
 	_chute.visible = false
@@ -1291,7 +1536,7 @@ func _pick_card(i: int) -> void:
 func offer_cards() -> void:
 	if not alive:
 		return
-	card_choices = Cards.draw(stats.card_draw, weapon)
+	card_choices = game.draw_cards(self)
 	card_sel = mini(1, card_choices.size() - 1)
 	dead_time = 0.0
 	picking = true

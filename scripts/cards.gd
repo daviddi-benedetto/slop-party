@@ -178,6 +178,23 @@ static func deck() -> Array:
 					s.sticky = true
 					s.explosive = maxf(s.explosive, 2.2)
 					s.fire_interval /= 0.65},
+			# ---------------- melee perks ----------------
+			{"name": "Brass Knuckles", "icon": "star", "rarity": COMMON, "desc": "+70% melee damage",
+				"apply": func(s): s.melee_damage *= 1.7},
+			{"name": "Quick Jab", "icon": "bolt", "rarity": COMMON, "desc": "Melee recovers\ntwice as fast",
+				"apply": func(s): s.melee_cd *= 0.5},
+			{"name": "Long Arms", "icon": "target", "rarity": COMMON, "desc": "+45% melee reach\n(melee weapons too)",
+				"apply": func(s): s.melee_reach *= 1.45; s.melee_range *= 1.3},
+			{"name": "Backstab", "icon": "skull", "rarity": RARE, "desc": "Melee hits from behind\ndeal triple damage",
+				"apply": func(s): s.melee_backstab += 2.0},
+			{"name": "Haymaker", "icon": "boom", "rarity": RARE, "desc": "Melee hits launch\nenemies across the room",
+				"apply": func(s): s.melee_knock += 14.0; s.melee_damage += 10.0},
+			{"name": "Parry", "icon": "shield", "rarity": RARE, "desc": "Swinging bats bullets back\nfor a split second",
+				"apply": func(s): s.melee_parry = true},
+			{"name": "Bloodthirst", "icon": "heart", "rarity": RARE, "desc": "A melee KO heals you for 70\nand refills your magazine",
+				"apply": func(s): s.melee_heal += 70.0},
+			{"name": "Bull Rush", "icon": "speed", "rarity": EPIC, "desc": "Melee lunges you 6 m forward\n+40% melee damage",
+				"apply": func(s): s.melee_charge += 16.0; s.melee_damage *= 1.4},
 		]
 		# One card per weapon (the starting Blaster included, to switch back).
 		for id in Weapons.LIST.size():
@@ -189,11 +206,16 @@ static func deck() -> Array:
 
 ## Draw `count` distinct cards, weighted by rarity. The weapon the player
 ## already holds is never offered, and at most one weapon appears per hand.
-static func draw(count: int, held_weapon := -1) -> Array:
+## `weapons` (optional) limits the weapon cards to those ids (Medieval
+## mode); `banned` removes cards by name.
+static func draw(count: int, held_weapon := -1, weapons: Array = [], banned: Array = []) -> Array:
 	var pool: Array = []
 	for c in deck():
-		if c.get("weapon", -2) != held_weapon:
-			pool.append(c)
+		if c.get("weapon", -2) == held_weapon or c.name in banned:
+			continue
+		if c.has("weapon") and not weapons.is_empty() and not c.weapon in weapons:
+			continue
+		pool.append(c)
 	var hand: Array = []
 	while hand.size() < count and not pool.is_empty():
 		var total := 0.0

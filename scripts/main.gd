@@ -38,6 +38,15 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=")
 		_args[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	if _args.has("sheet"):
+		# Dev: --sheet=out.png --ids=20,21 renders weapon models and quits.
+		var sheet = load("res://tools/weapon_sheet.gd").new()
+		add_child(sheet)
+		var ids: Array = []
+		for s in str(_args.get("ids", "0")).split(","):
+			ids.append(int(s))
+		sheet.run(str(_args.sheet), ids)
+		return
 	lobby = Lobby.new()
 	add_child(lobby)
 	lobby.start.connect(_start_match)
@@ -125,4 +134,11 @@ func _screenshot_later(delay: float, path: String) -> void:
 				print("        pos=%s vel=%s alive=%s" % [p.global_position.snapped(Vector3.ONE * 0.1), p.velocity.snapped(Vector3.ONE * 0.1), p.alive])
 				if p.is_bot:
 					print("        los=%s path=%d/%d target=%s" % [p.brain._has_los, p.brain._path_i, p.brain._path.size(), p.brain._target.pname if p.brain._target else "-"])
+	if game != null and _args.has("debug") and not game.players.is_empty():
+		# What is drawn within arm's reach of player 1's eyes (stray meshes).
+		var eye: Vector3 = game.players[0].eye_position()
+		for n in game.world.find_children("*", "MeshInstance3D", true, false):
+			var mi: MeshInstance3D = n
+			if mi.is_visible_in_tree() and mi.global_position.distance_to(eye) < 1.6:
+				print("        near eye: %s layers=%d path=%s" % [mi.name, mi.layers, str(game.world.get_path_to(mi)).right(90)])
 	get_tree().quit()

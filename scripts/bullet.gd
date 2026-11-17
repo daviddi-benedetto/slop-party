@@ -18,6 +18,16 @@ const Fx = preload("res://scripts/fx.gd")
 const WORLD_MASK := 1
 const PLAYER_MASK := 2
 const PROP_MASK := 4             # loose props and glass (prop.gd, glass.gd)
+const DOOR_MASK := 8             # doors (door.gd)
+const Models = preload("res://scripts/models.gd")
+## stats.projectile -> [model, length in metres, spin (rad/s)]; the models
+## are modelled along +Y and get turned to fly point first.
+const PROJECTILES := {
+	"arrow": ["medieval/Skeleton_Arrow", 0.95, 0.0],
+	"bolt": ["medieval/Skeleton_Arrow", 0.6, 0.0],
+	"knife": ["medieval/Dagger", 0.42, -22.0],
+	"bomb": ["medieval/Bomb", 0.34, -7.0],
+}
 
 static var _mesh: SphereMesh
 static var _cone: CylinderMesh
@@ -62,6 +72,9 @@ var _smoke_t := 0.0
 var _direct = null             # player hit directly (skipped by our own explosion)
 var _core: MeshInstance3D
 var _trail: MeshInstance3D
+var _model: Node3D             # thrown / shot model (arrow, knife, bomb)
+var _spin := 0.0
+var projectile := ""
 
 
 ## `damage_mult` carries per-shot bonuses (last round, rampage).
@@ -125,6 +138,25 @@ func setup_stats(p, s, dir: Vector3, damage_mult := 1.0, ignore: Array = []) -> 
 		_core.material_override = _flame_mat
 		_core.scale = Vector3.ONE * radius
 		return
+	projectile = s.projectile
+	if PROJECTILES.has(projectile):
+		# A real arrow / knife / bomb instead of the glowing bullet.
+		var spec: Array = PROJECTILES[projectile]
+		var b: AABB = Models.bounds(spec[0])
+		var k: float = float(spec[1]) / b.size.y * clampf(s.bullet_size / 1.5, 0.8, 2.0)
+		_model = Node3D.new()
+		add_child(_model)
+		var inner: Node3D = Models.scene(spec[0]).instantiate()
+		inner.scale = Vector3.ONE * k
+		inner.position = -b.get_center() * k
+		var turn := Node3D.new()
+		turn.rotation.x = -PI * 0.5
+		turn.add_child(inner)
+		_model.add_child(turn)
+		for mi in Models.mesh_instances(inner):
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_spin = spec[2]
+		_core.visible = false
 	_core.material_override = p.bullet_material
 	# Fast bullets are streaks; slow, fat ones (rockets, grenades, bubbles) are round.
 	var speed: float = s.bullet_speed
@@ -178,6 +210,8 @@ func _physics_process(delta: float) -> void:
 			if dist < 8.0 and dist > 0.6 and not d.has_method("seat_count"):
 				d.velocity += to_me / dist * vortex * (1.0 - dist / 8.0) * delta * 3.0
 		_core.rotation.z += delta * 9.0
+	if _model != null and _spin != 0.0:
+		_model.rotation.x += _spin * delta
 	_travel += vel.length() * delta
 	vel.y -= gravity * delta
 	if smoke:
@@ -197,7 +231,7 @@ func _physics_process(delta: float) -> void:
 		if Geometry3D.get_closest_point_to_segment(c, from, to).distance_to(c) < BLOCK_RADIUS + radius:
 			_reflect(b)
 			return
-	var q := PhysicsRayQueryParameters3D.create(from, to, WORLD_MASK | PLAYER_MASK | PROP_MASK)
+	var q := PhysicsRayQueryParameters3D.create(from, to, WORLD_MASK | PLAYER_MASK | PROP_MASK | DOOR_MASK)
 	var exclude: Array = _ignore.duplicate()
 	if not can_hit_owner:
 		exclude.append(shooter.get_rid())
@@ -207,8 +241,10 @@ func _physics_process(delta: float) -> void:
 	# the bullet flies on.
 	if hit and hit.collider.has_method("knock"):
 		var prop = hit.collider
+		if prop.has_method("hurt"):
+			prop.hurt(damage, shooter)
 		prop.knock(vel.normalized() * clampf(damage * 0.35, 2.0, 40.0), hit.position)
-		if prop.is_glass or flame or pierce > 0:
+		if prop.is_glass or flame or (pierce > 0 and not prop.has_method("swing_open")):
 			_ignore.append(prop.get_rid())
 			global_position = hit.position
 			return
@@ -243,6 +279,9 @@ func _physics_process(delta: float) -> void:
 		global_position = to
 		return
 	if hit:
+		# Crumbling walls and other breakable world pieces.
+		if hit.collider.has_method("hurt"):
+			hit.collider.hurt(damage, shooter)
 		if sticky:
 			_stick(hit.position + hit.normal * 0.08, null)
 			return
@@ -280,7 +319,8 @@ func _reflect(p) -> void:
 	can_hit_owner = false
 	_ignore.clear()
 	life = maxf(life, 1.5)
-	_core.material_override = p.bullet_material
+	if not flame:
+		_core.material_override = p.bullet_material
 	if _trail != null:
 		_trail.material_override = p.trail_material
 	global_position = p.chest_position() + dir * (BLOCK_RADIUS + radius + 0.1)
@@ -356,6 +396,19 @@ func _impact(pos: Vector3, normal) -> void:
 	if explosive > 0.0:
 		game.explode(pos, explosive, damage * 0.8, shooter, _direct)
 	elif not flame:
+		if _model != null and _direct == null and normal is Vector3 and _spin > -10.0 and projectile != "bomb":
+			# Arrows and bolts stay stuck in what they hit for a while.
+			var stuck := _model
+			var xf := stuck.global_transform
+			remove_child(stuck)
+			game.world.add_child(stuck)
+			stuck.global_transform = xf
+			stuck.global_position = pos - vel.normalized() * 0.2
+			stuck.reset_physics_interpolation()
+			var tw := stuck.create_tween()
+			tw.tween_interval(6.0)
+			tw.tween_callback(stuck.queue_free)
+			_model = null
 		var n: Vector3 = normal if normal is Vector3 else Vector3.UP
 		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.14, 0.1)
 		Fx.sparks(game.world, pos, color.lerp(Color.WHITE, 0.4), 7, 7.0, n)

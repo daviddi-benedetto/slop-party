@@ -49,7 +49,7 @@ has not been verified.
 |---|---|
 | Play | `Play.bat` |
 | Open editor | `Edit.bat` |
-| Export standalone exe | `tools\build.bat` → `build\Fragdeck.exe` |
+| Export standalone exe | `tools\build.bat` → `build\SlopGame.exe` |
 | Re-download engine after a git clone | `tools\setup_engine.ps1 [-Templates]` |
 
 The engine binary is `engine\Godot_v4.7.2-stable_win64.exe` (use the
@@ -304,6 +304,80 @@ collision off (the vehicle takes the hits).
   (`_build_back`, `ui_kit.BACK_NAMES`); the lobby category list is
   `lobby.CATEGORIES` / `KEYS`.
 
+### Melee, taunts, per-player look speed (`player.gd`, `input_source.gd`)
+
+- **Melee** (`brain.melee`: R3 / F / middle mouse): `player._melee_start()`
+  starts a swing (`melee_t` drives the viewmodel and `character.swing()`),
+  `_melee_strike()` lands it 0.1 s later: enemies in an arc in front of the
+  eye (nearest first; a punch hits one, melee weapons cleave), then props /
+  doors on layers 4 | 8 (`hurt` + `knock`) and crumbling walls (`hurt`).
+  It applies the same per-shot bonuses and on-hit stats as bullets
+  (rampage, empower, poison, frost, knockback, chain, explosive), so cards
+  stay compatible. `game.melee_strike` is true while it deals damage (Gun
+  Game demotion, Bloodthirst).
+- **Melee weapons** set `stats.melee_weapon` (+ `melee_range`, `melee_arc`):
+  `_weapon_tick` then swings on fire instead of shooting; no ammo.
+- Melee cards are plain stats: `melee_damage`, `melee_cd`, `melee_reach`,
+  `melee_backstab`, `melee_knock`, `melee_parry` (`parry_left` makes
+  `is_blocking()` true so bullets reflect), `melee_heal`, `melee_charge`.
+- **Taunts** (`brain.taunt` 0-3: D-pad / keys 1-4): `player.TAUNTS`,
+  `start_taunt()`; `character.taunt` picks the animation, `_bubble` is the
+  speech bubble, and `taunt_view` (0..1) blends that player's camera to a
+  third-person shot in `game._update_cameras` (their own body layer is
+  added to the camera's cull mask meanwhile). Dev flag `--third` holds
+  player 1 in that camera to inspect how weapons are held.
+- **Look speed per player**: the lobby's LOOK row stores `seat.sens`
+  (saved with the seat); `game.gd` turns it into `InputSource.sens`, a
+  multiplier on top of the global look-speed options.
+
+### Weapons in the hands (`arm_ik.gd`, `character.gd`, `viewmodel.gd`)
+
+- The weapon model sits on the character's `aim` pivot (so it follows the
+  view pitch exactly). `arm_ik.gd` (a SkeletonModifier3D on the creature
+  skeleton) bends UpperArm / LowerArm so each hand reaches a grip marker
+  (`_grip_r`, `_grip_l`) that `set_weapon()` places from the viewmodel's
+  `grip_r` / `grip_l` / `two_handed`. Taunts and punches fade the IK out
+  (`_ik.influence`) so the animation shows.
+- `viewmodel.gd` builds three families: `GLB` guns (barrel along -Z),
+  `UPRIGHT` items held in the fist (sword, axe, spear, staffs, bow, knife,
+  bomb; they hang on the `_blade` pivot) and `_build_hands` (mage hands
+  with a spell orb). `muzzle_local()` is where shots leave.
+- `stats.projectile` makes `bullet.gd` fly a model (arrow, bolt, knife,
+  bomb; `PROJECTILES`); arrows stay stuck in what they hit for 6 s.
+  `stats.bolt` draws `Fx.bolt` from muzzle to aim point (Storm Staff).
+- `tools/weapon_sheet.gd` (`-- --sheet=out.png --ids=24,26`) renders
+  weapon models side-on and first-person for tuning.
+
+### Doors, breakables, crumbling walls (`door.gd`, `prop.gd`, `rubble.gd`, `debris.gd`)
+
+- Everything breakable is in group "props" and answers `knock(impulse, at)`
+  and `hurt(amount, who)`; bullets, melee and `game.explode` call them.
+- **Doors** (`map._door`, automatically in both ground-floor doorways of
+  `_building`): AnimatableBody3D on collision layer 8. Characters and
+  vehicles collide with 8; the nav graph does not, and the door opens for
+  anything in group "door_users" that is a bot / zombie or moving fast.
+  Humans use interact (`game.door_near`). 110 hp, then planks.
+- **Props** have `hp` (from their mass); `EXPLOSIVE` models call
+  `game.explode_later`. Fuel barrels and gas cans are in `map.CLUTTER`.
+- **Crumbling walls** (`map._weak_wall`, and `map._ruins()` scatters stubs
+  on open ground of every outdoor map): StaticBody3D on layer 1 (so bots
+  path around them), drawn as a MultiMesh of bricks, losing bricks below
+  55 % and collapsing into `debris.gd` chunks at 0. The nav graph is not
+  rebuilt, so bots keep walking around a fallen wall.
+- `debris.gd` chunks collide with the world only and cap at 140 alive.
+
+### Gun Game and Medieval (`gungame.gd`, `medieval.gd`, `map_castle.gd`)
+
+- Both are free-for-alls built on the rules hooks. Optional hooks added for
+  them: `weapon_pool()` (limits weapon cards and pads), `banned_cards()`,
+  `modify_stats(s, p)` (applied after the cards), `weapon_pads()`; and
+  `draw_strip` / `strip_sig` are now optional (the default FFA strip is
+  used). `game.spawn_all_default()` / `respawn_default()` are the Rounds
+  spawns for rules to reuse.
+- Gun Game: rung = `kills`; `weapons.ladder()` is the order.
+- Medieval forces `Map.CASTLE` (index 8, also in `Map.ARENAS`, the lobby's
+  map list). `weapons.era(id)` / `pool(eras)` group the arsenal.
+
 ### Game modes and teams (`game.gd`, `zombies.gd`, `frontline.gd`)
 
 - `game.mode` is "rounds", "zombies" or "frontline". Rounds keeps its rules in
@@ -453,6 +527,18 @@ Every effect frees itself with a pausable timer. For `burst()` with
 is turned on (see `confetti()`), or they are ignored.
 
 ### Smoothness and input latency
+
+Checklist of what keeps motion smooth (keep it true when changing things):
+physics at 120 Hz with engine physics interpolation and jitter fix 0;
+cameras are not interpolated nodes, they are placed every rendered frame
+from `get_global_transform_interpolated()`; look input is applied per
+rendered frame (stick: radial dead zone, 1.6 power curve, ~20 ms smoothing,
+turn boost); every teleport calls `reset_physics_interpolation()`; effects
+are pre-warmed in `game._prewarm`; and the frame limit defaults to
+"Display" (`fps_limit`), because a fixed cap that does not divide the
+refresh rate (60 on 144 Hz) was the main source of judder.
+
+### Smoothness and input latency (details)
 
 These choices exist because the game "did not feel smooth at 60":
 - **Frame pacing:** a frame limiter fighting V-Sync gives uneven frame times.
@@ -748,9 +834,15 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 - A settings file is read and applied (Low preset, wide FOV, hard bots).
 - Bots fight, die, pick cards, respawn; a match reaches the kill target, shows
   the podium and returns to the lobby.
-- The exported `build\Fragdeck.exe` starts and plays.
+- The exported `build\SlopGame.exe` starts and plays.
 
 **Not verified:**
+- v0.12 (melee, taunts, magic and medieval weapons, Gun Game, Medieval,
+  the Castle, doors, breakables, crumbling walls, arm IK) was exercised by
+  bots and screenshots only. Nobody has held a pad: taunt camera feel,
+  door prompts, melee timing and all the new balance numbers are guesses.
+- The tank and helicopter are still hand-built (no suitable CC0 model with
+  a separate turret / rotor was found).
 - Everything added in v0.10 was only exercised by bots: nobody has kicked a
   chair, petted a dog, used a block perk or played a human character by hand.
   The new weapon and card numbers are first guesses.

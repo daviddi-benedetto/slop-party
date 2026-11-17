@@ -22,7 +22,10 @@ const ITEMS := [
 	{"section": "DISPLAY"},
 	{"key": "fullscreen", "label": "Fullscreen", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "vsync", "label": "V-Sync", "opts": ON_OFF, "vals": [false, true], "def": 1},
-	{"key": "fps", "label": "Frame rate limit", "opts": ["30", "60", "120", "144", "240", "Unlimited"], "vals": [30, 60, 120, 144, 240, 0], "def": 1},
+	# "Display" = let V-Sync pace the frames at the screen's own refresh rate
+	# (or cap at that rate with V-Sync off). A fixed cap that does not divide
+	# the refresh rate (60 on a 144 Hz screen) judders, so it is not the default.
+	{"key": "fps_limit", "label": "Frame rate limit", "opts": ["Display", "30", "60", "120", "144", "240", "Unlimited"], "vals": [-1, 30, 60, 120, 144, 240, 0], "def": 0},
 	{"section": "GRAPHICS"},
 	{"key": "preset", "label": "Quality preset", "opts": ["Custom", "Low", "Medium", "High", "Ultra"], "vals": [0, 1, 2, 3, 4], "def": 3},
 	{"key": "aa", "label": "Anti-aliasing", "opts": ["Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x"], "vals": [0, 1, 2, 3, 4], "def": 2},
@@ -141,9 +144,11 @@ func apply() -> void:
 		# A frame limiter fighting v-sync causes uneven frame pacing. With v-sync
 		# on, only limit when the cap is clearly below the display's refresh
 		# rate; otherwise let v-sync alone pace the frames.
-		var cap: int = v("fps")
+		var cap: int = v("fps_limit")
 		var refresh := DisplayServer.screen_get_refresh_rate()
-		if v("vsync") and cap > 0 and refresh > 0.0 and cap >= int(refresh) - 2:
+		if cap < 0:
+			cap = 0 if v("vsync") or refresh <= 0.0 else int(round(refresh))
+		elif v("vsync") and cap > 0 and refresh > 0.0 and cap >= int(refresh) - 2:
 			cap = 0
 		Engine.max_fps = cap
 	var master: int = v("master")

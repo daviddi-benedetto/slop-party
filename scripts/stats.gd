@@ -93,5 +93,23 @@ var block_pull := 0.0       # radius: drag enemies towards you on block
 var block_echo := false     # block triggers a second time shortly after
 var block_reload := false   # blocking reloads your weapon
 
+# --- melee (R3 / F with any weapon; see player._melee_start) ---
+var melee_damage := 45.0    # the punch / gun-butt everyone has
+var melee_cd := 0.7
+var melee_reach := 1.0      # reach multiplier of the basic melee
+var melee_backstab := 0.0   # bonus damage fraction when hitting from behind
+var melee_knock := 0.0      # extra knockback of melee hits
+var melee_parry := false    # a swing bats projectiles back for a moment
+var melee_heal := 0.0       # health gained by a melee KO
+var melee_charge := 0.0     # lunge speed added to a swing
+# Melee weapons (sword, axe, spear): fire swings instead of shooting.
+var melee_weapon := false
+var melee_range := 2.6
+var melee_arc := 0.9        # half angle of the swing in radians
+
+# --- looks (bullet.gd / player.gd) ---
+var projectile := ""        # model flown instead of a glowing bullet: arrow, bolt, knife, bomb
+var bolt := false           # draw a lightning bolt from the muzzle to the aim point
+
 # --- meta ---
 var card_draw := 3          # cards offered on death
