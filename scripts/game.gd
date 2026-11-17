@@ -343,9 +343,9 @@ func _add_view(player) -> void:
 	# Soft focus in the distance: the toy-diorama look (option "dof").
 	var lens := CameraAttributesPractical.new()
 	lens.dof_blur_far_enabled = Settings.v("dof")
-	lens.dof_blur_far_distance = 34.0
-	lens.dof_blur_far_transition = 70.0
-	lens.dof_blur_amount = 0.045
+	lens.dof_blur_far_distance = 40.0
+	lens.dof_blur_far_transition = 30.0
+	lens.dof_blur_amount = 0.085
 	cam.attributes = lens
 	var all_bodies := 0
 	for p in players:
@@ -452,6 +452,8 @@ func _update_cameras(delta: float) -> void:
 			else:
 				cam.look_at_from_position(Vector3(cos(a) * map.half_x * 1.2, map.half_x * 0.55, sin(a) * map.half_z * 1.35), Vector3(0, 1.5, 0))
 			v.blur.track(cam)
+			if not _debug_top:
+				_focus(cam, delta)
 			continue
 		if p.alive and p.vehicle != null:
 			_vehicle_camera(v, p, delta)
@@ -503,6 +505,7 @@ func _update_cameras(delta: float) -> void:
 			cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
 		v.gun.update(delta, p)
 		v.blur.track(cam)
+		_focus(cam, delta)
 		if p.vehicle != null or p.picking or p.taunt_view > 0.05 or (_debug_third and p.index == 0):
 			v.gun.visible = false
 		ears.append(cam.global_position)
@@ -676,6 +679,30 @@ func _process(delta: float) -> void:
 			tw.tween_property(_fade, "color:a", 1.0, 0.35)
 			tw.tween_callback(_show_results)
 			tw.tween_property(_fade, "color:a", 0.0, 0.4)
+
+
+## Depth of field that follows the arena: the focus limit sits where this
+## camera's view leaves the map, so everything you can fight stays sharp
+## and the scenery beyond the boundary melts into a soft, far-away
+## backdrop, whichever way you look and however big the map is. Looking
+## along a long street the limit moves out; facing a nearby wall it comes
+## in (smoothed, so it never pops).
+func _focus(cam: Camera3D, delta: float) -> void:
+	var lens := cam.attributes as CameraAttributesPractical
+	if lens == null or not lens.dof_blur_far_enabled:
+		return
+	var pos := cam.global_position
+	var fwd := -cam.global_transform.basis.z
+	var reach := 400.0
+	if absf(fwd.x) > 0.001:
+		reach = minf(reach, ((map.half_x + 1.5) * signf(fwd.x) - pos.x) / fwd.x)
+	if absf(fwd.z) > 0.001:
+		reach = minf(reach, ((map.half_z + 1.5) * signf(fwd.z) - pos.z) / fwd.z)
+	# Indoors there is nothing beyond the walls worth blurring.
+	var want := 400.0 if map.indoor else clampf(reach + 3.0, 16.0, 220.0)
+	var k := clampf(delta * 3.5, 0.0, 1.0)
+	lens.dof_blur_far_distance = lerpf(lens.dof_blur_far_distance, want, k)
+	lens.dof_blur_far_transition = lerpf(lens.dof_blur_far_transition, 10.0 + want * 0.3, k)
 
 
 ## Auto resolution (option "auto_res"): hold the frame rate by trading 3D

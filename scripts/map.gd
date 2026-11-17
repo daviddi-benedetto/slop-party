@@ -536,6 +536,10 @@ func _build_environment() -> void:
 	# obscuring players or landmarks.
 	if half_x >= 44.0:
 		fog_density = maxf(fog_density, 0.0035)
+	elif not indoor:
+		# A little haze on the smaller outdoor maps too, so the scenery beyond
+		# the walls sits back in the distance.
+		fog_density = maxf(fog_density, 0.0028)
 	light_scale = p.lights
 	neon_scale = p.neon
 

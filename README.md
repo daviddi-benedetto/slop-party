@@ -185,7 +185,8 @@ Reachable from the lobby and from the pause menu:
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing (Off, FXAA,
   MSAA 2x/4x/8x), motion blur slider, render scale, shadows, ambient
-  occlusion, bloom, scenery, soft focus in the distance, sun rays, and **auto
+  occlusion, bloom, scenery, soft focus (depth of field that keeps the arena
+  sharp and blurs the scenery beyond its edge), sun rays, and **auto
   resolution** (on by default): when a busy moment would drop below 60 FPS
   the 3D resolution is lowered for a moment and sharpened back up, so the
   frame rate holds.

@@ -367,6 +367,11 @@ collision off (the vehicle takes the hits).
 - Clutter is themed: `CLUTTER_SETS[MAPS[i].clutter]`.
 - `_lamp()` = pendant model + warm OmniLight that ignores the time of day
   (distance-faded); `_building` hangs a grid of them on every storey.
+- Depth of field (`game._focus`, option `dof`): far blur only. Each frame
+  the focus limit is set to where that camera's view leaves the map
+  rectangle (clamped 16-220 m, smoothed), so the playable area stays sharp
+  and the scenery beyond the boundary blurs; indoor maps push it out to
+  400 m. Small outdoor maps also get a light haze.
 - `sun_rays.gd`: a full-screen quad on each camera (its own layer, bits
   15-20). The shader marches from each pixel towards the sun's screen
   position counting open sky in the depth buffer. Option `rays`.

@@ -79,6 +79,9 @@ var _keep_window := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# Round, smooth depth-of-field blur (the "soft focus" option).
+	RenderingServer.camera_attributes_set_dof_blur_bokeh_shape(RenderingServer.DOF_BOKEH_CIRCLE)
+	RenderingServer.camera_attributes_set_dof_blur_quality(RenderingServer.DOF_BLUR_QUALITY_MEDIUM, false)
 	# Deliver mouse motion as it arrives instead of once per frame.
 	Input.use_accumulated_input = false
 	_uncapped = "--uncapped" in OS.get_cmdline_user_args()
