@@ -51,6 +51,7 @@ const Prop = preload("res://scripts/prop.gd")
 const Glass = preload("res://scripts/glass.gd")
 const ZombieMap = preload("res://scripts/map_zombie.gd")
 const CastleMap = preload("res://scripts/map_castle.gd")
+const Arch = preload("res://scripts/arch.gd")
 const Door = preload("res://scripts/door.gd")
 const Rubble = preload("res://scripts/rubble.gd")
 
@@ -1629,7 +1630,10 @@ func _build_floor() -> void:
 ## sides), windows above, stairs inside between storeys, and either a flat
 ## roof with a parapet (reachable by stairs: a vantage point) or a pitched
 ## roof (opts.pitched). Needs sz >= 8.5. c = footprint centre at ground level.
-## opts: mirror, pitched, roof, floor (materials), glass (bool: glazed windows).
+## opts: mirror, pitched, roof, floor (materials), glass (bool: glazed windows),
+## style (arch.gd: house, cabin, store, office, warehouse, barn, clinic,
+## motel, garage, barracks, lab, workshop: exterior character and a room
+## programme per storey), roof_h (ridge height), tiers (office tower).
 func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts := {}) -> void:
 	var mirror: bool = opts.get("mirror", true)
 	var pitched: bool = opts.get("pitched", false)
@@ -1659,6 +1663,13 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		if f == 0:
 			south = [[c.x, 1.8, 0.0, 2.5]]
 			east = [[c.z, 1.8, 0.0, 2.5]]
+			if opts.get("style", "") in ["store", "office", "clinic"] and sx >= 8.0:
+				# A glazed front: tall display windows either side of the door.
+				var dw := minf(3.0, sx * 0.5 - 2.0)
+				for sgn in [-1.0, 1.0]:
+					var wx: float = c.x + sgn * (1.35 + dw * 0.5)
+					south.append([wx, dw, 0.45, 2.75])
+					_glass(Vector3(wx, y0 + 1.6, z0 + t * 0.5), dw, 2.3, false, mirror)
 		# Doors in both ground-floor doorways.
 		if f == 0 and opts.get("doors", true):
 			var dm: String = opts.get("door_model", "doors/Door_Brown" if _rng.randf() < 0.5 else "doors/Door_White")
@@ -1675,7 +1686,9 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 			_glass(Vector3(x0 + t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
 			if f > 0:
 				_glass(Vector3(x1 - t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
-		if opts.get("furnish", true):
+		if opts.has("style"):
+			Arch.interior(self, opts.style, f, floors, c, sx, sz, y0, mirror)
+		elif opts.get("furnish", true):
 			_furnish(c, sx, sz, y0, mirror)
 		_facade(c, sx, sz, y0, f, win_x, win_z, pitched, mirror)
 		_wall_x(z0 + t * 0.5, x0, x1, y0, FLOOR_H, mat, south, mirror, t)
@@ -1711,7 +1724,7 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		var is_roof := f == floors
 		if is_roof and pitched:
 			_slab(Rect2(x0 + 0.05, z0 + 0.05, sx - 0.1, sz - 0.1), y, roof_mat, [], mirror)
-			_gable(Vector3(c.x, y, c.z), sx + 0.8, sz + 0.8, minf(sz * 0.32, 3.0), roof_mat, mirror)
+			_gable(Vector3(c.x, y, c.z), sx + 0.8, sz + 0.8, opts.get("roof_h", minf(sz * 0.32, 3.0)), roof_mat, mirror)
 		else:
 			# Floors stop just inside the outer wall face: an edge flush with the
 			# wall would shimmer (two surfaces in the same plane).
@@ -1760,6 +1773,8 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		if theme.neon:
 			_box(Vector3(c.x, y + 1.02, z0 + 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
 			_box(Vector3(c.x, y + 1.02, z1 - 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
+	if opts.has("style"):
+		Arch.exterior(self, opts.style, c, sx, sz, floors, mat, opts)
 
 
 ## Facade details for one storey: window sills, lintels and shutters, a porch
@@ -2640,7 +2655,7 @@ func _layout_yard() -> void:
 	_glow(Vector3(0, 1.6, 18), theme.accent_a, 10.0, 1.6)
 
 	# Two-storey brick warehouse with a roof terrace, and a gantry crane over it.
-	_building(Vector3(-23, 0, 13), 9.0, 9.0, 2, "block_b")
+	_building(Vector3(-23, 0, 13), 9.0, 9.0, 2, "block_b", {"style": "office", "tiers": 3})
 	_box(Vector3(-26.5, 5.5, 7.4), Vector3(0.9, 11, 0.9), "c_yellow")
 	_box(Vector3(-26.5, 5.5, 18.6), Vector3(0.9, 11, 0.9), "c_yellow")
 	_box(Vector3(-26.5, 11.2, 13.0), Vector3(1.1, 0.9, 12.2), "c_yellow", true, 0.0, false)
@@ -2703,7 +2718,7 @@ func _layout_pit() -> void:
 	_glow(Vector3(0, 6.2, 0), theme.accent_a, 13.0, 2.6, false)
 
 	# Two-storey smelter houses in two corners, with roof terraces.
-	_building(Vector3(-13.0, 0, 7.3), 8.0, 8.6, 2, "house", {"roof": "block_c"})
+	_building(Vector3(-13.0, 0, 7.3), 8.0, 8.6, 2, "house", {"roof": "block_c", "style": "workshop"})
 	_box(Vector3(-8.2, 0.7, 4.2), Vector3(1.4, 1.4, 1.4), "crate", true, 0.3)
 
 	# Stone arches over the north and south lanes.
@@ -2782,7 +2797,7 @@ func _layout_frost() -> void:
 	_glow(Vector3(34, 2.6, 0), theme.accent_a, 11.0, 2.0)
 
 	# Two-storey comms buildings with roof terraces, and bunker tunnels.
-	_building(Vector3(22, 0, -24), 9.0, 9.0, 2, "block_a", {"roof": "block_c"})
+	_building(Vector3(22, 0, -24), 9.0, 9.0, 2, "block_a", {"roof": "block_c", "style": "lab"})
 	_tunnel(-8.0, -18.0, 18.0)
 
 	# Mid-field: walls of ice blocks, supply crates, barriers, pines.

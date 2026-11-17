@@ -117,12 +117,12 @@ static func _town(m) -> void:
 	m._surface(Rect2(-14, -11, 28, 22), 0.015, "path", false)
 	m.no_grass.append(Rect2(-14.5, -11.5, 29, 23))
 	# Two four-storey towers facing each other across the square.
-	_bld(m, Vector3(0, 0, 21), 18.0, 12.0, 4, "block_b", {"roof": "block_a"})
+	_bld(m, Vector3(0, 0, 21), 18.0, 12.0, 4, "block_b", {"roof": "block_a", "style": "office", "tiers": 2})
 	# Houses and apartment blocks around it.
-	_bld(m, Vector3(20, 0, 13), 11.0, 9.0, 2, "house", {"pitched": true, "roof": "roof_red"})
-	_bld(m, Vector3(-20, 0, 14), 12.0, 10.0, 3, "block_a", {"roof": "block_c"})
-	_bld(m, Vector3(22, 0, 28), 13.0, 10.0, 2, "block_b", {"roof": "block_a"})
-	_bld(m, Vector3(-21, 0, 29), 10.0, 9.0, 2, "house", {"pitched": true, "roof": "roof_red"})
+	_bld(m, Vector3(20, 0, 13), 11.0, 9.0, 2, "house", {"pitched": true, "roof": "roof_red", "style": "house"})
+	_bld(m, Vector3(-20, 0, 14), 12.0, 10.0, 3, "block_a", {"roof": "block_c", "style": "store"})
+	_bld(m, Vector3(22, 0, 28), 13.0, 10.0, 2, "block_b", {"roof": "block_a", "style": "clinic"})
+	_bld(m, Vector3(-21, 0, 29), 10.0, 9.0, 2, "house", {"pitched": true, "roof": "roof_red", "style": "house"})
 	# Square furniture: planters with trees, a statue, sandbag nests.
 	for p in [Vector3(11, 0, 8.5), Vector3(-11, 0, 8.5)]:
 		m._box(p + Vector3(0, 0.4, 0), Vector3(2.4, 0.8, 2.4), "block_a")
@@ -227,9 +227,9 @@ static func _hill_bunker(m, c: Vector3) -> void:
 
 ## Farmland on the outer edges: farmhouse, barn, hay bales, hedgerows.
 static func _farm(m) -> void:
-	_bld(m, Vector3(52, 0, 52), 12.0, 9.0, 2, "house", {"pitched": true, "roof": "roof_red"})
-	_bld(m, Vector3(70, 0, 50), 14.0, 10.0, 1, "block_b", {"pitched": true, "roof": "roof_red"})
-	_bld(m, Vector3(-10, 0, 52), 10.0, 9.0, 2, "house", {"pitched": true, "roof": "block_c"})
+	_bld(m, Vector3(52, 0, 52), 12.0, 9.0, 2, "house", {"pitched": true, "roof": "roof_red", "style": "house"})
+	_bld(m, Vector3(70, 0, 50), 14.0, 10.0, 1, "deck", {"pitched": true, "roof": "roof_red", "style": "barn", "roof_h": 4.2})
+	_bld(m, Vector3(-10, 0, 52), 9.0, 8.6, 1, "deck", {"pitched": true, "roof": "block_c", "style": "cabin", "roof_h": 3.6})
 	for p in [Vector3(58, 0, 38), Vector3(61, 0, 39.5), Vector3(80, 0, 42), Vector3(20, 0, 46), Vector3(23, 0, 44.5), Vector3(-30, 0, 48)]:
 		m._cyl(p, 0.8, 1.3, "hay")
 	for x in range(26, 46, 2):
@@ -241,8 +241,8 @@ static func _farm(m) -> void:
 	m._surface(Rect2(44, 44, 20, 16), 0.012, "dirt")
 	m.no_grass.append(Rect2(44, 44, 20, 16))
 	m.no_grass.append(Rect2(-64, -60, 20, 16))
-	_bld(m, Vector3(78, 0, 60), 8.6, 8.6, 2, "block_c", {"roof": "block_a"})
-	_bld(m, Vector3(78, 0, -60), 8.6, 8.6, 2, "block_c", {"roof": "block_a"})
+	_bld(m, Vector3(78, 0, 60), 8.6, 8.6, 2, "block_c", {"roof": "block_a", "style": "barracks"})
+	_bld(m, Vector3(78, 0, -60), 8.6, 8.6, 2, "block_c", {"roof": "block_a", "style": "warehouse"})
 
 
 ## Dense forests on the flanks, camps, picnic spots, sidewalks, crossings,
@@ -288,7 +288,7 @@ static func _landscape(m) -> void:
 
 ## Team bases: HQ, helipad, vehicle bays, banners in the team colour.
 static func _base(m) -> void:
-	_bld(m, Vector3(91, 0, -14), 10.0, 9.0, 2, "block_a", {"roof": "olive"})
+	_bld(m, Vector3(91, 0, -14), 11.0, 9.0, 2, "block_a", {"roof": "olive", "style": "barracks"})
 	for team in 2:
 		var sgn := 1.0 if team == 1 else -1.0
 		var tm: String = TEAM_MAT[team]

@@ -348,6 +348,28 @@ collision off (the vehicle takes the hits).
 - `tools/weapon_sheet.gd` (`-- --sheet=out.png --ids=24,26`) renders
   weapon models side-on and first-person for tuning.
 
+### Building styles and interiors (`arch.gd`)
+
+- `map._building(..., {"style": S})` still makes the shell; `arch.gd` adds
+  the character. `Arch.exterior()` = massing and detail outside per style;
+  `Arch.interior()` = partition walls (on storeys at least 11 m wide: two
+  back rooms either side of a 2.8 m opening, clear of both stairs) and a
+  room per slot (north-east, north-west, south-east) chosen by style and
+  storey. Rooms are small functions (`_kitchen`, `_ward`, `_shop`...) that
+  take the room centre and the wall their big furniture stands against.
+- Styles: house, cabin, store, office (tower: `tiers`), warehouse, barn,
+  clinic, motel, garage, barracks, lab, workshop. store / office / clinic
+  also get a glazed front (display windows in `_building`). `roof_h` sets
+  the ridge height of pitched roofs.
+- To add a style: a branch in `exterior()`, one in `interior()`, and pass
+  it from the layout. Keep doorways and the centre aisle clear (bots).
+- Where each is used: Suburb (houses, garage, corner store), Quarantine
+  (clinics, motel, warehouse, fuel-station store), Frontline (town tower,
+  store, clinic, houses, barn, cabin, barracks), Neon Yard (office
+  towers), Ember Pit (workshops), Frost Line (labs), Castle (cabin; the
+  keep is hand-furnished). Museum and Stadium interiors are hand-built in
+  `map_places.gd` and do not use styles.
+
 ### Ground cover, mounds, lamps, sun rays (`map.gd`, `sun_rays.gd`)
 
 - `_occ_build()` rasterises everything standing on the ground (collider

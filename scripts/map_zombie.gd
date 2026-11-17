@@ -77,7 +77,7 @@ static func _roads(m) -> void:
 
 static func _hospital(m) -> void:
 	# Three floors with a roof terrace; the front (south) faces the car park.
-	m._building(Vector3(-26, 0, 25), 27.0, 18.0, 3, "block_a", {"mirror": false, "floor": "deck", "roof": "block_c"})
+	m._building(Vector3(-26, 0, 25), 27.0, 18.0, 3, "block_a", {"mirror": false, "floor": "deck", "roof": "block_c", "style": "clinic"})
 	# Ambulance canopy over the entrance.
 	m._box(Vector3(-26, 3.3, 13.2), Vector3(11.0, 0.3, 5.0), "trim", false)
 	for x in [-31.0, -21.0]:
@@ -103,7 +103,7 @@ static func _hospital(m) -> void:
 
 
 static func _clinic_and_tents(m) -> void:
-	m._building(Vector3(22, 0, 22), 17.0, 13.0, 2, "block_b", {"mirror": false, "floor": "deck", "roof": "block_c"})
+	m._building(Vector3(22, 0, 22), 17.0, 13.0, 2, "block_b", {"mirror": false, "floor": "deck", "roof": "block_c", "style": "clinic"})
 	# Triage field: rows of tents, cots and supply crates under floodlights.
 	for row in 2:
 		for i in 3:
@@ -126,7 +126,7 @@ static func _clinic_and_tents(m) -> void:
 
 
 static func _warehouse(m) -> void:
-	m._building(Vector3(38, 0, -24), 26.0, 15.0, 1, "block_c", {"mirror": false, "floor": "deck", "roof": "metal", "furnish": false})
+	m._building(Vector3(38, 0, -24), 26.0, 15.0, 1, "block_c", {"mirror": false, "floor": "deck", "roof": "metal", "style": "warehouse"})
 	# Mezzanine at the east end with stairs, shelving rows of crates below.
 	m._slab(Rect2(43.5, -31.0, 7.0, 13.5), 3.3, "deck", [Rect2(43.5, -26.5, 1.6, 6.2)], false, 0.25)
 	m._stairs(Vector3(44.3, 0, -23.4), Vector3(5.8, 3.3, 1.5), -PI * 0.5, "deck", false)
@@ -148,9 +148,9 @@ static func _warehouse(m) -> void:
 
 
 static func _motel(m) -> void:
-	m._building(Vector3(-40, 0, -26), 20.0, 13.0, 2, "siding3", {"mirror": false, "pitched": true, "roof": "roof_red"})
+	m._building(Vector3(-40, 0, -26), 20.0, 13.0, 2, "siding3", {"mirror": false, "pitched": true, "roof": "roof_red", "style": "motel"})
 	# Office hut and fuel pumps on the forecourt.
-	m._building(Vector3(-20.5, 0, -27.5), 8.6, 9.0, 1, "siding0", {"mirror": false, "roof": "block_c"})
+	m._building(Vector3(-20.5, 0, -27.5), 8.6, 9.0, 1, "siding0", {"mirror": false, "roof": "block_c", "style": "store"})
 	m._box(Vector3(-36.0, 3.6, -11.0), Vector3(9.0, 0.3, 5.0), "trim", false)
 	for x in [-39.8, -32.2]:
 		m._cyl(Vector3(x, 0, -11.0), 0.2, 3.5, "metal", false)

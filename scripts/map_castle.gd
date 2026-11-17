@@ -174,6 +174,9 @@ static func _outside(m) -> void:
 	# Woods and rocks in the corners.
 	m._forest(Rect2(33.5, 24.5, 10.5, 8.0), 12)
 	m._forest(Rect2(-44.0, 22.0, 12.0, 10.0), 10)
-	for p in [Vector3(33.0, 0, -24.0), Vector3(40.0, 0, -20.0), Vector3(-41.0, 0, -4.0)]:
+	# The woodcutter's cabin outside the south-east tower: you can go in.
+	m._building(Vector3(37.5, 0, -21.5), 7.2, 8.6, 1, "deck", {"mirror": false, "pitched": true, "roof": "block_c", "style": "cabin", "roof_h": 3.4, "glass": false, "door_model": "castle/Door"})
+	m.no_grass.append(Rect2(33.6, -26.0, 8.0, 9.2))
+	for p in [Vector3(-33.0, 0, 24.5), Vector3(-41.0, 0, -4.0)]:
 		m._model("castle/Rocks_Large", p, m._rng.randf() * TAU, 3.0)
 

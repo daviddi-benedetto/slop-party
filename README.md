@@ -60,6 +60,15 @@ arenas with readable colour and atmosphere at every time of day.
   haze and depth of field, so no map floats in a void.
 - **Light:** warm hanging lamps in every room, and sun rays that fan out
   from the sun when you look towards it and are cut by roofs and trees.
+- **Buildings with character:** houses with verandas, bay windows, dormers
+  and balconies; log cabins with a porch, stone chimney and hearth; stores
+  with glazed shop fronts, striped awnings and lit signs; office towers
+  that step back in glass tiers to a mast; warehouses with sawtooth roofs
+  and loading docks; clinics, motels, barracks, labs and workshops. Inside,
+  partition walls make real rooms and each storey is furnished for what it
+  is: kitchen and living room downstairs, bedrooms and a bathroom above;
+  wards with screened beds; shop aisles and a counter; bunk rooms; server
+  racks; a forge.
 - **A lived-in world:** furnished houses, loose physics props you can kick
   and shoot around (chairs, tables, books, boxes, bottles), window glass that
   shatters, dense forests, camps, sidewalks and crossings. Props never block

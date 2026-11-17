@@ -357,8 +357,8 @@ static func suburb(m) -> void:
 	m._tree(Vector3(0, 0.45, 0), 1.0, false)
 
 	# --- North-east plot (mirrored: south-west) ---
-	m._building(Vector3(16, 0, 15.5), 11.0, 9.0, 2, "siding0", {"pitched": true, "roof": "roof_red"})
-	m._building(Vector3(25.1, 0, 15.5), 6.5, 9.0, 1, "siding0", {"roof": "block_c"})
+	m._building(Vector3(16, 0, 15.5), 11.0, 9.0, 2, "siding0", {"pitched": true, "roof": "roof_red", "style": "house"})
+	m._building(Vector3(25.1, 0, 15.5), 6.5, 9.0, 1, "siding0", {"roof": "block_c", "style": "garage"})
 	m._surface(Rect2(22.2, 6.5, 6.0, 4.5), 0.02, "path")
 	m._surface(Rect2(15.1, 6.5, 1.8, 4.5), 0.02, "path")
 	m.no_grass.append_array([Rect2(22.2, 6.5, 6.0, 4.5), Rect2(15.1, 6.5, 1.8, 4.5), Rect2(-28.2, -11.0, 6.0, 4.5), Rect2(-16.9, -11.0, 1.8, 4.5)])
@@ -378,11 +378,11 @@ static func suburb(m) -> void:
 	m._lawn(Rect2(7.0, 20.8, 32.8, 9.0))
 
 	# --- North-west plot (mirrored: south-east) ---
-	m._building(Vector3(-21, 0, 16), 12.0, 9.0, 2, "siding1", {"pitched": true, "roof": "block_c"})
+	m._building(Vector3(-21, 0, 16), 12.0, 9.0, 2, "siding1", {"pitched": true, "roof": "block_c", "style": "house"})
 	m._slab(Rect2(-26.5, 9.6, 11.0, 1.9), 3.0, "deck", [], true, 0.25)
 	for x in [-26.2, -21.0, -15.8]:
 		m._cyl(Vector3(x, 0, 9.8), 0.1, 2.75, "trim")
-	m._building(Vector3(-33.5, 0, 14.5), 6.0, 8.6, 1, "siding2", {"roof": "block_c"})
+	m._building(Vector3(-33.5, 0, 14.5), 8.2, 8.6, 1, "siding2", {"roof": "block_c", "style": "store"})
 	# Treehouse in the back garden.
 	m._tree(Vector3(-33, 0, 25), 1.9)
 	m._box(Vector3(-33, 3.25, 25), Vector3(3.6, 0.3, 3.6), "deck")
