@@ -16,6 +16,7 @@ This file is generated from the model folders (`assets/models/`). When you add a
 | Other sound effects and the music | Synthesised in code (`sfx.gd`) | Ours | |
 | UI icons and portraits | Drawn in code (`ui_kit.gd`) | Ours | |
 | UI font `fonts/Fredoka.ttf` | Google Fonts, The Fredoka Project Authors | SIL Open Font License 1.1 (`fonts/OFL.txt`) | Free for commercial use and embedding; the font file itself may not be sold on its own |
+| Number font `fonts/LilitaOne.ttf` | Juan Montoreano, via Google Fonts (github.com/google/fonts, `ofl/lilitaone/LilitaOne-Regular.ttf`) | SIL Open Font License 1.1 (`fonts/OFL-LilitaOne.txt`) | Free for commercial use and embedding; Reserved Font Name "Lilita"; the font file itself may not be sold on its own |
 | Game engine | Godot Engine 4.7.2, godotengine.org | MIT | Requires the notice in `THIRD_PARTY_LICENSES.txt` to ship with the game |
 
 CC0 text: https://creativecommons.org/publicdomain/zero/1.0/

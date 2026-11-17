@@ -60,10 +60,40 @@ PLAY** lists every button and **MODES** explains each mode.
   fired it. **Melee** with any gun in hand: your other paw draws a knife
   for a heavy slash (wind-up, fast cut, a jolt on impact). Swords, axes and
   spears swing the blade itself.
-- **Clear feedback:** hit markers (gold for headshots), a red cross on a
-  knockout, arcs showing where damage came from, a pulsing red edge when
-  your health is low, and on death your view turns to face whoever got you
-  and shows how much health they had left.
+- **Clear feedback:** hit markers (gold for headshots), a red cross and a
+  stamped "FRAGGED!" on a knockout (DOUBLE KO / TRIPLE KO for quick
+  chains), arcs showing where damage came from, a view flinch away from
+  the hit, a pulsing red edge when your health is low, and on death your
+  view turns to face whoever got you and shows how much health they had
+  left. Bullets leave holes and puffs of dust; blasts leave scorch marks
+  and smoke.
+
+### HUD and menus
+
+- **The HUD speaks the theme:** highlights, panels and accents take the
+  theme's colours (pink and cyan in Cyberpunk, pastel in Toy...), and so do
+  the pause menu, options and results.
+- **Weapon silhouettes** instead of names: on your weapon badge, in the
+  kill feed (what did it, including the knife), and when a mystery box
+  hands you something.
+- **Health in chunks of 25** that shakes when you are hit, drains to show
+  what you lost, glows green when you heal and pulses red near death.
+- **Reload ring** around the crosshair, a red tick when the magazine runs
+  low, and the last bullets in the magazine shown red.
+- **Small views stay readable:** in a small cell (5–6 way split, or a small
+  window) the HUD drops the words and makes numbers and icons bigger.
+- **Numbers in a chunky display font** (Lilita One): ammo, health, scores,
+  the countdown and the results.
+- **PlayStation pads** show the shape buttons (cross, circle, square,
+  triangle) and L1 / R2 names; Xbox-style pads keep A / B / X / Y.
+- **Screen transitions:** a slanted curtain in the theme's colours sweeps
+  across between the lobby, the loading card, the match and the results.
+- **Lobby close-up:** changing your animal, colour, hat or back item leans
+  the camera towards your podium and your animal twirls to show it off.
+- **Pause menu** pops in over the blurred match with the mode, map and the
+  standings at a glance.
+- **Results awards:** stats count up, and up to four titles are handed out
+  (Up Close for melee KOs, Box Addict, On a Roll, Heavy Hitter, Survivor).
 
 ### Maps
 
@@ -84,6 +114,13 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Scenery:** dense wind-blown grass and flowers over rolling mounds, a
   horizon of hills and mountains on every map, warm lamps indoors, sun rays,
   and pets (dogs, cats, a fox, a bunny) you can pet for a little health.
+- **Light and air:** bounce light (colour from lit walls and floors spills
+  into the shade), a reflection probe so glass, water and metal reflect the
+  level, optional light shafts through the haze, and drifting specks in the
+  air that suit the theme: pollen by day, embers at sunset, fireflies at
+  night, neon dust in Cyberpunk and Synthwave, dust motes indoors. Neon
+  lights buzz and stutter now and then, water ripples, and dirt patches and
+  cracks break up big floors.
 
 ### Themes
 
@@ -113,8 +150,8 @@ synthesised. Weapons, zombies, cars, trees,
 furniture, doors and castle pieces are public-domain (CC0) 3D models by
 Quaternius, Kenney and Kay Lousberg. **[ASSETS.md](ASSETS.md) lists every
 asset, its author, licence and download source**; `THIRD_PARTY_LICENSES.txt`
-carries the notices that ship with the game. The UI font is Fredoka (SIL Open
-Font License).
+carries the notices that ship with the game. The UI fonts are Fredoka and Lilita One
+(both SIL Open Font License).
 
 ## Play
 
@@ -181,9 +218,11 @@ Q / E to turn them):
   **Display**: frames are paced by your screen's own refresh rate, which is
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing, motion blur,
-  render scale, shadows, ambient occlusion, bloom, scenery, soft focus, sun
-  rays, and **auto resolution** (on by default): a busy moment lowers the
-  3D resolution briefly instead of dropping below 60 FPS.
+  render scale, shadows, ambient occlusion, bounce light, light shafts in
+  the air (Ultra; used with one or two views), bullet holes and scorch
+  marks, bloom, scenery, soft focus, sun rays, and **auto resolution** (on
+  by default): a busy moment lowers the 3D resolution briefly instead of
+  dropping below 60 FPS.
 - **Audio:** master, music and effects volume. Sounds are panned left and
   right relative to the nearest player's view.
 - **Controls:** gamepad and mouse look speed, stick dead zone, aim assist,
@@ -210,7 +249,7 @@ project.godot         Godot project file
 main.tscn             the only scene; everything else is built in code
 scripts/              all game code (see docs/ARCHITECTURE.md)
 assets/               3D models, plush animal meshes, audio (see ASSETS.md)
-fonts/                Fredoka UI font + its licence
+fonts/                Fredoka and Lilita One UI fonts + their licences
 docs/                 architecture notes
 tools/                build.bat, setup_engine.ps1, smoke.sh, balance.sh
 engine/               bundled Godot editor + export templates  (not in git)

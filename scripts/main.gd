@@ -42,7 +42,7 @@ const MapScript = preload("res://scripts/map.gd")
 var lobby
 var game = null
 var _args := {}
-var _fade: ColorRect
+var _fade        # wipe.gd: a theme-coloured curtain driven like a fade (color:a)
 var _card: Control            # the loading card drawn over the black fade
 var _card_info := {}          # {mode, map, theme, tip} while it shows
 
@@ -67,7 +67,7 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 50
 	add_child(layer)
-	_fade = ColorRect.new()
+	_fade = preload("res://scripts/wipe.gd").new()
 	_fade.color = Color(UiKit.INK, 1.0)
 	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -125,7 +125,7 @@ func _ready() -> void:
 	if _args.has("start-after"):
 		get_tree().create_timer(float(_args["start-after"])).timeout.connect(func(): lobby._start())
 	if _args.has("pause-at"):
-		get_tree().create_timer(float(_args["pause-at"])).timeout.connect(func():
+		get_tree().create_timer(float(_args["pause-at"]), true, false, true).timeout.connect(func():
 			if game != null:
 				game._set_paused(true))
 	if _args.has("shot"):

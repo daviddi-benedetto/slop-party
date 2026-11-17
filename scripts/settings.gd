@@ -13,7 +13,8 @@ extends Node
 ## stays portable and nothing is written to the user profile.
 ##
 ## Dev flags (after "--"): --uncapped leaves v-sync / frame cap alone so
-## benchmarks work; running with -w / --windowed keeps the window windowed.
+## benchmarks work; running with -w / --windowed keeps the window windowed;
+## --set-<key>=<index> overrides one setting for that run (not saved).
 
 signal changed
 
@@ -33,6 +34,12 @@ const ITEMS := [
 	{"key": "scale", "label": "Render scale", "opts": ["50%", "67%", "75%", "85%", "100%"], "vals": [0.5, 0.67, 0.75, 0.85, 1.0], "def": 4},
 	{"key": "shadows", "label": "Shadows", "opts": ["Off", "Low", "High"], "vals": [0, 1, 2], "def": 2},
 	{"key": "ssao", "label": "Ambient occlusion", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	# Light bouncing off surfaces (screen-space indirect light, SSIL). Tested
+	# SDFGI too: it cost over 10 ms a frame and stalled for seconds, so no.
+	{"key": "gi", "label": "Bounce light", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	# Light shafts through the haze (volumetric fog), one or two views only.
+	{"key": "volfog", "label": "Light shafts in the air", "opts": ON_OFF, "vals": [false, true], "def": 0},
+	{"key": "decals", "label": "Bullet holes and scorch marks", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "glow", "label": "Bloom", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "scenery", "label": "Scenery detail", "opts": ["Low", "High"], "vals": [0, 1], "def": 1},
 	# Lowers the 3D resolution on the fly whenever a frame would take too long
@@ -60,14 +67,15 @@ const ITEMS := [
 
 ## preset index -> {key: choice index}
 const PRESETS := {
-	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0},
-	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0},
-	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1},
-	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1},
+	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0},
+	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0, "gi": 0, "volfog": 0, "decals": 1},
+	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 0, "decals": 1},
+	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 1, "decals": 1},
 }
 
 var idx := {}
 var res_factor := 1.0      # auto resolution: extra 3D scale factor set by game.gd (0.5-1)
+var view_count := 1        # splitscreen views in play (game.gd); heavy effects need few views
 var lobby := {}            # free-form values the lobby remembers (loadouts, map, bots)
 var _items := {}           # key -> item dictionary (with opts/vals filled in)
 var rows: Array = []       # ITEMS with ranges expanded; what the menu shows
@@ -105,6 +113,12 @@ func _ready() -> void:
 			idx[item.key] = item.def
 	_path = OS.get_executable_path().get_base_dir().path_join("fragdeck_settings.cfg")
 	_load()
+	# Dev: --set-<key>=<choice index> overrides a setting for this run only.
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--set-") and "=" in a:
+			var kv := a.substr(6).split("=")
+			if _items.has(kv[0]):
+				idx[kv[0]] = clampi(int(kv[1]), 0, _items[kv[0]].opts.size() - 1)
 	apply()
 
 
@@ -182,6 +196,20 @@ func apply_viewport(vp: Viewport) -> void:
 func apply_environment(env: Environment, sun: DirectionalLight3D) -> void:
 	env.ssao_enabled = v("ssao")
 	env.glow_enabled = v("glow")
+	# Bounce light: colour picked up from nearby lit surfaces.
+	env.ssil_enabled = v("gi")
+	env.ssil_radius = 4.0
+	env.ssil_intensity = 0.9
+	env.ssil_sharpness = 0.98
+	env.volumetric_fog_enabled = v("volfog") and view_count <= 2 and env.get_meta("volfog_density", 0.0) > 0.0
+	if env.volumetric_fog_enabled:
+		env.volumetric_fog_density = env.get_meta("volfog_density", 0.01)
+		env.volumetric_fog_albedo = env.get_meta("volfog_albedo", Color(0.8, 0.8, 0.85))
+		env.volumetric_fog_anisotropy = 0.55
+		env.volumetric_fog_length = 48.0
+		env.volumetric_fog_detail_spread = 2.0
+		env.volumetric_fog_ambient_inject = 0.25
+		env.volumetric_fog_sky_affect = 0.0
 	var sh: int = v("shadows")
 	sun.shadow_enabled = sh > 0
 	sun.shadow_blur = 2.6 if sh == 2 else 1.4

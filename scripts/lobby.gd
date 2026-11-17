@@ -103,6 +103,7 @@ func _build_stage() -> void:
 		_stage.queue_free()
 	var key: String = Looks.options()[theme_i]
 	_look_now = Looks.get_look(key)
+	UiKit.use_theme(_look_now)
 	_stage = Stage.new()
 	add_child(_stage)
 	move_child(_stage, 0)
@@ -161,6 +162,7 @@ func demo_fill(humans: int, cpu: int) -> void:
 
 
 func _on_joy_changed(device: int, connected: bool) -> void:
+	UiKit.reset_pads()
 	if not connected:
 		seats = seats.filter(func(s): return s.device != device)
 		_clamp_bots()
@@ -183,10 +185,43 @@ func _edge(key: String, now: bool) -> bool:
 	return now and not was
 
 
+## Customising: the camera leans towards that seat for a moment and the
+## character does a twirl to show off the new look.
+var _focus_i := -1
+var _focus_t := 0.0
+var _focus_w := 0.0
+var _spin := 0.0
+
+
+func _update_focus(delta: float) -> void:
+	_focus_t = maxf(0.0, _focus_t - delta)
+	_focus_w = move_toward(_focus_w, 1.0 if _focus_t > 0.0 and _focus_i >= 0 else 0.0, delta * 2.2)
+	if _stage == null or _stage.camera == null:
+		return
+	var base_pos := Vector3(0, 4.9, 18.5)
+	var base_at := Vector3(0, 3.0, 0)
+	var pos := base_pos
+	var at := base_at
+	if _focus_i >= 0:
+		var top := _slot_pos(_focus_i) + Vector3(0, _slot_h(_focus_i), 0)
+		var k := smoothstep(0.0, 1.0, _focus_w) * 0.42
+		pos = base_pos.lerp(top + Vector3(0.6, 2.2, 8.0), k)
+		at = base_at.lerp(top + Vector3(0.4, 1.3, 0), k)
+		# One eased turn while the camera is in.
+		if _focus_t > 0.0:
+			_spin = minf(1.0, _spin + delta / 1.1)
+		var c = _slot_char[_focus_i]
+		if c != null and is_instance_valid(c):
+			var e := _spin * _spin * (3.0 - 2.0 * _spin)
+			c.rotation.y = e * TAU
+	_stage.camera.look_at_from_position(pos, at)
+
+
 func _process(delta: float) -> void:
 	if not visible:
 		return
 	_t += delta
+	_update_focus(delta)
 	message_t = maxf(0.0, message_t - delta)
 	for i in MAX_PLAYERS:
 		_slot_bump[i] = minf(1.0, _slot_bump[i] + delta * 3.0)
@@ -357,6 +392,11 @@ func _edit(seat_i: int, dh: int, dv: int) -> void:
 		Sfx.play("tick", -8.0, 0.8 + seat.sens * 0.06)
 		return
 	seat[key] = posmod(seat[key] + dh, count)
+	if key in ["kind", "color", "hat", "back"]:
+		if _focus_i != seat_i or _focus_t <= 0.0:
+			_spin = 0.0
+		_focus_i = seat_i
+		_focus_t = 2.4
 	if key == "color":
 		# Two players never share a colour.
 		var used := _used_colors(seat_i)

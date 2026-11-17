@@ -15,6 +15,9 @@ static var _mat_flat: StandardMaterial3D
 static var _mat_add: StandardMaterial3D
 static var _shrink: Curve
 static var _confetti_ramp: Gradient
+static var _decal_tex := {}          # kind -> ImageTexture (generated once)
+static var _decals: Array = []       # pooled bullet holes / scorch marks, oldest first
+const MAX_DECALS := 48
 
 
 ## A quick stylised blood spray for combat hits; uses pooled particle meshes.
@@ -145,6 +148,134 @@ static func sparks(parent: Node, pos: Vector3, color: Color, amount: int, speed:
 	p.layers = layers
 	p.damping_min = 3.0
 	p.damping_max = 6.0
+	p.emitting = true
+
+
+## A mark left on the world: "hole" (bullet hole), "scorch" (blast) or
+## "slash". Decals only project onto the level (layer 1), never on players.
+## Pooled: the oldest mark is reused once MAX_DECALS are out.
+static func decal(parent: Node, pos: Vector3, normal: Vector3, kind: String, size: float, tint := Color(1, 1, 1, 1)) -> void:
+	if not Settings.v("decals"):
+		return
+	var d: Decal = null
+	while not _decals.is_empty() and not is_instance_valid(_decals[0]):
+		_decals.pop_front()
+	if _decals.size() >= MAX_DECALS:
+		d = _decals.pop_front()
+		if d.get_parent() != parent:
+			d.get_parent().remove_child(d)
+			parent.add_child(d)
+	else:
+		d = Decal.new()
+		d.cull_mask = 1
+		d.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		d.distance_fade_enabled = true
+		d.distance_fade_begin = 30.0
+		d.distance_fade_length = 8.0
+		parent.add_child(d)
+	_decals.append(d)
+	d.texture_albedo = _decal_texture(kind)
+	d.modulate = tint
+	d.albedo_mix = 1.0
+	d.upper_fade = 0.3
+	d.lower_fade = 0.3
+	var depth := 0.5 if kind != "scorch" else size * 0.8
+	d.size = Vector3(size, depth, size)
+	# Decals project along their local -Y: point that into the surface.
+	var up := normal.normalized() if normal.length() > 0.01 else Vector3.UP
+	var side := up.cross(Vector3.RIGHT if absf(up.x) < 0.9 else Vector3.FORWARD).normalized()
+	var b := Basis(side, up, side.cross(up)).rotated(up, randf() * TAU)
+	d.global_transform = Transform3D(b, pos)
+	d.visible = true
+	# Fade out after a while (bullet holes sooner than scorch marks).
+	var life := 14.0 if kind == "hole" else 22.0
+	if d.has_meta("tween"):
+		var old: Tween = d.get_meta("tween")
+		if old != null and old.is_valid():
+			old.kill()
+	var tw := d.create_tween()
+	tw.tween_interval(life)
+	tw.tween_property(d, "modulate:a", 0.0, 3.0)
+	tw.tween_callback(func(): d.visible = false)
+	d.set_meta("tween", tw)
+
+
+static func grime_texture() -> Texture2D:
+	return _decal_texture("grime")
+
+
+static func crack_texture() -> Texture2D:
+	return _decal_texture("crack")
+
+
+## Procedural decal textures (white, shaped by alpha; tinted by modulate).
+static func _decal_texture(kind: String) -> Texture2D:
+	if _decal_tex.has(kind):
+		return _decal_tex[kind]
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var noise := FastNoiseLite.new()
+	noise.seed = kind.hash()
+	noise.frequency = 0.06
+	var rng := RandomNumberGenerator.new()
+	rng.seed = kind.hash()
+	for y in n:
+		for x in n:
+			var u := (x + 0.5) / n * 2.0 - 1.0
+			var v := (y + 0.5) / n * 2.0 - 1.0
+			var r := sqrt(u * u + v * v)
+			var nz := noise.get_noise_2d(x, y)
+			var c := Color(1, 1, 1, 0)
+			match kind:
+				"hole":
+					# A dark centre, a ring of chipped paint, cracks fading out.
+					var core := 1.0 - smoothstep(0.12, 0.2, r)
+					var chip := (1.0 - smoothstep(0.2, 0.55 + nz * 0.2, r)) * 0.55
+					var g := 0.05 if core > 0.5 else 0.25 + 0.2 * nz
+					c = Color(g, g, g * 1.05, clampf(maxf(core, chip), 0.0, 1.0))
+				"scorch":
+					var a := (1.0 - smoothstep(0.25 + nz * 0.25, 0.95, r))
+					var g2 := 0.04 + 0.08 * r
+					c = Color(g2, g2 * 0.95, g2 * 0.9, clampf(a * 0.92, 0.0, 1.0))
+				"grime":
+					var a2 := (1.0 - smoothstep(0.2, 1.0, r + nz * 0.35)) * (0.6 + 0.4 * noise.get_noise_2d(x * 3.0, y * 3.0))
+					c = Color(1, 1, 1, clampf(a2, 0.0, 1.0))
+				"crack":
+					c = Color(1, 1, 1, 0)
+			img.set_pixel(x, y, c)
+	if kind == "crack":
+		# A few branching dark lines from the centre.
+		for b in 5:
+			var p := Vector2(n * 0.5, n * 0.5)
+			var ang := TAU * b / 5.0 + rng.randf_range(-0.4, 0.4)
+			for step in 40:
+				ang += rng.randf_range(-0.35, 0.35)
+				p += Vector2(cos(ang), sin(ang)) * 1.4
+				if p.x < 1 or p.y < 1 or p.x > n - 2 or p.y > n - 2:
+					break
+				var a3 := 1.0 - step / 40.0
+				for o in [Vector2.ZERO, Vector2(1, 0), Vector2(0, 1)]:
+					img.set_pixelv(Vector2i(p + o), Color(1, 1, 1, a3))
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	_decal_tex[kind] = tex
+	return tex
+
+
+## A dark smoke column that rises and spreads after a blast.
+static func smoke(parent: Node, pos: Vector3, size := 1.0) -> void:
+	var p := burst(parent, pos + Vector3(0, 0.3, 0), Color(0.16, 0.15, 0.17, 0.55), 10, 2.4 * size, 1.4 * size, 2.2, 1.6, Vector3.UP, 40.0, false, false)
+	p.damping_min = 1.5
+	p.damping_max = 2.5
+	var grow := Curve.new()
+	grow.add_point(Vector2(0, 0.3))
+	grow.add_point(Vector2(0.4, 1.0))
+	grow.add_point(Vector2(1, 1.3))
+	p.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1, 1, 1, 1))
+	fade.set_color(1, Color(1, 1, 1, 0))
+	p.color_ramp = fade
 	p.emitting = true
 
 

@@ -2,7 +2,11 @@ extends Control
 ## Victory screen shown by game.gd after the match world has been freed:
 ## a 3D podium (stage.gd) with the top three, confetti, and a results table.
 ##
-## `rows` is a snapshot, best first: [{name, color, kind, kills, deaths, cards}].
+## `rows` is a snapshot, best first: [{name, color, kind, kills, deaths, cards,
+## knife, boxes, damage, streak}]. The last four feed the awards: up to four
+## fun titles (most melee KOs, most mystery boxes, fewest deaths, longest
+## streak, most damage) that slide in down the right side. Every number
+## counts up as its card arrives.
 ## Emits done() when someone presses a confirm button (or after a timeout).
 
 signal done
@@ -17,6 +21,7 @@ var title := ""              # set by game.gd for team / co-op modes; default "<
 var _stage
 var _t := 0.0
 var _finished := false
+var _awards: Array = []      # [title, line, icon, row index, value]
 
 
 func _ready() -> void:
@@ -41,11 +46,52 @@ func _ready() -> void:
 			c.emote = "cheer"
 		elif i >= 3:
 			c.emote = "sad"
+	_awards = _pick_awards()
 	Fx.confetti_rain(_stage, Vector3(0, 9.0, 0), Vector3(8.0, 0.5, 2.0))
 	Fx.confetti(_stage, Vector3(-3, 1.5, 2), 60, 9.0, 2.2)
 	Fx.confetti(_stage, Vector3(3, 1.5, 2), 60, 9.0, 2.2)
 	Sfx.play("win", -2.0)
 	Sfx.music("lobby")
+
+
+## The fun titles: each goes to the best player for it, preferring players
+## who have not won one yet, and only when it means something.
+func _pick_awards() -> Array:
+	var defs := [
+		["knife", "UP CLOSE", "%d melee KOs", "skull", 1, true],
+		["boxes", "BOX ADDICT", "opened %d mystery boxes", "star", 2, true],
+		["streak", "ON A ROLL", "%d KOs without dying", "bolt", 3, true],
+		["damage", "HEAVY HITTER", "%d damage dealt", "boom", 1, true],
+		["deaths", "SURVIVOR", "only %d deaths", "shield", 0, false],
+	]
+	var out: Array = []
+	var used := {}
+	for d in defs:
+		if rows.size() < 2 or out.size() >= 4:
+			break
+		var best := -1
+		for i in rows.size():
+			var v: int = int(rows[i].get(d[0], 0))
+			if best < 0:
+				best = i
+				continue
+			var bv: int = int(rows[best].get(d[0], 0))
+			var better: bool = v > bv if d[5] else v < bv
+			if better or (v == bv and used.has(best) and not used.has(i)):
+				best = i
+		var val: int = int(rows[best].get(d[0], 0))
+		if (d[5] and val < d[4]) or (not d[5] and used.has(best)):
+			continue
+		used[best] = true
+		out.append([d[1], d[2], d[3], best, val])
+	return out
+
+
+## A number counting up from 0 once its card has arrived.
+func _count(value: int, start: float) -> String:
+	var k := clampf((_t - start) / 0.9, 0.0, 1.0)
+	k = 1.0 - pow(1.0 - k, 3.0)
+	return str(roundi(value * k))
 
 
 func _process(delta: float) -> void:
@@ -106,12 +152,31 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(r.position.x + 66 * s, r.position.y + 42 * s), row.name, 30 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1, 700, 0.14)
 		var place: String = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH"][i]
 		UiKit.text(self, Vector2(r.position.x, r.position.y + 42 * s), place, 26 * s, UiKit.GOLD if i == 0 else UiKit.CREAM, HORIZONTAL_ALIGNMENT_RIGHT, cw - 18 * s, 700, 0.14)
-		var stats := [["KOs", str(row.kills)], ["DEATHS", str(row.deaths)], ["CARDS", str(row.cards)]]
+		var t0 := 0.9 + i * 0.1
+		var stats := [["KOs", _count(row.kills, t0)], ["DEATHS", _count(row.deaths, t0)], ["CARDS", _count(row.cards, t0)]]
 		for j in 3:
 			var sx := r.position.x + cw * (j + 0.5) / 3.0
-			UiKit.text(self, Vector2(sx - 60 * s, r.position.y + 104 * s), stats[j][1], 38 * s, UiKit.GOLD if j == 0 else Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, 120 * s, 700, 0.14)
+			UiKit.num(self, Vector2(sx - 60 * s, r.position.y + 106 * s), stats[j][1], 44 * s, UiKit.GOLD if j == 0 else Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, 120 * s, 0.14)
 			UiKit.text(self, Vector2(sx - 60 * s, r.position.y + 132 * s), stats[j][0], 16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, 120 * s, 600, 0.0)
 
+	# Awards down the right side, one after another.
+	for k in _awards.size():
+		var aw: Array = _awards[k]
+		var t1 := 2.2 + k * 0.45
+		var sl := UiKit.back_out(clampf((_t - t1) / 0.45, 0.0, 1.0))
+		if sl <= 0.0:
+			continue
+		var row2: Dictionary = rows[aw[3]]
+		var ar := Rect2(w - 420 * s + (1.0 - sl) * 480 * s, 250 * s + k * 104 * s, 390 * s, 88 * s)
+		UiKit.card(self, ar, UiKit.PANEL, 24 * s, s)
+		var ic := ar.position + Vector2(46 * s, 44 * s)
+		draw_circle(ic, 32 * s, UiKit.INK)
+		draw_circle(ic, 29 * s, UiKit.GOLD)
+		UiKit.icon(self, aw[2], ic, 17 * s, UiKit.INK)
+		UiKit.text(self, ar.position + Vector2(90 * s, 38 * s), aw[0], 30 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_LEFT, -1, 700, 0.14)
+		UiKit.portrait(self, ar.position + Vector2(ar.size.x - 34 * s, 30 * s), 13 * s, row2.color, row2.kind)
+		var line: String = "%s  -  %s" % [row2.name, aw[1] % int(_count(aw[4], t1 + 0.2))]
+		UiKit.text(self, ar.position + Vector2(90 * s, 72 * s), line, 20 * s, row2.color.lerp(Color.WHITE, 0.5), HORIZONTAL_ALIGNMENT_LEFT, ar.size.x - 100 * s, 600, 0.12)
 	if _t > 2.0:
 		var pad: bool = not Input.get_connected_joypads().is_empty()
 		var label := "CONTINUE"

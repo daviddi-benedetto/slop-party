@@ -58,6 +58,7 @@ const Arch = preload("res://scripts/arch.gd")
 const Door = preload("res://scripts/door.gd")
 const Rubble = preload("res://scripts/rubble.gd")
 const Looks = preload("res://scripts/looks.gd")
+const Fx = preload("res://scripts/fx.gd")
 
 signal nav_built
 
@@ -401,6 +402,8 @@ var _sun: DirectionalLight3D
 var _hazards: Array = []
 var _pad_rings: Array = []
 var _time := 0.0
+var _flicker: Array = []         # [OmniLight3D, base energy, phase, speed]: neon that stutters
+var _water_t := 0.0
 
 
 func build(index := 0, theme_key := "classic") -> void:
@@ -464,10 +467,22 @@ func build(index := 0, theme_key := "classic") -> void:
 	_build_floor()
 	_build_scenery()
 	_flush()
+	_ambient_life()
+	_ground_decals()
 
 
 func _process(delta: float) -> void:
 	_time += delta
+	# Neon that buzzes: mostly steady, with the odd stutter.
+	for f in _flicker:
+		var l: OmniLight3D = f[0]
+		var n := sin(_time * f[3] + f[2]) * sin(_time * f[3] * 2.7 + f[2] * 1.9)
+		l.light_energy = f[1] * (0.25 if n > 0.93 else (0.9 + 0.1 * sin(_time * 31.0 + f[2])))
+	# Water ripples drift.
+	if _mats.has("water"):
+		_water_t += delta
+		var wm: StandardMaterial3D = _mats.water
+		wm.uv1_offset = Vector3(_water_t * 0.02, _water_t * 0.013, 0)
 	for r in _pad_rings:
 		var t := fmod(_time * 0.8 + r[2], 1.0)
 		r[0].position.y = 0.15 + t * 1.6
@@ -605,6 +620,10 @@ func _build_environment() -> void:
 	env.fog_density = fog_density
 	env.fog_sky_affect = 0.35 if weather == "fog" else 0.0
 	Looks.apply_post(look, env)
+	# Light shafts (Settings "volfog"): a thin haze the sun and lamps cut
+	# through, tinted like the fog. Kept thin so players stay readable.
+	env.set_meta("volfog_density", look.get("volfog", 0.012 if indoor else 0.007))
+	env.set_meta("volfog_albedo", fog_col.lerp(Color(0.85, 0.85, 0.9), 0.5))
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -622,12 +641,158 @@ func _build_environment() -> void:
 	add_child(sun)
 	_env = env
 	_sun = sun
+	_reflection_probe()
 	_on_settings()
 	Settings.changed.connect(_on_settings)
 
 
 func _on_settings() -> void:
 	Settings.apply_environment(_env, _sun)
+
+
+## Drifting specks in the air, one kind per theme: pollen and dandelion
+## fluff by day, embers at sunset, fireflies at night, neon dust in the
+## neon themes, dust motes indoors. GPU particles over the whole arena:
+## nearly free, and they make the air feel alive.
+func _ambient_life() -> void:
+	if Settings.v("scenery") == 0:
+		return
+	var key: String = look.get("key", "classic")
+	var col := Color(1.0, 1.0, 0.95, 0.7)
+	var glow := 0.0
+	var size := 0.05
+	var speed := 0.25
+	match key:
+		"toy":
+			col = Color(1.0, 0.85, 0.95, 0.8)
+			size = 0.07
+		"warm":
+			col = Color(1.0, 0.62, 0.25, 1.0)
+			glow = 2.5
+			size = 0.04
+			speed = 0.45
+		"cyberpunk", "synthwave":
+			col = theme.accent_b if randf() < 0.5 else theme.accent_a
+			glow = 3.0
+			size = 0.035
+			speed = 0.35
+		"spooky":
+			col = Color(0.7, 1.0, 0.3, 1.0)
+			glow = 4.0
+			size = 0.06
+		"moonlit":
+			col = Color(1.0, 0.9, 0.5, 1.0)
+			glow = 3.5
+			size = 0.05
+	if indoor:
+		col = Color(1.0, 0.95, 0.85, 0.45)
+		glow = 0.0
+		size = 0.03
+		speed = 0.08
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	var hy := 3.5 if indoor else 5.0
+	pm.emission_box_extents = Vector3(half_x, hy, half_z)
+	pm.direction = Vector3(0.3, 0.2, 0.1)
+	pm.spread = 180.0
+	pm.initial_velocity_min = speed * 0.3
+	pm.initial_velocity_max = speed
+	pm.gravity = Vector3(0, 0.02 if glow > 0.0 else -0.03, 0)
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.6
+	pm.turbulence_noise_scale = 6.0
+	pm.turbulence_influence_min = 0.05
+	pm.turbulence_influence_max = 0.15
+	pm.scale_min = 0.6
+	pm.scale_max = 1.3
+	var fade := Curve.new()
+	fade.add_point(Vector2(0, 0))
+	fade.add_point(Vector2(0.15, 1))
+	fade.add_point(Vector2(0.85, 1))
+	fade.add_point(Vector2(1, 0))
+	var ft := CurveTexture.new()
+	ft.curve = fade
+	pm.scale_curve = ft
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.albedo_color = Color(col.r * (1.0 + glow), col.g * (1.0 + glow), col.b * (1.0 + glow), col.a)
+	if glow > 0.0:
+		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 32
+	tex.height = 32
+	mat.albedo_texture = tex
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE * size
+	quad.material = mat
+	var p := GPUParticles3D.new()
+	p.amount = clampi(int(half_x * half_z * 0.12), 120, 600)
+	p.lifetime = 9.0
+	p.preprocess = 9.0
+	p.process_material = pm
+	p.draw_pass_1 = quad
+	p.position = Vector3(0, hy + 0.3, 0)
+	p.visibility_aabb = AABB(Vector3(-half_x - 4, -hy - 4, -half_z - 4), Vector3(half_x * 2 + 8, hy * 2 + 8, half_z * 2 + 8))
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(p)
+
+
+## Ground dressing: soft dirt, scuff and crack decals scattered over open
+## floor so big surfaces do not read as one repeating tile.
+func _ground_decals() -> void:
+	if Settings.v("scenery") == 0 or not Settings.v("decals"):
+		return
+	var n := clampi(int(half_x * half_z * 0.012), 10, 44)
+	var placed := 0
+	var tries := 0
+	while placed < n and tries < n * 6:
+		tries += 1
+		var px := _rng.randf_range(-half_x + 2.0, half_x - 2.0)
+		var pz := _rng.randf_range(-half_z + 2.0, half_z - 2.0)
+		var y := ground_y(px, pz)
+		var d := Decal.new()
+		var dirt := _rng.randf() < 0.7
+		d.texture_albedo = Fx.grime_texture() if dirt else Fx.crack_texture()
+		var sz := _rng.randf_range(2.5, 6.0) if dirt else _rng.randf_range(1.2, 2.4)
+		d.size = Vector3(sz, 1.2, sz * _rng.randf_range(0.6, 1.0))
+		d.position = Vector3(px, y, pz)
+		d.rotation.y = _rng.randf() * TAU
+		d.modulate = Color(0.25, 0.2, 0.16, _rng.randf_range(0.25, 0.45)) if dirt else Color(0.1, 0.1, 0.12, 0.55)
+		d.cull_mask = 1
+		d.upper_fade = 0.5
+		d.lower_fade = 0.5
+		d.distance_fade_enabled = true
+		d.distance_fade_begin = 40.0
+		d.distance_fade_length = 10.0
+		add_child(d)
+		placed += 1
+
+
+## One box-projected reflection probe over the arena, rendered once: glass,
+## water, metal and glossy floors reflect the level instead of only the sky.
+func _reflection_probe() -> void:
+	var probe := ReflectionProbe.new()
+	probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	var hy := maxf(wall_h, 10.0)
+	probe.size = Vector3(half_x * 2.0 + 4.0, hy * 2.0, half_z * 2.0 + 4.0)
+	probe.position = Vector3(0, hy * 0.5, 0)
+	probe.origin_offset = Vector3(0, 2.5 - hy * 0.5, 0)
+	probe.box_projection = true
+	probe.interior = indoor
+	probe.intensity = 0.7
+	probe.max_distance = maxf(half_x, half_z) * 2.5
+	probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+	probe.mesh_lod_threshold = 4.0
+	add_child(probe)
 
 
 ## Unit vector pointing at the sun (or moon), and its colour (sun_rays.gd).
@@ -659,6 +824,9 @@ func _glow(pos: Vector3, col: Color, radius := 8.0, energy := 1.6, mirror := tru
 		l.omni_range = radius
 		l.omni_attenuation = 1.6
 		add_child(l)
+		# Neon themes: about one coloured light in four buzzes and stutters.
+		if neon_scale > 1.2 and _rng.randf() < 0.25:
+			_flicker.append([l, l.light_energy, _rng.randf() * TAU, _rng.randf_range(0.6, 1.4)])
 
 
 # --------------------------------------------------------------------------
@@ -706,6 +874,22 @@ func _make_materials() -> void:
 	water.albedo_color = Color(0.15, 0.5, 0.65, 0.55)
 	water.roughness = 0.03
 	water.metallic = 0.3
+	# Rippling surface: a seamless noise normal map that drifts (_process).
+	var wn := NoiseTexture2D.new()
+	wn.seamless = true
+	wn.as_normal_map = true
+	wn.bump_strength = 6.0
+	wn.width = 256
+	wn.height = 256
+	var wnoise := FastNoiseLite.new()
+	wnoise.frequency = 0.02
+	wn.noise = wnoise
+	water.normal_enabled = true
+	water.normal_texture = wn
+	water.normal_scale = 0.6
+	water.uv1_triplanar = true
+	water.uv1_world_triplanar = true
+	water.uv1_scale = Vector3.ONE * 0.12
 	_mats["water"] = water
 	for i in 2:
 		_mats["leaf%d" % i] = _leaf_mat(theme.leaf[i])

@@ -21,6 +21,7 @@ extends Control
 
 const Cards = preload("res://scripts/cards.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
+const Weapons = preload("res://scripts/weapons.gd")
 
 const BLUR_SHADER := """
 shader_type canvas_item;
@@ -37,6 +38,10 @@ void fragment() {
 var player = null
 var game
 var s := 1.0
+## Small cells (5-6 way split, or a small window): fewer words, bigger
+## numbers and icons, so the essentials stay readable.
+var compact := false
+var _last_kill_flash := 0.0
 var _blur: ColorRect
 var _blur_amount := 0.0
 var _layers: Array = []      # [control, signature_callable, last_signature]
@@ -80,7 +85,8 @@ func _process(delta: float) -> void:
 	_blur.visible = _blur_amount > 0.01
 	if _blur.visible:
 		_blur.material.set_shader_parameter("amount", _blur_amount)
-	s = clampf(size.y / 540.0, 0.55, 2.5)
+	compact = size.y < 420.0
+	s = clampf(size.y / 540.0 * (1.2 if compact else 1.0), 0.55, 2.5)
 	for l in _layers:
 		var sig = l[1].call()
 		if sig != l[2]:
@@ -92,15 +98,17 @@ func _process(delta: float) -> void:
 func _sig_status():
 	if not player.alive or player.vehicle != null or player.picking:
 		return [0]
-	return [size, ceili(player.health), roundi(player.health_ghost), player.stats.max_health, player.card_icons.size(),
-		int(game.time * 10.0) if player.spawn_protect > 0.0 else -1]
+	var anim := -1
+	if player.spawn_protect > 0.0 or player.hurt_flash > 0.0 or player.heal_flash > 0.0 or player.health < player.stats.max_health * 0.3:
+		anim = int(game.time * 30.0)      # shaking, pulsing or glowing: animate
+	return [size, ceili(player.health), roundi(player.health_ghost), player.stats.max_health, player.card_icons.size(), anim, UiKit.GOLD]
 
 
 func _sig_ammo():
 	if not player.alive or player.vehicle != null or player.picking:
 		return [0]
 	var reloading: bool = player.reload_left > 0.0
-	return [size, player.ammo, player.stats.mag_size, player.weapon, player.shield_ready(),
+	return [size, player.ammo, player.stats.mag_size, player.weapon, player.shield_ready(), UiKit.GOLD,
 		int(player.reload_left / player.stats.reload_time * 50.0) if reloading else -1,
 		int(player.dash_cd / player.stats.dash_cooldown * 40.0),
 		int(player.block_cd / player.stats.block_cooldown * 40.0)]
@@ -208,6 +216,17 @@ func _draw_alive(w: float, h: float) -> void:
 		draw_arc(c, rad, 0.0, TAU, 48, Color(1, 1, 1, 0.95 * ca), 1.6 * s)
 		draw_circle(c, 2.2 * s, Color(UiKit.INK, ca))
 		draw_circle(c, 1.1 * s, Color(1, 1, 1, ca))
+	# Reload: a ring that fills around the crosshair.
+	if player.reload_left > 0.0 and not scoped:
+		var rf: float = 1.0 - player.reload_left / player.stats.reload_time
+		var rr2 := 24.0 * s
+		draw_arc(c, rr2, 0, TAU, 40, Color(UiKit.INK, 0.6), 7.0 * s)
+		draw_arc(c, rr2, -PI / 2, -PI / 2 + TAU * rf, 40, UiKit.GOLD, 4.0 * s)
+	elif not player.stats.melee_weapon and player.stats.mag_size > 1 and player.ammo <= maxi(1, player.stats.mag_size / 4) and not scoped:
+		# Low ammo: a red tick under the crosshair.
+		var la := 0.6 + 0.4 * sin(game.time * 9.0)
+		draw_arc(c, 24.0 * s, PI * 0.3, PI * 0.7, 12, Color(UiKit.INK, la), 6.0 * s)
+		draw_arc(c, 24.0 * s, PI * 0.3, PI * 0.7, 12, Color(1.0, 0.35, 0.35, la), 3.5 * s)
 	# Jetpack fuel: an arc left of the crosshair.
 	if player.stats.jetpack > 0.0:
 		var ff: float = clampf(player.jet_fuel / player.stats.jetpack, 0.0, 1.0)
@@ -241,22 +260,41 @@ func _draw_status(ci: Control) -> void:
 	var w := size.x
 	var frac: float = clampf(player.health / player.stats.max_health, 0.0, 1.0)
 	# --- bottom left: portrait, name, health, owned cards ---
-	var px := 40.0 * s
-	var py := h - 42.0 * s
+	# Hit: the whole block shakes for a moment.
+	var jolt: Vector2 = Vector2(sin(game.time * 71.0), cos(game.time * 63.0)) * player.hurt_flash * player.hurt_flash * 4.0 * s
+	var px: float = 40.0 * s + jolt.x
+	var py: float = h - 42.0 * s + jolt.y
 	ci.draw_circle(Vector2(px, py + 3 * s), 29 * s, Color(0.08, 0.05, 0.12, 0.4))
 	ci.draw_circle(Vector2(px, py), 29 * s, UiKit.INK)
 	ci.draw_circle(Vector2(px, py), 26 * s, UiKit.CREAM)
 	UiKit.portrait(ci, Vector2(px, py + 3 * s), 16 * s, player.color, player.kind)
-	var bar := Rect2(78 * s, h - 44 * s, 176 * s, 20 * s)
+	var bar := Rect2(78 * s + jolt.x, h - 46 * s + jolt.y, 176 * s, 24 * s)
+	var low: bool = frac < 0.3
 	var fill := Color(1.0, 0.32, 0.36).lerp(Color(0.36, 0.86, 0.42), clampf(frac * 1.4 - 0.2, 0.0, 1.0))
+	if low:
+		# Near death the bar pulses and glows red.
+		var pulse := 0.5 + 0.5 * sin(game.time * 8.0)
+		UiKit.panel(ci, bar.grow((5.0 + 3.0 * pulse) * s), Color(1.0, 0.2, 0.25, 0.25 + 0.3 * pulse), 18 * s)
+		fill = fill.lerp(Color(1.0, 0.75, 0.75), pulse * 0.35)
+	if player.heal_flash > 0.0:
+		UiKit.panel(ci, bar.grow(7.0 * s * player.heal_flash), Color(0.4, 1.0, 0.55, 0.45 * player.heal_flash), 18 * s)
 	UiKit.bar(ci, bar, frac, fill, s, clampf(player.health_ghost / player.stats.max_health, 0.0, 1.0))
-	UiKit.icon(ci, "heart", bar.position + Vector2(13 * s, 10 * s), 7 * s, Color.WHITE)
-	_t(bar.position + Vector2(26 * s, 16 * s), "%d" % ceili(player.health), 15, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
-	_t(Vector2(78 * s, h - 52 * s), player.pname, 14, player.color.lerp(Color.WHITE, 0.4), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
-	if player.spawn_protect > 0.0:
+	# Chunks: a notch every 25 health.
+	var chunks: int = int(player.stats.max_health / 25.0)
+	for i in range(1, chunks):
+		var nx: float = bar.position.x + bar.size.x * (i * 25.0 / player.stats.max_health)
+		ci.draw_line(Vector2(nx, bar.position.y + 3 * s), Vector2(nx, bar.end.y - 3 * s), Color(UiKit.INK, 0.55), 2.0 * s)
+	UiKit.icon(ci, "heart", bar.position + Vector2(14 * s, 12 * s), 8 * s, UiKit.INK)
+	UiKit.icon(ci, "heart", bar.position + Vector2(14 * s, 11 * s), 7 * s, Color.WHITE)
+	UiKit.num(ci, bar.position + Vector2(28 * s, 20 * s), "%d" % ceili(player.health), 21 * s, Color.WHITE)
+	if not compact:
+		_t(Vector2(78 * s, h - 54 * s), player.pname, 14, player.color.lerp(Color.WHITE, 0.4), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
+	if player.spawn_protect > 0.0 and not compact:
 		var sx := 78 * s + UiKit.text_width(player.pname, 14 * s) + 16 * s
 		UiKit.icon(ci, "shield", Vector2(sx, h - 57 * s), 7 * s, Color(0.5, 0.85, 1.0, 0.6 + 0.4 * sin(game.time * 12.0)))
-	# Owned cards as little rarity-coloured tiles.
+	# Owned cards as little rarity-coloured tiles (not in compact cells).
+	if compact:
+		return
 	var tile := 19.0 * s
 	var max_tiles := int((w * 0.42) / (tile + 4 * s))
 	var total: int = player.card_icons.size()
@@ -275,12 +313,15 @@ func _draw_ammo(ci: Control) -> void:
 		return
 	var w := size.x
 	var h := size.y
-	# Weapon name tag (and bubble shield status) above the ammo read-out.
-	var wname: String = player.weapon_name().to_upper()
-	var tag_w := UiKit.text_width(wname, 12 * s) + 22 * s
-	var tag := Rect2(w - 20 * s - tag_w, h - 106 * s, tag_w, 20 * s)
-	UiKit.panel(ci, tag, Cards.RARITY_COLORS[Cards.WEAPON], 10 * s, UiKit.INK, 2 * s)
-	ci.draw_string(UiKit.font(700), tag.position + Vector2(0, 14.5 * s), wname, HORIZONTAL_ALIGNMENT_CENTER, tag_w, maxi(8, int(12 * s)), Color.WHITE)
+	# Weapon: its silhouette on a badge (name underneath when there is room),
+	# and the bubble shield status beside it.
+	var wname: String = player.weapon_name()
+	var tag := Rect2(w - 20 * s - 92 * s, h - (128 if not compact else 112) * s, 92 * s, 40 * s)
+	UiKit.card(ci, tag, UiKit.PANEL, 14 * s, s)
+	UiKit.panel(ci, Rect2(tag.position + Vector2(5, 4) * s, Vector2(tag.size.x - 10 * s, tag.size.y * 0.32)), Color(1, 1, 1, 0.08), 9 * s)
+	UiKit.weapon_icon(ci, wname, tag.get_center(), 34 * s, Cards.RARITY_COLORS[Cards.WEAPON].lerp(Color.WHITE, 0.55))
+	if not compact:
+		UiKit.text(ci, Vector2(tag.position.x - 40 * s, tag.position.y - 7 * s), wname.to_upper(), 11 * s, Color(1, 1, 1, 0.85), HORIZONTAL_ALIGNMENT_RIGHT, tag.size.x + 40 * s, 700, 0.18)
 	if player.stats.shield_cd > 0.0:
 		var ready_col := Color(0.45, 0.9, 1.0) if player.shield_ready() else Color(0.36, 0.3, 0.46)
 		ci.draw_circle(Vector2(tag.position.x - 16 * s, tag.get_center().y), 11 * s, UiKit.INK)
@@ -297,20 +338,21 @@ func _draw_ammo(ci: Control) -> void:
 		UiKit.bar(ci, Rect2(ax - 130 * s, h - 36 * s, 130 * s, 12 * s), sf, UiKit.GOLD if sf >= 1.0 else Color(0.8, 0.8, 0.9), s)
 	else:
 		var mag := "/%d" % player.stats.mag_size
-		var mw := UiKit.text_width(mag, 18 * s)
-		_t(Vector2(ax - mw, h - 24 * s), mag, 18, Color(1, 1, 1, 0.75), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
+		var mw := UiKit.num_width(mag, 22 * s)
+		UiKit.num(ci, Vector2(ax - mw, h - 24 * s), mag, 22 * s, Color(1, 1, 1, 0.75))
 		var low: bool = player.ammo <= maxi(1, player.stats.mag_size / 4)
-		_t(Vector2(0, h - 24 * s), "%d" % player.ammo, 42, Color(1.0, 0.45, 0.4) if low else Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, ax - mw - 4 * s, 700, ci)
-		# Bullet pips.
+		UiKit.num(ci, Vector2(0, h - 22 * s), "%d" % player.ammo, 50 * s, Color(1.0, 0.45, 0.4) if low else Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, ax - mw - 4 * s)
+		# Bullet pips; the last quarter of the magazine is red.
 		var n: int = player.stats.mag_size
-		if n <= 16:
+		if n <= 16 and not compact:
 			var pw := 6.0 * s
 			var pg := 3.0 * s
 			var x0 := ax - n * (pw + pg) + pg
 			for i in n:
 				var pr := Rect2(x0 + i * (pw + pg), h - 78 * s, pw, 13 * s)
 				UiKit.panel(ci, pr.grow(1.5 * s), UiKit.INK, 4 * s)
-				UiKit.panel(ci, pr, UiKit.GOLD if i < player.ammo else Color(0.36, 0.3, 0.46), 3 * s)
+				var pc: Color = (Color(1.0, 0.4, 0.38) if i < maxi(1, n / 4) else UiKit.GOLD) if i < player.ammo else Color(0.36, 0.3, 0.46)
+				UiKit.panel(ci, pr, pc, 3 * s)
 	# Dash gauge.
 	var dc := Vector2(ax - 168 * s, h - 34 * s)
 	var df: float = 1.0 - clampf(player.dash_cd / player.stats.dash_cooldown, 0.0, 1.0)
@@ -417,10 +459,10 @@ func _draw_dead(w: float, h: float) -> void:
 		var l2 := "A" if pad else "SPACE"
 		var tw := UiKit.text_width(l1, 13 * s) + UiKit.text_width(l2, 13 * s) + UiKit.text_width("CHOOSE", 15 * s) + UiKit.text_width("PICK", 15 * s) + 90 * s
 		var x := (w - tw) * 0.5
-		x += UiKit.prompt(self, Vector2(x, py), l1, 16 * s) + 8 * s
+		x += UiKit.prompt(self, Vector2(x, py), l1, 16 * s, not pad, player.brain.device) + 8 * s
 		_t(Vector2(x, py), "CHOOSE", 15, Color.WHITE)
 		x += UiKit.text_width("CHOOSE", 15 * s) + 26 * s
-		x += UiKit.prompt(self, Vector2(x, py), l2, 16 * s) + 8 * s
+		x += UiKit.prompt(self, Vector2(x, py), l2, 16 * s, not pad, player.brain.device) + 8 * s
 		_t(Vector2(x, py), "PICK", 15, Color.WHITE)
 
 
@@ -467,7 +509,7 @@ func _draw_vehicle(w: float, h: float) -> void:
 		x -= tw
 		_t(Vector2(x, y), ln[1], 13, Color.WHITE)
 		x -= 46 * s
-		UiKit.prompt(self, Vector2(x, y), ln[0], 15 * s, not pad)
+		UiKit.prompt(self, Vector2(x, y), ln[0], 15 * s, not pad, player.brain.device)
 		x -= 24 * s
 
 
@@ -531,32 +573,41 @@ func _draw_score_strip(ci: Control) -> void:
 		if p == lead and p.kills > 0:
 			UiKit.icon(ci, "crown", Vector2(cx, cy - 15 * s), 6 * s, UiKit.INK)
 			UiKit.icon(ci, "crown", Vector2(cx, cy - 16 * s), 5 * s, UiKit.GOLD)
-		_t(Vector2(cx + 12 * s, cy + 6 * s), "%d" % p.kills, 16, Color.WHITE if p != player else UiKit.GOLD, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
-	_t(Vector2(0, 54 * s), "FIRST TO %d" % game.kill_target, 10, Color(1, 1, 1, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w, 700, ci)
+		UiKit.num(ci, Vector2(cx + 12 * s, cy + 7 * s), "%d" % p.kills, 19 * s, Color.WHITE if p != player else UiKit.GOLD)
+	if not compact:
+		_t(Vector2(0, 54 * s), "FIRST TO %d" % game.kill_target, 10, Color(1, 1, 1, 0.8), HORIZONTAL_ALIGNMENT_CENTER, w, 700, ci)
 
 
 func _draw_feed(ci: Control) -> void:
 	var w := size.x
 	var y := 62.0 * s
+	var shown := 0
 	for entry in game.feed:
 		var age: float = game.time - entry.t
-		if age > 5.5:
+		if age > 5.5 or (compact and shown >= 3):
 			continue
+		shown += 1
+		var wpn: String = entry.get("weapon", "")
 		var alpha := clampf(5.5 - age, 0.0, 1.0)
 		var slide := (1.0 - UiKit.back_out(clampf(age / 0.3, 0.0, 1.0))) * 120 * s
 		var vn: String = entry.victim.pname
 		var kn: String = entry.killer.pname if entry.killer != null else ""
 		var vw := UiKit.text_width(vn, 12 * s)
 		var kw := UiKit.text_width(kn, 12 * s) if kn != "" else 0.0
-		var total := vw + kw + (62 * s if kn != "" else 40 * s)
+		var total := vw + kw + ((80 * s if wpn != "" else 62 * s) if kn != "" else 40 * s)
 		var x := w - 10 * s - total + slide
 		UiKit.panel(ci, Rect2(x, y, total, 22 * s), Color(UiKit.PANEL, 0.85 * alpha), 11 * s, Color(UiKit.INK, alpha), 2 * s)
 		var cx := x + 8 * s
 		if kn != "":
 			_t(Vector2(cx, y + 16 * s), kn, 12, Color(entry.killer.color.lerp(Color.WHITE, 0.45), alpha), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
 			cx += kw + 12 * s
-			UiKit.icon(ci, "boom", Vector2(cx, y + 11 * s), 6.5 * s, Color(1.0, 0.75, 0.3, alpha))
-			cx += 12 * s
+			if wpn != "":
+				# What did it: the weapon's silhouette.
+				UiKit.weapon_icon(ci, wpn, Vector2(cx + 9 * s, y + 11 * s), 13 * s, Color(1.0, 0.85, 0.6, alpha))
+				cx += 30 * s
+			else:
+				UiKit.icon(ci, "boom", Vector2(cx, y + 11 * s), 6.5 * s, Color(1.0, 0.75, 0.3, alpha))
+				cx += 12 * s
 		else:
 			UiKit.icon(ci, "skull", Vector2(cx + 6 * s, y + 11 * s), 6 * s, Color(1, 1, 1, alpha))
 			cx += 18 * s
@@ -580,18 +631,41 @@ func _draw_banners(w: float, h: float) -> void:
 		var px := (w - tw) * 0.5
 		var py := h * 0.74
 		UiKit.card(self, Rect2(px - 12 * s, py - 24 * s, tw + 24 * s, 36 * s), UiKit.PANEL, 18 * s, s)
-		px += UiKit.prompt(self, Vector2(px, py), key, 18 * s, player.brain.device < 0) + 10 * s
+		px += UiKit.prompt(self, Vector2(px, py), key, 18 * s, player.brain.device < 0, player.brain.device) + 10 * s
 		_t(Vector2(px, py), player.pickup_prompt, 17, Color.WHITE)
 	# Short notices (weapon pickup, second wind).
 	if player.notice_t > 0.0 and player.alive:
 		var nt: float = 1.6 - player.notice_t
-		_big(Vector2(w * 0.5, h * 0.66), player.notice, 20, Color(0.8, 0.95, 1.0, clampf(player.notice_t * 4.0, 0.0, 1.0)), UiKit.back_out(clampf(nt * 7.0, 0.0, 1.0)))
+		var na := clampf(player.notice_t * 4.0, 0.0, 1.0)
+		var npop := UiKit.back_out(clampf(nt * 7.0, 0.0, 1.0))
+		_big(Vector2(w * 0.5, h * 0.66), player.notice, 20, Color(0.8, 0.95, 1.0, na), npop)
+		if player.notice_weapon >= 0:
+			# The weapon you just got, spinning up into place.
+			var ic := Vector2(w * 0.5, h * 0.66 - 44 * s)
+			draw_set_transform(ic, (1.0 - npop) * 1.5, Vector2(npop, npop))
+			UiKit.panel(self, Rect2(-56 * s, -30 * s, 112 * s, 60 * s), Color(UiKit.PANEL, 0.9 * na), 18 * s, Color(UiKit.GOLD, na), 3 * s)
+			UiKit.weapon_icon(self, Weapons.LIST[player.notice_weapon].name, Vector2.ZERO, 42 * s, Color(1, 1, 1, na))
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	# Kill confirmation.
 	if player.kill_flash > 0.0 and player.alive:
 		var t: float = 1.0 - player.kill_flash
 		var a := clampf(player.kill_flash * 5.0, 0.0, 1.0)
-		var scl := UiKit.back_out(clampf(t * 7.0, 0.0, 1.0))
-		_big(Vector2(w * 0.5, h * 0.27), "FRAGGED %s!" % player.kill_name, 24, Color(UiKit.GOLD, a), scl, sin(t * 20.0) * 0.02)
+		# Stamped in: big, then slammed down to size with a starburst behind.
+		var stamp := clampf(t * 8.0, 0.0, 1.0)
+		var scl := lerpf(1.9, 1.0, stamp * stamp) if stamp < 1.0 else 1.0 + maxf(0.0, 0.08 - (t - 0.125) * 0.6)
+		var kc := Vector2(w * 0.5, h * 0.27)
+		if t < 0.5:
+			var ba := (1.0 - t * 2.0) * a
+			for i in 12:
+				var ang := TAU * i / 12.0 + 0.2
+				var r0 := (30.0 + t * 260.0) * s
+				draw_line(kc + Vector2(cos(ang), sin(ang) * 0.45) * r0, kc + Vector2(cos(ang), sin(ang) * 0.45) * (r0 + 26 * s), Color(UiKit.GOLD, ba), 4.0 * s)
+		_big(kc, "FRAGGED %s!" % player.kill_name, 24, Color(UiKit.GOLD, a), scl, -0.03 + sin(t * 20.0) * 0.015)
+		if player.multi_kill >= 2:
+			var words := ["", "", "DOUBLE KO!", "TRIPLE KO!", "QUAD KO!"]
+			var mk: String = words[player.multi_kill] if player.multi_kill < words.size() else "%dx KO!" % player.multi_kill
+			var mpop := UiKit.elastic_out(clampf((t - 0.08) * 3.0, 0.0, 1.0))
+			_big(kc + Vector2(0, 40 * s), mk, 30, Color(UiKit.ACCENT.lerp(Color.WHITE, 0.2), a), mpop, 0.04)
 	# Mode announcements (wave start, flag captured...).
 	if game.rules != null and game.rules.banner_t < 3.0 and game.countdown <= 0.0:
 		var bt: float = game.rules.banner_t
@@ -602,7 +676,10 @@ func _draw_banners(w: float, h: float) -> void:
 		var num := ceili(game.countdown)
 		if num <= 3:
 			var f: float = game.countdown - floorf(game.countdown)
-			_big(c, str(num), 110, Color(1, 1, 1, clampf(f * 3.0, 0.0, 1.0)), 0.8 + f * 0.6)
+			var cs := 0.8 + f * 0.6
+			draw_set_transform(c, 0.0, Vector2(cs, cs))
+			UiKit.num(self, Vector2(-size.x * 0.5, 110 * s * 0.35), str(num), 130 * s, Color(UiKit.GOLD.lerp(Color.WHITE, 0.5), clampf(f * 3.0, 0.0, 1.0)), HORIZONTAL_ALIGNMENT_CENTER, size.x, 0.12)
+			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		else:
 			_big(c, "GET READY", 40, Color.WHITE, 1.0 + sin(game.time * 6.0) * 0.03)
 		_big(c + Vector2(0, 52 * s), (game.map.label() if game.mode == "frontline" else game.MODE_NAMES[game.mode] + "  -  " + game.map.label()), 15, Color(1, 1, 1, 0.85), 1.0)

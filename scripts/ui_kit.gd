@@ -8,11 +8,16 @@ extends RefCounted
 ## saturated candy colours, Fredoka font.
 
 # Palette after ROUNDS: near-black navy surfaces, off-white text, a hot orange
-# highlight, and saturated neon player colours.
+# highlight, and saturated neon player colours. GOLD (the highlight), PANEL
+# and ACCENT follow the visual theme (use_theme: looks.gd "ui"), so the HUD
+# and menus are pink and cyan in Cyberpunk, pastel in Toy, and so on.
 const INK := Color(0.035, 0.04, 0.075)
 const CREAM := Color(0.93, 0.95, 1.0)
-const GOLD := Color(1.0, 0.62, 0.2)
-const PANEL := Color(0.075, 0.085, 0.14, 0.92)
+const BASE_GOLD := Color(1.0, 0.62, 0.2)
+const BASE_PANEL := Color(0.075, 0.085, 0.14, 0.92)
+static var GOLD := BASE_GOLD
+static var PANEL := BASE_PANEL
+static var ACCENT := Color(0.3, 0.75, 1.0)
 const PLAYER_COLORS := [
 	Color(1.0, 0.45, 0.18), Color(0.22, 0.6, 1.0), Color(0.3, 0.9, 0.45), Color(1.0, 0.84, 0.2),
 	Color(0.72, 0.45, 1.0), Color(1.0, 0.36, 0.66), Color(0.18, 0.9, 0.92), Color(1.0, 0.28, 0.3),
@@ -29,8 +34,58 @@ const BACK_NAMES := ["NONE", "CAPE", "BACKPACK", "WINGS", "BALLOON", "KATANA", "
 const FACE_NAMES := ["NORMAL", "ANGRY", "SHADES", "EYE PATCH", "SLEEPY", "MONOCLE", "MUSTACHE"]
 
 static var _fonts := {}
+static var _num_font: Font
 static var _sb: StyleBoxFlat
 static var _vignette: GradientTexture2D
+static var _ps := {}           # joypad device -> true when it is a PlayStation pad
+
+## Which silhouette weapon_icon() draws for each weapon (weapons.gd names).
+const WEAPON_SHAPE := {"Blaster": "ak", "Scatter": "shotgun", "Zapper": "smg", "Boomer": "launcher", "Rail": "sniper",
+	"Lobber": "drum", "Bubbler": "orb", "Tripler": "rifle", "Magnum": "revolver", "Spinner": "minigun", "Pinball": "drum",
+	"Flamer": "tank", "Twins": "twins", "Tesla": "orb", "Cluster": "launcher", "Vortex": "orb", "Ripper": "disc",
+	"Sticky": "launcher", "Longshot": "sniper", "Frostbite": "tank", "Fire Hands": "hand", "Storm Staff": "staff",
+	"Frost Hands": "hand", "Arcane Staff": "staff", "Sword": "sword", "Throwing Knives": "knives", "Longbow": "bow",
+	"Crossbow": "crossbow", "Battle Axe": "axe", "Spear": "spear", "Powder Bomb": "bomb", "Knife": "knife"}
+## Silhouettes in a box x -1..1 (stock to muzzle), y about -0.6..0.6.
+## ["r", x0, y0, x1, y1] rectangle, ["c", x, y, radius] circle,
+## ["p", x, y, x, y, ...] polygon.
+const SHAPES := {
+	"pistol": [["r", -0.55, -0.3, 0.7, -0.02], ["p", -0.5, -0.02, -0.12, -0.02, -0.24, 0.5, -0.62, 0.5], ["r", 0.55, -0.4, 0.66, -0.3]],
+	"ak": [["r", -0.45, -0.22, 0.98, -0.09], ["r", -0.5, -0.27, 0.32, 0.04], ["p", -0.5, -0.22, -0.98, -0.04, -0.98, 0.28, -0.5, 0.04],
+		["p", -0.08, 0.04, 0.1, 0.04, 0.26, 0.48, 0.08, 0.52], ["p", -0.42, 0.04, -0.22, 0.04, -0.3, 0.38, -0.5, 0.38], ["r", 0.86, -0.33, 0.92, -0.22]],
+	"smg": [["r", -0.6, -0.28, 0.75, 0.0], ["r", 0.75, -0.19, 0.97, -0.09], ["p", -0.45, 0.0, -0.15, 0.0, -0.22, 0.45, -0.52, 0.45],
+		["r", 0.08, 0.0, 0.26, 0.55], ["p", -0.6, -0.26, -0.97, -0.12, -0.97, 0.22, -0.6, 0.02]],
+	"shotgun": [["r", -0.35, -0.26, 0.97, -0.08], ["r", 0.1, -0.08, 0.62, 0.08], ["p", -0.35, -0.26, -0.35, 0.06, -0.97, 0.32, -0.97, 0.04],
+		["p", -0.42, 0.0, -0.2, 0.0, -0.3, 0.36, -0.52, 0.36]],
+	"rifle": [["r", -0.45, -0.2, 0.98, -0.07], ["r", -0.5, -0.25, 0.3, 0.06], ["p", -0.5, -0.2, -0.98, -0.02, -0.98, 0.3, -0.5, 0.06],
+		["r", -0.14, 0.06, 0.03, 0.46], ["r", -0.25, -0.43, 0.2, -0.31], ["r", -0.06, -0.31, 0.02, -0.25]],
+	"sniper": [["r", -0.45, -0.17, 0.99, -0.08], ["r", -0.5, -0.24, 0.25, 0.06], ["p", -0.5, -0.2, -0.99, -0.02, -0.99, 0.3, -0.5, 0.06],
+		["r", -0.36, -0.47, 0.32, -0.31], ["r", -0.04, -0.31, 0.04, -0.24], ["p", 0.55, -0.08, 0.62, -0.08, 0.72, 0.4, 0.64, 0.4]],
+	"launcher": [["r", -0.9, -0.32, 0.9, 0.06], ["r", 0.74, -0.38, 0.99, 0.12], ["p", -0.2, 0.06, 0.06, 0.06, 0.0, 0.46, -0.26, 0.46],
+		["r", -0.1, -0.47, 0.16, -0.32]],
+	"drum": [["r", -0.2, -0.32, 0.96, -0.06], ["c", -0.04, 0.08, 0.3], ["p", -0.7, -0.26, -0.3, -0.26, -0.3, 0.0, -0.9, 0.26, -0.97, 0.1]],
+	"minigun": [["r", -0.25, -0.36, 0.98, -0.25], ["r", -0.25, -0.19, 0.98, -0.08], ["r", -0.25, -0.02, 0.98, 0.09],
+		["r", -0.75, -0.44, -0.15, 0.2], ["r", 0.42, -0.44, 0.52, 0.17], ["p", -0.65, 0.2, -0.4, 0.2, -0.45, 0.5, -0.7, 0.5]],
+	"revolver": [["r", -0.2, -0.28, 0.86, -0.12], ["c", -0.12, -0.12, 0.21], ["p", -0.45, -0.24, -0.2, -0.24, -0.3, 0.5, -0.72, 0.45]],
+	"tank": [["r", -0.3, -0.26, 0.85, -0.08], ["p", 0.85, -0.32, 0.99, -0.38, 0.99, 0.04, 0.85, -0.02], ["c", -0.56, 0.06, 0.32],
+		["p", 0.0, -0.08, 0.2, -0.08, 0.15, 0.42, -0.05, 0.42]],
+	"orb": [["r", -0.62, -0.21, 0.45, 0.01], ["c", 0.66, -0.1, 0.3], ["p", -0.45, 0.0, -0.15, 0.0, -0.22, 0.46, -0.52, 0.46],
+		["r", -0.92, -0.26, -0.6, 0.06]],
+	"disc": [["c", 0.5, -0.06, 0.42], ["r", -0.82, -0.16, 0.2, 0.04], ["p", -0.5, 0.04, -0.22, 0.04, -0.3, 0.46, -0.58, 0.46]],
+	"hand": [["c", 0.0, 0.14, 0.42], ["r", -0.42, -0.5, -0.24, 0.06], ["r", -0.18, -0.66, 0.0, 0.0], ["r", 0.06, -0.62, 0.24, 0.0],
+		["r", 0.28, -0.46, 0.44, 0.06], ["p", 0.3, 0.12, 0.76, -0.14, 0.82, 0.02, 0.42, 0.38]],
+	"staff": [["p", -0.98, 0.42, -0.9, 0.52, 0.52, -0.18, 0.44, -0.28], ["c", 0.66, -0.34, 0.26]],
+	"sword": [["p", -0.28, -0.07, 0.84, -0.07, 0.99, 0.0, 0.84, 0.07, -0.28, 0.07], ["r", -0.38, -0.32, -0.28, 0.32],
+		["r", -0.8, -0.055, -0.38, 0.055], ["c", -0.86, 0.0, 0.1]],
+	"knife": [["p", -0.1, -0.1, 0.7, -0.1, 0.98, 0.04, 0.7, 0.1, -0.1, 0.1], ["r", -0.2, -0.22, -0.1, 0.22], ["r", -0.75, -0.08, -0.2, 0.08]],
+	"knives": [["p", -0.1, -0.4, 0.78, -0.4, 0.92, -0.33, 0.78, -0.26, -0.1, -0.26], ["r", -0.55, -0.38, -0.1, -0.28],
+		["p", -0.2, 0.18, 0.68, 0.18, 0.82, 0.25, 0.68, 0.32, -0.2, 0.32], ["r", -0.65, 0.2, -0.2, 0.3]],
+	"crossbow": [["r", -0.92, -0.08, 0.72, 0.08], ["p", 0.36, -0.05, 0.56, -0.05, 0.76, -0.62, 0.6, -0.64],
+		["p", 0.36, 0.05, 0.56, 0.05, 0.76, 0.62, 0.6, 0.64], ["p", -0.4, 0.08, -0.2, 0.08, -0.3, 0.46, -0.5, 0.46]],
+	"axe": [["r", -0.97, -0.05, 0.62, 0.05], ["p", 0.3, -0.07, 0.74, -0.56, 0.96, -0.46, 0.96, 0.46, 0.74, 0.56, 0.3, 0.07]],
+	"spear": [["r", -0.98, -0.035, 0.56, 0.035], ["p", 0.5, -0.13, 0.99, 0.0, 0.5, 0.13, 0.6, 0.0]],
+	"bomb": [["c", -0.05, 0.12, 0.46], ["r", 0.18, -0.46, 0.3, -0.24], ["c", 0.3, -0.56, 0.11]],
+}
 
 
 static func font(weight := 700) -> Font:
@@ -43,6 +98,98 @@ static func font(weight := 700) -> Font:
 			f = fv
 		_fonts[weight] = f
 	return _fonts[weight]
+
+
+## Theme colours for the HUD and menus (a looks.gd entry; {} = defaults).
+static func use_theme(look: Dictionary) -> void:
+	var ui: Dictionary = look.get("ui", {})
+	GOLD = ui.get("value", BASE_GOLD)
+	var p: Color = ui.get("panel", BASE_PANEL)
+	# Keep panels dark enough for white text whatever the theme.
+	PANEL = Color(p.r * 0.75, p.g * 0.75, p.b * 0.75, maxf(p.a, 0.9)) if p.get_luminance() > 0.2 else p
+	ACCENT = ui.get("logo_b", Color(0.3, 0.75, 1.0))
+
+
+## The chunky display font for numbers (scores, ammo, health, countdown).
+static func num_font() -> Font:
+	if _num_font == null:
+		_num_font = load("res://fonts/LilitaOne.ttf") if ResourceLoader.exists("res://fonts/LilitaOne.ttf") else font(700)
+	return _num_font
+
+
+## Outlined number in the display font.
+static func num(ci: CanvasItem, pos: Vector2, s: String, px: float, color: Color,
+		align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0, outline := 0.2) -> void:
+	var f := num_font()
+	var fs := maxi(8, int(px))
+	var ink := Color(INK, color.a)
+	if outline > 0.0:
+		var o := maxi(2, int(fs * outline))
+		ci.draw_string_outline(f, pos + Vector2(0, fs * 0.08), s, align, width, fs, o, ink)
+		ci.draw_string_outline(f, pos, s, align, width, fs, o, ink)
+	ci.draw_string(f, pos, s, align, width, fs, color)
+
+
+static func num_width(s: String, px: float) -> float:
+	return num_font().get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, maxi(8, int(px))).x
+
+
+## A weapon silhouette (weapons.gd name, or "Knife") with an ink outline.
+## `r` is the half-width; the icon is about 1.2 r tall.
+static func weapon_icon(ci: CanvasItem, wname: String, c: Vector2, r: float, color: Color, outline := true) -> void:
+	var shape: String = WEAPON_SHAPE.get(wname, "pistol")
+	if shape == "twins":
+		weapon_icon(ci, "Blaster", c + Vector2(-0.22, -0.16) * r, r * 0.72, color, outline)
+		weapon_icon(ci, "Blaster", c + Vector2(0.22, 0.18) * r, r * 0.72, color, outline)
+		return
+	var ink := Color(INK, color.a)
+	var o := maxf(1.5, r * 0.09)
+	var passes: Array = [[ink, o], [color, 0.0]] if outline else [[color, 0.0]]
+	for pass_i in passes:
+		var col: Color = pass_i[0]
+		var grow: float = pass_i[1]
+		if shape == "bow":
+			ci.draw_arc(c + Vector2(-0.35, 0) * r, r * 0.95, -1.15, 1.15, 18, col, r * 0.16 + grow * 2.0)
+			ci.draw_line(c + Vector2(-0.35 + cos(1.15) * 0.95, -sin(1.15) * 0.95) * r, c + Vector2(-0.35 + cos(1.15) * 0.95, sin(1.15) * 0.95) * r, col, maxf(1.0, r * 0.05) + grow * 2.0)
+			ci.draw_line(c + Vector2(-0.8, 0) * r, c + Vector2(0.95, 0) * r, col, r * 0.07 + grow * 2.0)
+			poly(ci, c, r, [Vector2(0.75, -0.14), Vector2(1.02, 0), Vector2(0.75, 0.14)], col)
+			continue
+		for part in SHAPES.get(shape, SHAPES.pistol):
+			match part[0]:
+				"r":
+					var rr := Rect2(c + Vector2(part[1], part[2]) * r, Vector2(part[3] - part[1], part[4] - part[2]) * r).grow(grow)
+					ci.draw_rect(rr, col)
+				"c":
+					ci.draw_circle(c + Vector2(part[1], part[2]) * r, part[3] * r + grow, col)
+				"p":
+					var pts := PackedVector2Array()
+					var centre := Vector2.ZERO
+					var n: int = (part.size() - 1) / 2
+					for i in n:
+						centre += Vector2(part[1 + i * 2], part[2 + i * 2])
+					centre /= n
+					for i in n:
+						var v := Vector2(part[1 + i * 2], part[2 + i * 2])
+						pts.append(c + v * r + (v - centre).normalized() * grow)
+					ci.draw_colored_polygon(pts, col)
+	if outline:
+		# A small highlight along the top edge reads as a sticker.
+		pass
+
+
+## True when a joypad is a PlayStation controller (shows the shape glyphs).
+static func is_ps(device: int) -> bool:
+	if device < 0:
+		return false
+	if not _ps.has(device):
+		var n := Input.get_joy_name(device).to_lower()
+		_ps[device] = n.contains("ps3") or n.contains("ps4") or n.contains("ps5") or n.contains("playstation") or n.contains("dualsense") or n.contains("dualshock") or n.contains("sony") or n.begins_with("wireless controller")
+	return _ps[device]
+
+
+## Forget cached controller types (a pad was plugged in or out).
+static func reset_pads() -> void:
+	_ps.clear()
 
 
 ## Chunky outlined text with a hard drop shadow.
@@ -159,10 +306,38 @@ static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: i
 			ci.draw_circle(e + Vector2(-0.04, -0.05) * r, r * 0.05, Color(1, 1, 1, color.a))
 
 
-## Controller button / key prompt. Returns the width it used.
-static func prompt(ci: CanvasItem, pos: Vector2, label: String, px: float, is_key := false) -> float:
+## Controller button / key prompt. Returns the width it used. Pad labels are
+## Xbox names (A B X Y LB RB LT RT); on a PlayStation pad (`device`, or the
+## first connected pad when -99) they become the shapes and L1 / R2 names.
+static func prompt(ci: CanvasItem, pos: Vector2, label: String, px: float, is_key := false, device := -99) -> float:
 	var colors := {"A": Color(0.35, 0.82, 0.4), "B": Color(1.0, 0.4, 0.4), "X": Color(0.3, 0.6, 1.0), "Y": Color(1.0, 0.8, 0.2)}
 	var h := px * 1.25
+	if not is_key:
+		var dev := device
+		if dev == -99:
+			var pads := Input.get_connected_joypads()
+			dev = pads[0] if not pads.is_empty() else -1
+		if is_ps(dev):
+			if colors.has(label):
+				var c2 := pos + Vector2(h * 0.5, -px * 0.36)
+				ci.draw_circle(c2, h * 0.5 + maxf(2.0, px * 0.1), INK)
+				ci.draw_circle(c2, h * 0.5, Color(0.16, 0.17, 0.24))
+				var gr := h * 0.24
+				var lw := maxf(1.5, px * 0.13)
+				match label:
+					"A":
+						var col := Color(0.45, 0.7, 1.0)
+						ci.draw_line(c2 + Vector2(-gr, -gr), c2 + Vector2(gr, gr), col, lw)
+						ci.draw_line(c2 + Vector2(-gr, gr), c2 + Vector2(gr, -gr), col, lw)
+					"B":
+						ci.draw_arc(c2, gr, 0, TAU, 20, Color(1.0, 0.4, 0.45), lw)
+					"X":
+						ci.draw_rect(Rect2(c2 - Vector2(gr, gr) * 0.9, Vector2(gr, gr) * 1.8), Color(1.0, 0.5, 0.8), false, lw)
+					"Y":
+						var tri := PackedVector2Array([c2 + Vector2(0, -gr * 1.05), c2 + Vector2(gr, gr * 0.75), c2 + Vector2(-gr, gr * 0.75), c2 + Vector2(0, -gr * 1.05)])
+						ci.draw_polyline(tri, Color(0.35, 0.95, 0.7), lw)
+				return h
+			label = {"LB": "L1", "RB": "R1", "LT": "L2", "RT": "R2", "START": "OPTIONS", "BACK": "SHARE"}.get(label, label)
 	if colors.has(label) and not is_key:
 		var c := pos + Vector2(h * 0.5, -px * 0.36)
 		ci.draw_circle(c, h * 0.5 + maxf(2.0, px * 0.1), INK)

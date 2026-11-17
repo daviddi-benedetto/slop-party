@@ -185,6 +185,7 @@ func take(player) -> void:
 	weapon_id = allowed[randi() % allowed.size()]
 	_opener = player
 	_opening = 0.0
+	player.boxes_opened += 1
 	# Turn so the lid (hinged at the box's +Z) swings away from the opener.
 	var d: Vector3 = player.global_position - global_position
 	rotation.y = atan2(-d.x, -d.z)

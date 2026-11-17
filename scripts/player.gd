@@ -174,6 +174,14 @@ var hit_crit := false
 var hurt_flash := 0.0
 var recoil := 0.0
 var kill_flash := 0.0
+var flinch := 0.0               # camera roll away from the last hit (signed, decays)
+var multi_kill := 0             # KOs in quick succession (HUD: DOUBLE KO!)
+var multi_t := 0.0              # time since the last KO, for multi_kill
+var heal_flash := 0.0           # HUD health bar glow after healing
+var knife_kills := 0            # stats for the results awards
+var boxes_opened := 0
+var damage_dealt := 0.0
+var best_streak := 0
 var kill_name := ""
 var shake := 0.0
 var fov_kick := 0.0
@@ -188,6 +196,7 @@ var fall_amount := 0.0           # smoothed vertical speed, for weapon inertia
 var damage_dirs: Array = []      # [[world_pos, time_left], ...]
 var notice := ""                 # short HUD message ("GOT SCATTER!")
 var notice_t := 0.0
+var notice_weapon := -1           # weapon id whose icon shows with the notice (-1 none)
 var spawn_time := 0.0
 
 var character
@@ -453,10 +462,12 @@ func pick_weapon(id: int) -> void:
 	burst_left = 0
 	fire_cd = 0.25
 	say("GOT %s!" % weapon_name().to_upper())
+	notice_weapon = id
 
 
 func say(text: String) -> void:
 	notice = text
+	notice_weapon = -1
 	notice_t = 1.6
 
 
@@ -554,6 +565,11 @@ func _attribute_sound(style: String) -> String:
 ## Called by game.gd for every credited KO.
 func on_kill(victim = null) -> void:
 	kills_life += 1
+	best_streak = maxi(best_streak, kills_life)
+	multi_kill = multi_kill + 1 if multi_t < 4.0 else 1
+	multi_t = 0.0
+	if game.melee_strike:
+		knife_kills += 1
 	if stats.corpse_bomb > 0.0 and victim != null and is_instance_valid(victim):
 		# Chain Reaction (card): whoever we KO goes off like a bomb.
 		var at: Vector3 = victim.chest_position()
@@ -667,6 +683,9 @@ func _process(delta: float) -> void:
 	hurt_flash = maxf(0.0, hurt_flash - delta * 2.2)
 	recoil = maxf(0.0, recoil - delta * 9.0)
 	kill_flash = maxf(0.0, kill_flash - delta * 0.55)
+	flinch = move_toward(flinch, 0.0, delta * 3.0)
+	heal_flash = maxf(0.0, heal_flash - delta * 2.0)
+	multi_t += delta
 	shake = maxf(0.0, shake - delta * 2.8)
 	fov_kick = maxf(0.0, fov_kick - delta * 3.5)
 	land_dip = maxf(0.0, land_dip - delta * 5.0)
@@ -1363,6 +1382,8 @@ func launch(v: Vector3) -> void:
 
 func heal(amount: float) -> void:
 	if alive:
+		if health < stats.max_health and amount >= 1.0:
+			heal_flash = 1.0
 		health = minf(stats.max_health, health + amount)
 
 
@@ -1423,9 +1444,13 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 			Input.start_joy_vibration(brain.device, 0.4, 0.7, 0.18)
 		if has_attacker:
 			damage_dirs.append([attacker.global_position, 1.2])
+			# Flinch: the view rolls away from the side the hit came from.
+			var local: Vector3 = Basis(Vector3.UP, yaw).inverse() * (attacker.global_position - global_position)
+			flinch = clampf(signf(local.x) * clampf(amount / 40.0, 0.3, 1.0), -1.0, 1.0)
 			if stats.thorns > 0.0:
 				attacker.take_damage(amount * stats.thorns, self, true)
 	if by_player:
+		attacker.damage_dealt += amount
 		if not silent:
 			attacker.hit_marker = 1.0
 			attacker.hit_crit = crit

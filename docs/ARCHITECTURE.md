@@ -116,8 +116,10 @@ parse error in one script.
 | `project.godot` | Project settings. Notable: 120 Hz physics with interpolation ON and jitter fix 0; swapchain image count 2 (less input lag); autoloads `Settings` then `Sfx`. Display and AA values here are only startup defaults – `settings.gd` overrides them. |
 | `main.tscn` | A single `Node` with `main.gd`. Every other node is created in code. |
 | `fonts/Fredoka.ttf` | The UI font (variable weight). Loaded by `ui_kit.gd`. |
+| `fonts/LilitaOne.ttf` | The display font for numbers (`UiKit.num()`: ammo, health, scores, countdown, results). |
 | `scripts/main.gd` | Entry point. Owns the lobby, creates/destroys a `game.gd` per match, screen fades, dev flags. |
-| `scripts/ui_kit.gd` | Shared UI look: colours, font, panels, bars, text with outline, icons, 2D animal portraits, button prompts, easing. |
+| `scripts/ui_kit.gd` | Shared UI look: colours (GOLD / PANEL / ACCENT follow the theme, `use_theme`), fonts (`num()` for numbers), panels, bars, text with outline, icons, weapon silhouettes (`weapon_icon`, `WEAPON_SHAPE` / `SHAPES`), 2D animal portraits, button prompts (PlayStation glyphs when `is_ps(device)`), easing. |
+| `scripts/wipe.gd` | Screen transition: a theme-coloured slanted curtain driven like a fading ColorRect (`color:a` 0 to 1 covers, back to 0 reveals). Used by `main.gd` and `game.gd`. |
 | `scripts/lobby.gd` | Join screen: 3D backyard with six seats in two rows of three (P1-P3 on rugs on a raised deck, P4-P6 on tree stumps, `_slot_pos` / `_slot_h`), each seat's plate drawn beside its character, per-player character customisation (category name + dots, value between arrows, shrunk to fit), and a row of option chips sized to their own text (`_chip_w`; the whole row scales down if the window is too narrow). Emits `start(config)`. |
 | `scripts/stage.gd` | Small 3D backyard behind the lobby and results: striped lawn, picket fence with flower beds, trees, hills and snow-capped mountains (or a neon skyline when the theme's stage has `city`), party-light strings in the theme's colours, pumpkins in Spooky; seats are tree stumps (`add_podium`) or rugs on a wooden deck (`add_deck`). Repeated pieces are MultiMeshes. Coloured coloured by the visual theme (`build(..., look)`; the lobby rebuilds it when the theme changes, results use the match's theme). |
 | `scripts/looks.gd` | Visual themes: `LOOKS` (time of day, sky, light, neon, surface grade, colour grading, lobby stage and overlay colours), `ORDER`, `grade()`, `apply_post()`. To add a theme: one `LOOKS` entry plus its key in `ORDER`. |
@@ -129,7 +131,7 @@ parse error in one script.
 | `scripts/frontline.gd` | Frontline mode rules: teams and CPU fill, flags, tickets, parachute spawns, vehicle respawns, bot goals, flag HUD. |
 | `scripts/vehicle.gd` | Buggy, tank and helicopter: models, driving / flying, turrets, visible muzzle flashes and tracers, weapons, damage, destruction. |
 | `scripts/map_front.gd` | Layout 6 (FRONTLINE): town, towers, warehouse, bunkers, trenches, farms, bases, vehicle spots, flags. |
-| `scripts/results.gd` | Victory screen: podium, crown, confetti, results table. |
+| `scripts/results.gd` | Victory screen: podium, crown, confetti, results table with counting-up numbers, and up to four awards (`_pick_awards`: Up Close, Box Addict, On a Roll, Heavy Hitter, Survivor) from the per-player stats game.gd passes in the rows. |
 | `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day lighting and visual themes (`looks.gd`), procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. Stairwell openings are kept clear through slabs and facade trim. |
 | `scripts/map_places.gd` | Layouts 3-5 (Museum, Stadium, Suburb) built with the map.gd helpers. |
 | `scripts/map_zombie.gd` | Dedicated large Zombies map: hospital campus, annex, warehouse, motel, quarantine fence, yard, tunnel, basement and indoor/outdoor spawns. |
@@ -147,7 +149,7 @@ parse error in one script.
 | `scripts/bot_brain.gd` | AI that exposes the same interface as `input_source.gd`. |
 | `scripts/hud.gd` | Per-viewport HUD and the animated card picker. |
 | `scripts/motion_blur.gd` | Optional, per-viewport camera-motion blur controlled by the Graphics slider. |
-| `scripts/fx.gd` | Particles, flashes, rings, confetti, floating damage numbers and blood spray/stains. |
+| `scripts/fx.gd` | Particles, flashes, rings, confetti, smoke, floating damage numbers, blood spray/stains, and pooled decals (`decal()`: bullet holes, scorch marks; procedural textures, also the floor grime / cracks map.gd scatters). |
 | `scripts/sfx.gd` | Autoload. Synthesises all sound effects (a recording in `assets/audio` named like the sound replaces it; `_name_1`, `_name_2`... are random takes), composes and renders the music loops in a thread; world sounds fade with distance and are panned left / right relative to the nearest player's view (five panner buses). |
 | `scripts/settings.gd` | Autoload. The list of user options, their values, saving/loading, and applying display, AA, motion blur and audio settings. |
 | `scripts/settings_menu.gd` | The Options screen (lobby and pause menu), in pages: one per `Settings` section plus HOW TO PLAY and MODES; LB / RB or Q / E turn pages. |
@@ -601,6 +603,33 @@ helpers, passing a scale factor derived from the viewport height. There are no
 theme resources or UI scenes. To restyle the whole game, change the constants
 and helpers in `ui_kit.gd`.
 
+**Theme colours.** `UiKit.GOLD` (highlight), `PANEL` and `ACCENT` are static
+vars, set from the visual theme's `ui` entry (looks.gd) by
+`UiKit.use_theme(look)`: game.gd calls it when the map is built, lobby.gd
+whenever the lobby theme changes. `BASE_GOLD` / `BASE_PANEL` are the
+defaults. Panels are darkened if a theme's panel is too light for white text.
+
+**HUD details.** `compact` (cell under 420 px tall) drops words (name, card
+tiles, "FIRST TO", weapon name, pips; feed limited to three) and scales the
+rest up by 1.2. Health is drawn in 25-point chunks with a jolt from
+`player.hurt_flash`, a green glow from `player.heal_flash` and a red pulse
+under 30 %; these animate the status layer through its signature. The
+weapon badge draws `UiKit.weapon_icon()`; kill-feed entries carry the
+weapon name (`game._feed_entry`, "Knife" for a melee KO with a gun). The
+reload ring and low-ammo tick are drawn around the crosshair. Kills stamp in
+with a starburst; `player.multi_kill` (KOs less than 4 s apart, counted in
+`on_kill`) adds DOUBLE / TRIPLE / QUAD KO. `player.notice_weapon` shows the
+weapon a mystery box gave above the notice. Prompts pass the player's
+device so a PlayStation pad shows its shapes.
+
+**Pause menu** (`game._draw_pause`): pops in using real time
+(`_pause_opened`, the match clock is stopped), shows mode / map / theme and
+the standings, and is redrawn every frame while paused.
+
+**Lobby close-up** (`lobby._update_focus`): changing kind / colour / hat /
+back sets `_focus_i` for 2.4 s; the stage camera leans 42 % of the way
+towards that podium and the character makes one eased turn.
+
 **HUD performance matters.** With six HUDs, redrawing everything each frame
 cost about 10 ms in GDScript. `hud.gd` therefore splits itself into child
 "layers" (score strip, kill feed, status, ammo). Each layer has a signature
@@ -631,6 +660,30 @@ across the UI.
   petals a CPUParticles3D. All three are skipped on Low scenery detail.
 - **Warm-up** (`game.gd::_prewarm`): every effect is played once out of sight
   during the countdown so the first real one does not hitch.
+- **Bounce light and light shafts** (`Settings.apply_environment`): SSIL
+  (option "gi") gives screen-space indirect light. SDFGI was tried and
+  dropped: over 10 ms a frame on an RTX 2070 at one view, with a stall of
+  several seconds. Volumetric fog (option "volfog", Ultra) is enabled only
+  with one or two views (`Settings.view_count`, set by game.gd); the map
+  stores its density and colour as Environment metadata ("volfog_density",
+  "volfog_albedo"), so the lobby stage, which sets none, never uses it.
+- **Reflection probe** (`map._reflection_probe`): one box-projected probe
+  over the arena, `UPDATE_ONCE`, interior on indoor maps.
+- **Air** (`map._ambient_life`): one GPUParticles3D box over the arena with
+  specks that suit the theme (pollen, embers, fireflies, neon dust, indoor
+  dust motes); skipped on Low scenery.
+- **Neon flicker** (`map._flicker`): with a neon theme (`neon_scale` > 1.2)
+  about a quarter of `_glow` lights buzz and stutter in `_process`.
+- **Water** (`_mats.water`): a seamless noise normal map whose UV offset
+  drifts in `_process`.
+- **Decals:** `Fx.decal()` keeps a pool of 48 (bullet holes from
+  `bullet._impact` on level hits, scorch marks from `game.explode`) that
+  project only onto layer 1 and fade out; `map._ground_decals` scatters
+  10-44 dirt and crack decals on the floor. Option "decals" turns both off.
+- **Camera** (`game._update_cameras`): `player.flinch` rolls the view away
+  from the side a hit came from; a KO punches the FOV in briefly.
+- **Knife trail** (`viewmodel._build_swoosh`): an additive ribbon along the
+  blade's path that flashes during the cut.
 
 ### Map (`map.gd`)
 
@@ -841,8 +894,12 @@ What applies where:
   size, root viewport AA: `Settings.apply()`.
 - each splitscreen cell's MSAA/FXAA and render scale:
   `Settings.apply_viewport()` from `game.gd`.
-- shadows, ambient occlusion, bloom: `Settings.apply_environment()` from
-  `map.gd` and `stage.gd`.
+- shadows, ambient occlusion, bloom, bounce light, light shafts:
+  `Settings.apply_environment()` from `map.gd` and `stage.gd` (game.gd
+  re-applies it once it knows how many views there are).
+- bullet holes / scorch marks: read by `Fx.decal()` and `map._ground_decals`.
+- Dev: `--set-<key>=<choice index>` overrides one setting for a run without
+  saving it (e.g. `--set-volfog=1`).
 - "Scenery detail" is read when a map is built, so it takes effect next match.
 - look speed, aim assist: `input_source.gd`. Each player also has their own
   look speed multiplier (`sens`) and Y axis (`invert`), set on their lobby

@@ -98,6 +98,7 @@ var _color := Color.WHITE
 var _layer := 1
 var _with_paw := true
 var _knife: Node3D               # the melee knife rig (under the camera, built on first use)
+var _swoosh: MeshInstance3D      # the slash trail: an arc that flashes during the cut
 var _flash: MeshInstance3D
 var _spin: Node3D                # rotating barrel cluster (Spinner)
 var _muzzle_z := -0.3
@@ -907,6 +908,7 @@ func update(delta: float, p) -> void:
 		_last_pitch = p.pitch
 		if _knife != null:
 			_knife.visible = false
+			_swoosh.visible = false
 		return
 	_t += delta
 	var hip := 1.0 - aim
@@ -1091,6 +1093,7 @@ func _update_knife(p, dur: float) -> void:
 		return
 	if _knife == null:
 		_build_knife()
+		_build_swoosh()
 	_knife.visible = true
 	var f: float = clampf(p.melee_t / dur, 0.0, 1.0)
 	var i := 0
@@ -1106,6 +1109,12 @@ func _update_knife(p, dur: float) -> void:
 		_: u = u * u * (3.0 - 2.0 * u)      # recovery
 	_knife.position = (a[1] as Vector3).lerp(b[1], u)
 	_knife.rotation = (a[2] as Vector3).lerp(b[2], u)
+	# Slash trail: flashes in with the cut and fades as the blade overshoots.
+	var sw := 0.0
+	if f > 0.3 and f < 0.75:
+		sw = clampf((f - 0.3) / 0.08, 0.0, 1.0) * (1.0 - clampf((f - 0.48) / 0.27, 0.0, 1.0))
+	_swoosh.visible = sw > 0.01
+	(_swoosh.material_override as StandardMaterial3D).albedo_color.a = sw * 0.75
 
 
 func _build_knife() -> void:
@@ -1148,9 +1157,47 @@ func _build_knife() -> void:
 		Models.toy_node(mi)
 
 
+## The slash trail: a ribbon along the path the blade tip sweeps (from the
+## wind-up key to the overshoot), fading towards where the cut began.
+func _build_swoosh() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	var a: Vector3 = KNIFE_KEYS[1][1] + Vector3(0.0, 0.18, -0.2)
+	var c: Vector3 = KNIFE_KEYS[3][1] + Vector3(-0.05, 0.02, -0.25)
+	var mid: Vector3 = (a + c) * 0.5 + Vector3(0.05, 0.12, -0.18)
+	var n := 18
+	for i in n + 1:
+		var t := float(i) / n
+		var p: Vector3 = a.lerp(mid, t).lerp(mid.lerp(c, t), t)
+		var w := 0.025 + 0.07 * sin(t * PI)
+		var col := Color(1, 1, 1, pow(t, 1.4))
+		st.set_color(col)
+		st.add_vertex(p + Vector3(0, w, 0.01))
+		st.set_color(Color(col, col.a * 0.2))
+		st.add_vertex(p - Vector3(0, w, -0.01))
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mat.vertex_color_use_as_albedo = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.no_depth_test = true
+	mat.albedo_color = Color(_color.lerp(Color.WHITE, 0.7), 0.0)
+	_swoosh = MeshInstance3D.new()
+	_swoosh.mesh = st.commit()
+	_swoosh.material_override = mat
+	_swoosh.layers = _layer
+	_swoosh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_swoosh.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	_swoosh.visible = false
+	get_parent().add_child(_swoosh)
+
+
 func _exit_tree() -> void:
 	if _knife != null and is_instance_valid(_knife):
 		_knife.queue_free()
+	if _swoosh != null and is_instance_valid(_swoosh):
+		_swoosh.queue_free()
 
 
 ## Rotate the cylinder one chamber per shot (shot_t drops back to 0 on a shot).

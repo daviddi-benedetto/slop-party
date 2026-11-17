@@ -110,8 +110,9 @@ var _paused := false
 var _pause_ui: Control
 var _pause_sel := 0
 var _pause_note := ""
+var _pause_opened := 0         # Time.get_ticks_msec() when the pause menu opened (pop-in)
 var _options
-var _fade: ColorRect
+var _fade        # wipe.gd: a theme-coloured curtain driven like a fade (color:a)
 var _results = null
 var _last_count := 99
 
@@ -161,6 +162,7 @@ func _ready() -> void:
 		rules = Medieval.new()
 	map.build(map_i, str(config.get("theme", config.get("time", "random"))))
 	_look = map.look
+	UiKit.use_theme(_look)
 
 	var parts: Array = config.participants
 	if rules != null:
@@ -215,6 +217,8 @@ func _ready() -> void:
 	for p in players:
 		p.rebuild_stats()
 	_build_views()
+	Settings.view_count = maxi(1, _views.size())
+	map._on_settings()
 	_build_overlays()
 	get_viewport().size_changed.connect(_layout)
 	Settings.changed.connect(_on_settings)
@@ -257,11 +261,15 @@ func _prewarm() -> void:
 	Fx.blood_spray(world, p, Vector3.UP, 4)
 	Fx.blood_splat(world, p, 0.2)
 	Fx.bolt(world, p, p + Vector3(1, 0, 0), Color.WHITE)
+	Fx.smoke(world, p, 0.2)
+	Fx.decal(world, p, Vector3.UP, "hole", 0.2)
+	Fx.decal(world, p, Vector3.UP, "scorch", 0.2)
 	preload("res://scripts/debris.gd").burst(world, Transform3D(Basis(), p), Vector3.ONE, Vector3.ONE * 0.2, Color.GRAY, 1, Vector3.ZERO, 0.5)
 
 
 func _exit_tree() -> void:
 	Settings.res_factor = 1.0
+	Settings.view_count = 1
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	Sfx.listeners = []
 	Sfx.duck(false)
@@ -278,6 +286,7 @@ func _on_settings() -> void:
 
 ## A controller in use was unplugged: pause so nobody is left helpless.
 func _on_joy_changed(device: int, connected: bool) -> void:
+	UiKit.reset_pads()
 	if connected or _results != null or match_over:
 		return
 	for p in players:
@@ -486,7 +495,7 @@ func _update_cameras(delta: float) -> void:
 			var euler := Vector3(
 				p.pitch + kick + sin(ph * 2.0) * 0.004 * amt + sin(time * 61.0) * sh,
 				p.yaw + sin(time * 47.0 + 1.3) * sh,
-				-p.strafe_amount * 0.028 * bob_scale + p.wall_tilt * 0.16 + (0.05 if p.sliding > 0.0 else 0.0) + cos(ph) * 0.005 * amt + sin(time * 53.0 + 2.1) * sh * 0.8)
+				-p.strafe_amount * 0.028 * bob_scale - p.flinch * 0.045 * shake_amount + p.wall_tilt * 0.16 + (0.05 if p.sliding > 0.0 else 0.0) + cos(ph) * 0.005 * amt + sin(time * 53.0 + 2.1) * sh * 0.8)
 			cam.global_transform = Transform3D(Basis.from_euler(euler), eye)
 			# Taunting pulls the camera out in front of the character.
 			var tv: float = 1.0 if (_debug_third and p.index == 0) else p.taunt_view
@@ -506,7 +515,9 @@ func _update_cameras(delta: float) -> void:
 				cam.cull_mask &= ~own_bit
 			# Aim-down-sights zoom narrows the FOV; dashing widens it briefly.
 			var zoomed := rad_to_deg(2.0 * atan(tan(deg_to_rad(v.fov) * 0.5) * p.zoom_factor()))
-			cam.fov = zoomed + (p.fov_kick * 7.0 + p.sprint_amount * 5.0 + (6.0 if p.sliding > 0.0 else 0.0) + (4.0 if p.wallrun > 0.0 else 0.0)) * hip
+			# A KO punches the view in a touch.
+			var punch: float = maxf(0.0, p.kill_flash - 0.8) / 0.2 * 3.5 * shake_amount
+			cam.fov = zoomed - punch + (p.fov_kick * 7.0 + p.sprint_amount * 5.0 + (6.0 if p.sliding > 0.0 else 0.0) + (4.0 if p.wallrun > 0.0 else 0.0)) * hip
 			var need_scope: bool = p.stats.scope > 1.0 and p.stats.zoom >= 0.5
 			if need_scope:
 				_ensure_scope(v)
@@ -587,7 +598,7 @@ func _build_overlays() -> void:
 	layer.add_child(_options)
 	_options.closed.connect(func(): _prev.clear())
 
-	_fade = ColorRect.new()
+	_fade = preload("res://scripts/wipe.gd").new()
 	_fade.color = Color(UiKit.INK, 1.0)
 	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -601,20 +612,47 @@ func _draw_pause(menu: Control) -> void:
 	var s := h / 1080.0
 	if _options.visible:
 		return
-	var r := Rect2(w * 0.5 - 330 * s, h * 0.5 - 310 * s, 660 * s, 620 * s)
-	UiKit.card(menu, r, UiKit.PANEL, 50 * s, s * 2.0)
-	UiKit.text(menu, Vector2(r.position.x, r.position.y + 120 * s), "PAUSED", 96 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.14)
+	# Real time: the match clock is stopped while paused.
+	var rt := (Time.get_ticks_msec() - _pause_opened) / 1000.0
+	var pop := UiKit.back_out(clampf(rt / 0.3, 0.0, 1.0))
+	menu.draw_set_transform(Vector2(w, h) * 0.5, 0.0, Vector2.ONE * (0.85 + 0.15 * pop))
+	var r := Rect2(-330 * s, -330 * s, 660 * s, 660 * s)
+	UiKit.card(menu, r, Color(UiKit.PANEL, UiKit.PANEL.a * pop), 50 * s, s * 2.0)
+	UiKit.panel(menu, Rect2(r.position + Vector2(14, 12) * s, Vector2(r.size.x - 28 * s, 120 * s)), Color(1, 1, 1, 0.06 * pop), 38 * s)
+	UiKit.text(menu, Vector2(r.position.x, r.position.y + 112 * s), "PAUSED", 96 * s, Color(UiKit.GOLD, pop), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.14)
+	var info: String = (map.label() if mode == "frontline" else MODE_NAMES[mode] + "  -  " + map.label())
+	UiKit.text(menu, Vector2(r.position.x, r.position.y + 160 * s), info, 24 * s, Color(UiKit.ACCENT.lerp(Color.WHITE, 0.4), pop), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.1)
 	if _pause_note != "":
 		UiKit.text(menu, Vector2(r.position.x, r.position.y - 30 * s), _pause_note, 34 * s, Color(1.0, 0.55, 0.5), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.16)
 	var items := ["RESUME", "OPTIONS", "QUIT TO LOBBY"]
 	for i in items.size():
 		var sel := i == _pause_sel
-		var ir := Rect2(r.position.x + 70 * s, r.position.y + 190 * s + i * 120 * s, r.size.x - 140 * s, 92 * s)
+		var ia := UiKit.back_out(clampf((rt - 0.08 - i * 0.05) / 0.3, 0.0, 1.0))
+		var ir := Rect2(r.position.x + 70 * s + (1.0 - ia) * 60 * s, r.position.y + 196 * s + i * 112 * s, r.size.x - 140 * s, 88 * s)
 		if sel:
-			ir = ir.grow(6 * s + sin(time * 6.0) * 2 * s)
-		UiKit.card(menu, ir, UiKit.GOLD if sel else Color(0.36, 0.3, 0.5), 46 * s, s * 1.5)
-		UiKit.text(menu, Vector2(ir.position.x, ir.get_center().y + 17 * s), items[i], 48 * s, UiKit.INK if sel else UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, ir.size.x, 700, 0.0 if sel else 0.12)
-	UiKit.text(menu, Vector2(r.position.x, r.end.y - 30 * s), "UP / DOWN  choose     A / ENTER  confirm", 22 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 500, 0.0)
+			ir = ir.grow(6 * s + sin(rt * 6.0) * 2 * s)
+		var idle := UiKit.PANEL.lerp(Color(0.5, 0.5, 0.6), 0.25)
+		UiKit.card(menu, ir, Color(UiKit.GOLD if sel else idle, ia), 44 * s, s * 1.5)
+		UiKit.text(menu, Vector2(ir.position.x, ir.get_center().y + 17 * s), items[i], 46 * s, Color(UiKit.INK if sel else UiKit.CREAM, ia), HORIZONTAL_ALIGNMENT_CENTER, ir.size.x, 700, 0.0 if sel else 0.12)
+	# Standings at a glance.
+	var top: Array = ranked()
+	var n := mini(top.size(), 6)
+	var cw := 92.0 * s
+	var x0 := -cw * n * 0.5
+	for i in n:
+		var p = top[i]
+		var cx := x0 + (i + 0.5) * cw
+		UiKit.portrait(menu, Vector2(cx - 14 * s, r.end.y - 88 * s), 14 * s, p.color, p.kind)
+		UiKit.num(menu, Vector2(cx + 4 * s, r.end.y - 78 * s), str(p.kills), 30 * s, UiKit.GOLD if i == 0 else Color.WHITE)
+	var pad: bool = not Input.get_connected_joypads().is_empty()
+	var px := r.position.x + r.size.x * 0.5 - 170 * s
+	var py := r.end.y - 26 * s
+	px += UiKit.prompt(menu, Vector2(px, py), "A" if pad else "ENTER", 24 * s, not pad) + 10 * s
+	UiKit.text(menu, Vector2(px, py), "CHOOSE", 22 * s, Color(1, 1, 1, 0.75), HORIZONTAL_ALIGNMENT_LEFT, -1, 700, 0.0)
+	px += UiKit.text_width("CHOOSE", 22 * s) + 30 * s
+	px += UiKit.prompt(menu, Vector2(px, py), "B" if pad else "ESC", 24 * s, not pad) + 10 * s
+	UiKit.text(menu, Vector2(px, py), "RESUME", 22 * s, Color(1, 1, 1, 0.75), HORIZONTAL_ALIGNMENT_LEFT, -1, 700, 0.0)
+	menu.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 func _set_paused(on: bool) -> void:
@@ -622,6 +660,7 @@ func _set_paused(on: bool) -> void:
 	get_tree().paused = on
 	_pause_ui.visible = on
 	_pause_sel = 0
+	_pause_opened = Time.get_ticks_msec()
 	if not on:
 		_pause_note = ""
 	Sfx.duck(on)
@@ -631,6 +670,8 @@ func _set_paused(on: bool) -> void:
 
 
 func _poll_pause() -> void:
+	if _paused:
+		_pause_ui.get_child(0).queue_redraw()     # the menu animates in real time
 	if _options.visible:
 		_pause_ui.get_child(0).queue_redraw()
 		return
@@ -786,7 +827,8 @@ func _show_results() -> void:
 	for p in ranked():
 		if p.is_bot and p.index >= 6:
 			continue
-		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "back": p.back, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size(), "team": p.team})
+		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "back": p.back, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size(), "team": p.team,
+			"knife": p.knife_kills, "boxes": p.boxes_opened, "damage": roundi(p.damage_dealt), "streak": p.best_streak})
 	var title := ""
 	if rules != null:
 		title = rules.results_title()
@@ -854,9 +896,13 @@ func on_player_died(victim, attacker) -> void:
 ## Feed entries keep copies of the names/colours: zombies are freed soon after.
 func _feed_entry(killer, victim) -> Dictionary:
 	var k = null
+	var wname := ""
 	if killer != null and is_instance_valid(killer):
 		k = {"pname": killer.pname, "color": killer.color, "kind": killer.kind}
-	return {"killer": k, "victim": {"pname": victim.pname, "color": victim.color, "kind": victim.kind}, "t": time}
+		if killer.has_method("weapon_name"):
+			# A melee KO with a gun in hand was the knife.
+			wname = "Knife" if melee_strike and not killer.stats.melee_weapon else killer.weapon_name()
+	return {"killer": k, "victim": {"pname": victim.pname, "color": victim.color, "kind": victim.kind}, "t": time, "weapon": wname}
 
 
 ## Kill bookkeeping shared by the team modes (score, feed, rumble).
@@ -936,6 +982,8 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 	Fx.ring(world, pos, Color(1, 1, 1, 0.8), radius * 0.2, radius * 1.1, 0.3)
 	Fx.sparks(world, pos, Color(1.0, 0.7, 0.3), 26, radius * 5.0, Vector3.UP, 180.0, 0.6)
 	Fx.light(world, pos, Color(1.0, 0.65, 0.3), 8.0, radius * 4.0, 0.4)
+	Fx.smoke(world, pos, clampf(radius / 3.0, 0.6, 1.6))
+	Fx.decal(world, pos, Vector3.UP, "scorch", radius * 1.5)
 	Sfx.play_at("boom", pos, -1.0)
 	for p in players:
 		if p.alive:

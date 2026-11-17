@@ -412,6 +412,10 @@ func _impact(pos: Vector3, normal) -> void:
 		var n: Vector3 = normal if normal is Vector3 else Vector3.UP
 		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.14, 0.1)
 		Fx.sparks(game.world, pos, color.lerp(Color.WHITE, 0.4), 7, 7.0, n)
+		if _direct == null and normal is Vector3:
+			# Hit the level: a bullet hole and a puff of dust off the surface.
+			Fx.decal(game.world, pos, n, "hole", clampf(radius * 5.0, 0.18, 0.5))
+			Fx.burst(game.world, pos, Color(0.75, 0.72, 0.68, 0.55), 5, 2.2, 0.22, 0.5, -2.0, n, 35.0)
 	queue_free()
 
 
