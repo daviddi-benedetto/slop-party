@@ -23,8 +23,11 @@ extends RefCounted
 ##              highlights become a colour-correction ramp (split toning)
 ##   shadow     sun shadow opacity
 ##   ui         lobby overlay colours: logo_a, logo_b, panel, value, vignette
-##   stage      lobby showroom: sky, floor, ring_a, ring_b, tower, band_a,
-##              band_b, sun_color, sun_energy, ambient, exposure, fog, day
+##   stage      lobby backyard (stage.gd): day, sky, ring_a / ring_b (party
+##              lights), lawn, fence, hill, mountain, city (a neon skyline
+##              instead of mountains: tower, band_a, band_b), sun_color,
+##              sun_energy, sun_pitch, ambient, ambient_color, exposure, fog,
+##              glow
 ##
 ## To add a theme: add an entry to LOOKS and its key to ORDER.
 
@@ -36,7 +39,7 @@ const LOOKS := {
 	"classic": {"name": "CLASSIC", "base": "day",
 		"ui": {"logo_a": Color(1.0, 0.62, 0.2), "logo_b": Color(0.3, 0.75, 1.0), "panel": Color(0.075, 0.085, 0.14, 0.92),
 			"value": Color(1.0, 0.62, 0.2), "vignette": Color(0.0, 0.0, 0.03, 0.55)},
-		"stage": {"day": false},
+		"stage": {"day": true},
 	},
 	# A toy box: pastel paint, bright soft daylight, gentle shadows.
 	"toy": {"name": "TOY", "base": "day",
@@ -84,22 +87,22 @@ const LOOKS := {
 	"cyberpunk": {"name": "CYBERPUNK", "base": "night",
 		"sky": {"top": Color(0.03, 0.0, 0.08), "horizon": Color(0.42, 0.05, 0.4), "ground": Color(0.03, 0.0, 0.05),
 			"sun": Color(0.55, 0.9, 1.0), "cloud_color": Color(0.24, 0.04, 0.3), "clouds": 0.6, "stars": 0.35, "aurora": 0.0},
-		"sun_color": Color(0.55, 0.62, 1.0), "sun_energy": 1.1, "sun_pitch": -48.0, "ambient": 4.2, "exposure": 1.5,
-		"glow": 0.85, "neon": 2.1, "lights": 1.7, "fog": Color(0.22, 0.03, 0.26), "fog_mult": 1.3,
-		"ambient_color": Color(0.26, 0.14, 0.36),
+		"sun_color": Color(0.6, 0.66, 1.0), "sun_energy": 1.2, "sun_pitch": -48.0, "ambient": 3.6, "exposure": 1.45,
+		"glow": 1.0, "neon": 1.8, "lights": 1.25, "fog": Color(0.22, 0.03, 0.26), "fog_mult": 1.3,
+		"ambient_color": Color(0.36, 0.22, 0.48),
 		"accent_a": Color(1.0, 0.12, 0.72), "accent_b": Color(0.08, 0.9, 1.0), "window": Color(0.2, 0.9, 1.0), "lamp": Color(1.0, 0.3, 0.85),
-		"grade": {"sat": 0.8, "val": 0.88, "tint": Color(0.88, 0.86, 1.06)},
-		"post": {"saturation": 1.3, "contrast": 1.06, "brightness": 1.03, "shadows": Color(0.07, 0.0, 0.13), "highlights": Color(1.0, 0.95, 1.0),
-			"glow_intensity": 0.95, "glow_bloom": 0.1},
+		"grade": {"sat": 0.8, "val": 1.0, "tint": Color(0.92, 0.88, 1.06)},
+		"post": {"saturation": 1.25, "contrast": 1.0, "brightness": 1.03, "shadows": Color(0.11, 0.04, 0.19), "highlights": Color(1.0, 0.95, 1.0),
+			"glow_intensity": 0.8, "glow_bloom": 0.05},
 		"ui": {"logo_a": Color(1.0, 0.2, 0.75), "logo_b": Color(0.15, 0.92, 1.0), "panel": Color(0.07, 0.02, 0.12, 0.92),
 			"value": Color(0.2, 0.95, 1.0), "vignette": Color(0.12, 0.0, 0.14, 0.6)},
-		"stage": {"day": false,
+		"stage": {"day": false, "city": true, "ambient_color": Color(0.42, 0.26, 0.56),
 			"sky": {"top": Color(0.03, 0.0, 0.08), "horizon": Color(0.45, 0.05, 0.42), "ground": Color(0.03, 0.0, 0.05),
 				"sun": Color(0.55, 0.9, 1.0), "cloud_color": Color(0.26, 0.04, 0.32), "clouds": 0.6, "stars": 0.4, "aurora": 0.0},
 			"floor": Color(0.05, 0.02, 0.09), "ring_a": Color(1.0, 0.12, 0.72), "ring_b": Color(0.08, 0.9, 1.0),
-			"tower": [Color(0.04, 0.02, 0.08)], "band_a": Color(1.0, 0.12, 0.72), "band_b": Color(0.08, 0.9, 1.0),
-			"sun_color": Color(0.6, 0.5, 1.0), "sun_energy": 1.0, "ambient": 2.0, "exposure": 1.35, "fog": Color(0.2, 0.02, 0.24),
-			"glow": 0.9},
+			"tower": [Color(0.12, 0.08, 0.2)], "band_a": Color(1.0, 0.12, 0.72), "band_b": Color(0.08, 0.9, 1.0),
+			"sun_color": Color(0.66, 0.6, 1.0), "sun_energy": 1.2, "ambient": 2.0, "exposure": 1.3, "fog": Color(0.2, 0.02, 0.24),
+			"glow": 1.2},
 	},
 	# A retro synth sunset: a pink sun on a violet sky, teal and pink neon.
 	"synthwave": {"name": "SYNTHWAVE", "base": "sunset",

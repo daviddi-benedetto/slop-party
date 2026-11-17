@@ -527,6 +527,10 @@ func _build_environment() -> void:
 				sky[sk] = look.sky[sk]
 		elif p.has(k):
 			p[k] = look[k]
+	# Indoor maps have their own lamps: a theme's (night) ambient would wash
+	# them out.
+	if indoor and look.has("ambient"):
+		p.ambient *= 0.7
 	var fog_density: float = night.fog_density * p.fog_mult
 	var fog_col: Color = p.fog
 	var dim := 0.2 if time == "night" else 1.0

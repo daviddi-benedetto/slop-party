@@ -39,9 +39,6 @@ const SENS_STEPS := 10          # LOOK: this player's own look speed, 1-10
 const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
 const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE", "GUN GAME", "MEDIEVAL"]
 const TICKETS := [50, 100, 150, 200, 300]
-const TAGLINES := ["FREE-FOR-ALL  -  EVERY KO DEALS YOU A POWERUP", "CO-OP SURVIVAL  -  ENDLESS WAVES OF ZOMBIES",
-	"TEAM WAR  -  FLAGS, TANKS, HELICOPTERS, PARACHUTES", "EVERY KO HANDS YOU THE NEXT WEAPON  -  FINISH THE LADDER TO WIN",
-	"SWORDS, BOWS, AXES AND SHIELDS  -  A FREE-FOR-ALL IN THE CASTLE"]
 
 var seats: Array = []        # [{device, kind, color, hat, face, row}] in join order
 var bots := 0
@@ -110,8 +107,10 @@ func _build_stage() -> void:
 	add_child(_stage)
 	move_child(_stage, 0)
 	_stage.build(Vector3(0, 4.9, 18.5), Vector3(0, 3.0, 0), 34.0, _look_now)
+	# The back row stands on a wooden deck, the front row on tree stumps.
+	_stage.add_deck(_slot_pos(0).x - 2.0, _slot_pos(2).x + 3.2, -3.8, 0.4, BACK_TIER)
 	for i in MAX_PLAYERS:
-		_stage.add_podium(_slot_pos(i), _slot_h(i), UiKit.PLAYER_COLORS[i])
+		_stage.add_podium(_slot_pos(i), _slot_h(i), UiKit.PLAYER_COLORS[i], "rug" if i < 3 else "stump")
 		_slot_sig[i] = ""
 		_slot_char[i] = null
 
@@ -470,10 +469,6 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(-widths[i] * 0.5, 0), title[i], px, col, HORIZONTAL_ALIGNMENT_CENTER, widths[i], 700, 0.12)
 		x += widths[i]
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	var tag: String = TAGLINES[mode_i]
-	var tw := UiKit.text_width(tag, 24 * s) + 60 * s
-	UiKit.card(self, Rect2((w - tw) * 0.5, 146 * s, tw, 40 * s), panel, 20 * s, s)
-	UiKit.text(self, Vector2(0, 174 * s), tag, 22 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, w, 600, 0.0)
 	# A screen running below 50 Hz (a 4K TV left in a 30 Hz mode) can never
 	# show a smooth game, whatever we render: say so.
 	var hz := DisplayServer.screen_get_refresh_rate()
@@ -492,7 +487,7 @@ func _draw() -> void:
 			_draw_seat(i, base, head, s)
 
 	# Shared settings + start.
-	var by := h - 162 * s
+	var by := h - 140 * s
 	var pad: bool = not Input.get_connected_joypads().is_empty()
 	var mode: String = MODES[mode_i]
 	var map_info: Dictionary = Map.MAPS[{"frontline": Map.FRONTLINE, "zombies": Map.ZOMBIE, "medieval": Map.CASTLE}.get(mode, Map.ARENAS[map_i])]
@@ -539,7 +534,7 @@ func _draw() -> void:
 		break
 
 	var ready := not seats.is_empty() and (seats.size() + bots >= 2 or mode != "rounds")
-	var sy := h - 58 * s
+	var sy := h - 36 * s
 	if ready:
 		var pulse := 1.0 + sin(_t * 5.0) * 0.04
 		draw_set_transform(Vector2(w * 0.5, sy - 14 * s), 0.0, Vector2(pulse, pulse))
@@ -556,8 +551,6 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(-mw * 0.5, 9 * s), message, 26 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, mw, 700, 0.12)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B crouch  -  L3 sprint  -  R3 melee  -  RB dash  -  LB block  -  X reload  -  Y use  -  D-pad taunt          KEYBOARD   LMB  -  RMB  -  F melee  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
-		16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w, 500, 0.12)
 
 
 ## Width of one option chip at scale s: padding, button, gap, label, gap,
