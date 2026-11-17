@@ -101,6 +101,9 @@ var _layer := 1
 var _with_paw := true
 var _knife: Node3D               # the melee knife rig (under the camera, built on first use)
 var _swoosh: MeshInstance3D      # the slash trail: an arc that flashes during the cut
+var _reload_arm: Node3D          # the off paw that fetches a fresh magazine on reload
+var _reload_rest := Transform3D()
+var _mag_mesh: MeshInstance3D    # the magazine in that paw
 var _flash: MeshInstance3D
 var _spin: Node3D                # rotating barrel cluster (Spinner)
 var _muzzle_z := -0.3
@@ -203,8 +206,28 @@ func set_weapon(id: int) -> void:
 		# Your own plush arms: the right paw on the grip, and on long guns
 		# the left paw under the fore-end.
 		_arm(Vector3(0.008, -0.1, 0.1), Vector3(0.06, -0.12, 0.2), 1.0, 0.55)
+		_reload_arm = null
+		_mag_mesh = null
 		if two_handed and not _style in ["magnum", "twins", "bow"]:
-			_arm(Vector3(grip_l.x - 0.03, grip_l.y - 0.075, grip_l.z + 0.02), Vector3(-0.4, -0.3, 0.38), -1.0, 0.6)
+			_reload_arm = _arm(Vector3(grip_l.x - 0.03, grip_l.y - 0.075, grip_l.z + 0.02), Vector3(-0.4, -0.3, 0.38), -1.0, 0.6)
+		elif not UPRIGHT.has(_style):
+			# One-handed guns: the off paw only appears to reload.
+			_reload_arm = _arm(Vector3(-0.06, -0.2, 0.0), Vector3(-0.4, -0.3, 0.38), -1.0, 0.6)
+			_reload_arm.visible = false
+		if _reload_arm != null and not UPRIGHT.has(_style):
+			_reload_rest = _reload_arm.transform
+			_mag_mesh = MeshInstance3D.new()
+			var mb := BoxMesh.new()
+			mb.size = Vector3(0.045, 0.11, 0.06)
+			_mag_mesh.mesh = mb
+			_mag_mesh.material_override = _dark
+			_mag_mesh.layers = _layer
+			_mag_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_mag_mesh.position = Vector3(0.0, 0.06, -0.02)
+			_mag_mesh.visible = false
+			_reload_arm.add_child(_mag_mesh)
+		else:
+			_reload_arm = null
 	var fmat := StandardMaterial3D.new()
 	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -724,6 +747,34 @@ func _tilt(mi: MeshInstance3D, angle: float) -> MeshInstance3D:
 	return mi
 
 
+## Reload: the off paw drops out of view, comes back up with a fresh
+## magazine, slaps it into the gun and returns to the fore-end.
+func _update_reload_paw(p) -> void:
+	if _reload_arm == null or not is_instance_valid(_reload_arm):
+		return
+	var one_handed: bool = not two_handed or _style in ["magnum", "twins"]
+	if p.reload_left <= 0.0:
+		_reload_arm.transform = _reload_rest
+		_reload_arm.visible = not one_handed
+		_mag_mesh.visible = false
+		return
+	var f: float = 1.0 - p.reload_left / p.stats.reload_time
+	var down := _reload_rest.origin + Vector3(-0.1, -0.32, 0.18)
+	var well := Vector3(0.0, -0.17, -0.02)
+	var pos: Vector3
+	if f < 0.3:
+		pos = _reload_rest.origin.lerp(down, smoothstep(0.0, 1.0, f / 0.3))
+	elif f < 0.62:
+		pos = down.lerp(well, smoothstep(0.0, 1.0, (f - 0.3) / 0.32))
+	elif f < 0.78:
+		pos = well + Vector3(0, 0.05 * sin((f - 0.62) / 0.16 * PI), 0)
+	else:
+		pos = well.lerp(_reload_rest.origin, smoothstep(0.0, 1.0, (f - 0.78) / 0.22))
+	_reload_arm.visible = true
+	_reload_arm.transform = Transform3D(_reload_rest.basis, pos)
+	_mag_mesh.visible = f > 0.3 and f < 0.72
+
+
 ## A first-person plush arm (fp_arm.gd) with its paw at `at`, the forearm
 ## running back along `back` (towards the bottom edge of the screen).
 func _arm(at: Vector3, back: Vector3, side: float, length: float, pose := "fist", parent: Node3D = null) -> Node3D:
@@ -950,6 +1001,7 @@ func update(delta: float, p) -> void:
 		pos.y -= dip * 0.13
 		rot.x -= dip * 0.55
 		rot.z += sin(f * TAU) * 0.35
+	_update_reload_paw(p)
 	if p.block_left > 0.0:
 		# Guard pose: gun swings across the body.
 		var g := sin(clampf(p.block_left / p.BLOCK_TIME, 0.0, 1.0) * PI)

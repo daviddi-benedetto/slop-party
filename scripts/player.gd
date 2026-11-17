@@ -179,6 +179,8 @@ var kill_flash := 0.0
 var _last_crit := false          # the last hit was a headshot (gore: the head bursts)
 var _last_dir := Vector3.UP      # direction of the last hit (gore sprays that way)
 var _print_dist := 0.0
+var blast_blur := 0.0             # screen zoom blur from a nearby blast (game.gd)
+var _last_yaw_anim := 0.0
 var _print_side := 1.0
 var _casing_t := 0.0
 var flinch := 0.0               # camera roll away from the last hit (signed, decays)
@@ -1039,6 +1041,13 @@ func _physics_process(delta: float) -> void:
 				break
 	rotation.y = yaw
 	character.crouch = crouch_amount
+	character.turn_rate = angle_difference(_last_yaw_anim, yaw) / maxf(delta, 0.001)
+	_last_yaw_anim = yaw
+	character.wall_side = wall_side if wallrun > 0.0 else 0.0
+	character.sliding = sliding > 0.0
+	character.hurt = hurt_flash
+	character.low_health = health < stats.max_health * 0.3
+	character.happy = kill_flash
 	character.jetting = jetting
 
 	var hspeed := Vector2(velocity.x, velocity.z).length()
@@ -1484,7 +1493,7 @@ func take_damage(amount: float, attacker, silent := false, crit := false) -> flo
 	if not silent:
 		hurt_flash = 1.0
 		shake = maxf(shake, clampf(amount / 60.0, 0.25, 0.9))
-		character.hit_flash()
+		character.hit_flash(attacker.global_position if has_attacker else Vector3.ZERO)
 		var blood_dir := Vector3.UP
 		if has_attacker:
 			blood_dir = (global_position - attacker.global_position + Vector3(0, 0.5, 0)).normalized()

@@ -34,6 +34,7 @@ static var _cone: CylinderMesh
 const BLOCK_RADIUS := 1.1   # how close to a blocker's chest a projectile gets caught
 static var _flame_mat: StandardMaterial3D
 
+var _hit_collider: Object = null    # what the last world hit struck (surface-matched impacts)
 var shooter
 var game
 var vel := Vector3.ZERO
@@ -249,6 +250,7 @@ func _physics_process(delta: float) -> void:
 			global_position = hit.position
 			return
 		if explosive <= 0.0 and bounces <= 0 and fuse <= 0.0:
+			_hit_collider = prop
 			_impact(hit.position, hit.normal)
 			return
 	var end: Vector3 = hit.position if hit else to
@@ -296,6 +298,7 @@ func _physics_process(delta: float) -> void:
 			Fx.sparks(game.world, hit.position, color.lerp(Color.WHITE, 0.4), 4, 4.0, hit.normal)
 			Sfx.play_at("bounce", global_position, -10.0, 0.7 if fuse > 0.0 else 1.0)
 			return
+		_hit_collider = hit.collider
 		_impact(hit.position + hit.normal * 0.05, hit.normal)
 		return
 	global_position = to
@@ -413,9 +416,11 @@ func _impact(pos: Vector3, normal) -> void:
 		Fx.flash(game.world, pos, Color(color.lerp(Color.WHITE, 0.5), 0.9), radius * 1.5, radius * 4.0 + 0.14, 0.1)
 		Fx.sparks(game.world, pos, color.lerp(Color.WHITE, 0.4), 7, 7.0, n)
 		if _direct == null and normal is Vector3:
-			# Hit the level: a bullet hole and a puff of dust off the surface.
+			# Hit the level: a bullet hole and debris that suits the surface
+			# (stone chips, wood splinters, metal sparks, snow, dirt).
 			Fx.decal(game.world, pos, n, "hole", clampf(radius * 5.0, 0.18, 0.5))
-			Fx.burst(game.world, pos, Color(0.75, 0.72, 0.68, 0.55), 5, 2.2, 0.22, 0.5, -2.0, n, 35.0)
+			var cls: String = "wood" if _hit_collider != null and is_instance_valid(_hit_collider) and _hit_collider.has_method("knock") else game.map.surface_kind(pos, n)
+			Fx.impact(game.world, pos, n, cls)
 	queue_free()
 
 

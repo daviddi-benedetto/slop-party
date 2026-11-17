@@ -207,6 +207,67 @@ static func decal(parent: Node, pos: Vector3, normal: Vector3, kind: String, siz
 	d.set_meta("tween", tw)
 
 
+## Wall art for map._wall_art: "tag0".."tag2" (spray-paint graffiti blobs
+## in bright colours with a dark outline) and "poster0".."poster2" (paper
+## with colour blocks and a title bar).
+static func art_texture(kind: String) -> Texture2D:
+	if _decal_tex.has(kind):
+		return _decal_tex[kind]
+	var w := 256
+	var h := 128 if kind.begins_with("tag") else 192
+	if kind.begins_with("poster"):
+		w = 128
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = kind.hash()
+	var cols := [Color(1.0, 0.3, 0.55), Color(0.2, 0.85, 1.0), Color(1.0, 0.8, 0.15), Color(0.5, 1.0, 0.3), Color(0.75, 0.4, 1.0)]
+	if kind.begins_with("tag"):
+		# Fat letter blobs along a wavy baseline, outlined, with drips.
+		var c1: Color = cols[rng.randi() % cols.size()]
+		var c2: Color = cols[rng.randi() % cols.size()]
+		var blobs: Array = []
+		var x := 30.0
+		while x < w - 30:
+			blobs.append([Vector2(x, 64 + sin(x * 0.05) * 14 + rng.randf_range(-6, 6)), rng.randf_range(16, 28)])
+			x += rng.randf_range(18, 30)
+		for pass_i in 2:
+			for b in blobs:
+				var c: Vector2 = b[0]
+				var r: float = b[1] + (6.0 if pass_i == 0 else 0.0)
+				for yy in range(int(c.y - r), int(c.y + r) + 1):
+					for xx in range(int(c.x - r * 0.8), int(c.x + r * 0.8) + 1):
+						if xx < 0 or yy < 0 or xx >= w or yy >= h:
+							continue
+						var q := Vector2((xx - c.x) / 0.8, yy - c.y)
+						if q.length() <= r:
+							var col: Color = Color(0.05, 0.03, 0.08, 1.0) if pass_i == 0 else c1.lerp(c2, float(yy - (c.y - r)) / (2.0 * r))
+							img.set_pixel(xx, yy, col)
+		for i in 6:
+			var dx := rng.randi_range(40, w - 40)
+			var y0 := 80
+			var len := rng.randi_range(10, 40)
+			for yy in range(y0, mini(h - 1, y0 + len)):
+				img.set_pixel(dx, yy, Color(c1, 0.9))
+				img.set_pixel(dx + 1, yy, Color(c1, 0.9))
+	else:
+		var paper := Color(0.95, 0.92, 0.85)
+		img.fill_rect(Rect2i(4, 4, w - 8, h - 8), paper)
+		var c: Color = cols[rng.randi() % cols.size()]
+		img.fill_rect(Rect2i(10, 10, w - 20, 34), c)
+		for i in 3:
+			img.fill_rect(Rect2i(14, 54 + i * 10, rng.randi_range(40, w - 28), 5), Color(0.25, 0.22, 0.3))
+		var c3: Color = cols[rng.randi() % cols.size()]
+		for yy in range(96, h - 14):
+			for xx in range(14, w - 14):
+				if Vector2(xx - w * 0.5, yy - 135).length() < 30:
+					img.set_pixel(xx, yy, c3)
+	img.generate_mipmaps()
+	var tex := ImageTexture.create_from_image(img)
+	_decal_tex[kind] = tex
+	return tex
+
+
 static func grime_texture() -> Texture2D:
 	return _decal_texture("grime")
 
@@ -276,6 +337,26 @@ static func _decal_texture(kind: String) -> Texture2D:
 	var tex := ImageTexture.create_from_image(img)
 	_decal_tex[kind] = tex
 	return tex
+
+
+## Bullet impact debris for a surface class (map.surface_kind).
+static func impact(parent: Node, pos: Vector3, n: Vector3, cls: String) -> void:
+	match cls:
+		"wood":
+			burst(parent, pos, Color(0.55, 0.36, 0.2), 7, 4.0, 0.12, 0.6, -12.0, n, 45.0, true)
+			burst(parent, pos, Color(0.7, 0.6, 0.45, 0.45), 3, 1.5, 0.25, 0.5, -1.0, n, 40.0)
+		"metal":
+			sparks(parent, pos, Color(1.0, 0.85, 0.5), 12, 9.0, n, 50.0, 0.3)
+			if randf() < 0.35:
+				Sfx.play_at("block", pos, -16.0, randf_range(1.4, 1.9))
+		"snow":
+			burst(parent, pos, Color(0.95, 0.97, 1.0, 0.85), 8, 2.5, 0.35, 0.7, -3.0, n, 60.0)
+		"dirt":
+			burst(parent, pos, Color(0.42, 0.32, 0.22, 0.75), 6, 2.6, 0.3, 0.6, -6.0, n, 50.0)
+			burst(parent, pos, Color(0.3, 0.55, 0.22), 4, 3.0, 0.1, 0.6, -10.0, n, 50.0, true)
+		_:
+			burst(parent, pos, Color(0.6, 0.6, 0.62), 6, 4.5, 0.1, 0.55, -12.0, n, 45.0, true)
+			burst(parent, pos, Color(0.78, 0.76, 0.72, 0.5), 4, 2.0, 0.28, 0.6, -1.5, n, 40.0)
 
 
 ## A paw print where a player stepped (dir = their facing, flat on the floor).

@@ -38,6 +38,11 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Customise** on your lobby card: animal, colour (your bandana), hat, back
   item, your own look speed and your own Y axis (normal or inverted), all
   remembered between sessions.
+- **Body language and faces:** animals lean into turns, tilt into the
+  wall on a wall run, sit back low with feet first in a slide, snap away
+  from hits and fidget when standing still. Eyes squint when hit, go wide
+  when health is low and smile after a KO; the mouth opens when hit or
+  taunting.
 - **Taunts:** Wave, Dance, Nope and Flex on the D-pad (keys 1–4); your camera
   pulls out so you can watch yourself.
 
@@ -136,6 +141,16 @@ PLAY** lists every button and **MODES** explains each mode.
   Spooky and Moonlit have a low mist pooling near the ground.
 - **A world that moves:** trees, bushes and plants sway in the wind, and
   the tall towers on the skyline blink red warning lights.
+- **Impacts that match the surface:** stone chips and dust, wood
+  splinters, metal sparks with a ricochet ping, snow puffs, dirt and grass.
+- **Reloads:** your off paw drops out of view, comes back with a fresh
+  magazine and slaps it in.
+- **Lived-in world:** graffiti and posters on the perimeter walls, wind
+  turbines turning on the distant hills and a blimp drifting round the
+  arena (lit at night).
+- **Screen effects** (option): a speed blur at the edges when you dash or
+  slide, a zoom blur when a blast goes off nearby, and colour fringing when
+  you are badly hurt.
 - **Guns and feet:** brass shell casings fly out of the guns that eject
   them, smoke hangs at the muzzle, paws leave prints that fade, and slides
   kick up dust.
@@ -246,7 +261,7 @@ Q / E to turn them):
   **Display**: frames are paced by your screen's own refresh rate, which is
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing, motion blur,
-  render scale, shadows, ambient occlusion, surface depth, outlines, reflections on wet ground, bounce light, light shafts in
+  render scale, shadows, ambient occlusion, surface depth, outlines, screen effects, reflections on wet ground, bounce light, light shafts in
   the air (Ultra; used with one or two views), bullet holes and scorch
   marks, bloom, scenery, soft focus, sun rays, and **auto resolution** (on
   by default): a busy moment lowers the 3D resolution briefly instead of

@@ -26,6 +26,17 @@ var kind := 0
 var color := Color.WHITE
 var emote := ""                # "", "cheer", "sad"
 var crouch := 0.0              # 0..1, set by player.gd
+# Set by player.gd every frame (body language and expressions):
+var turn_rate := 0.0           # yaw speed, rad/s (lean into turns)
+var wall_side := 0.0           # -1..1 while wall running (body tilts to the wall)
+var sliding := false           # slide pose: low, leaning back, feet first
+var hurt := 0.0                # 0..1 just hit: squint, mouth open
+var low_health := false        # wide, worried eyes
+var happy := 0.0               # 0..1 after a KO: smiling eyes
+var _hit_dir := Vector3.ZERO   # rig-space direction of the last hit (snap away)
+var _hit_t := 0.0
+var _mouth: MeshInstance3D
+var _eye_base: Array = []      # [scale, position] of each eye as built
 var jetting := false
 var _jetpack: Node3D
 var _jet_flames: Array = []
@@ -128,6 +139,9 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 		_ball(head, nose, Vector3(0, ny, nz - 0.004) - Plush.HEAD, Vector3(0.055, 0.038, 0.035))
 		# A little smile under the nose.
 		var mz := Plush.surface_z(kind, 0.0, ny - 0.07)
+		var mouth_mat := _plain(Color(0.35, 0.05, 0.08), 0.4)
+		_mouth = _ball(head, mouth_mat, Vector3(0, ny - 0.1, mz - 0.006) - Plush.HEAD, Vector3(0.045, 0.02, 0.02))
+		_mouth.visible = false
 		for sx in [-1.0, 1.0]:
 			_ball(head, ink, Vector3(sx * 0.03, ny - 0.07, mz - 0.008) - Plush.HEAD, Vector3(0.035, 0.009, 0.01)).rotation.z = sx * 0.45
 
@@ -581,9 +595,13 @@ func _show_knife(at: Vector3, f: float) -> void:
 	_knife.rotation = Vector3(lerpf(0.6, -1.9, smoothstep(0.15, 0.5, f)), 0.0, lerpf(-0.5, 0.7, smoothstep(0.2, 0.5, f)))
 
 
-func hit_flash() -> void:
+func hit_flash(from := Vector3.ZERO) -> void:
 	_flash = 1.0
 	_squash_v -= 1.6
+	if from != Vector3.ZERO and rig != null:
+		# The body snaps away from where the hit came from.
+		_hit_dir = (rig.global_transform.basis.inverse() * (global_position - from)).normalized()
+		_hit_t = 1.0
 
 
 ## Scale up from nothing with a bounce (joining the lobby, respawning).
@@ -699,7 +717,25 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 		paw_r = sh_r + Vector3(0.06, -0.36, sw * 0.22)
 	if _flash > 0.6:
 		lean += 0.15
-	rig.position.y = hop - crouch * 0.12 + absf(sin(_phase)) * 0.05 * run
+	# Body language: lean into turns, tilt to the wall on a wall run, sit
+	# back low in a slide, snap away from a hit, fidget when standing still.
+	var slide_drop := 0.0
+	if taunt < 0 and emote == "":
+		roll += clampf(-turn_rate * 0.045 * maxf(run, 0.3), -0.28, 0.28)
+		roll += wall_side * 0.42
+		if sliding:
+			lean += 0.38
+			slide_drop = 0.16
+		_hit_t = maxf(0.0, _hit_t - delta * 5.0)
+		if _hit_t > 0.0:
+			var snap := _hit_t * _hit_t
+			lean += -_hit_dir.z * 0.35 * snap
+			roll += _hit_dir.x * 0.35 * snap
+		if run < 0.05 and on_floor and not busy:
+			var idle := clampf(_t * 0.5, 0.0, 1.0)
+			yaw += sin(_t * 0.6) * 0.18 * idle + sin(_t * 1.7) * 0.04
+			roll += sin(_t * 0.43 + 1.0) * 0.05 * idle
+	rig.position.y = hop - crouch * 0.12 - slide_drop + absf(sin(_phase)) * 0.05 * run
 	rig.rotation = Vector3(lean - crouch * 0.1, yaw, roll)
 	aim.rotation.x = pitch + recoil * 0.2
 	aim.position.y = 0.92 - crouch * 0.05
@@ -721,7 +757,10 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 	# Feet: step in time, tuck up in the air.
 	var fl: Vector3
 	var fr: Vector3
-	if on_floor and hop <= 0.01:
+	if sliding and on_floor:
+		fl = Vector3(-0.17, 0.12, -0.32)
+		fr = Vector3(0.17, 0.16, -0.24)
+	elif on_floor and hop <= 0.01:
 		fl = Vector3(-0.17, 0.09 + maxf(0.0, cos(_phase)) * 0.12 * run, -0.05 - sw * 0.24)
 		fr = Vector3(0.17, 0.09 + maxf(0.0, -cos(_phase)) * 0.12 * run, -0.05 + sw * 0.24)
 	else:
@@ -738,8 +777,34 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 	var eye_y := 0.12 if _blink < 0.0 else 1.0
 	if _blink < -0.11:
 		_blink = randf_range(1.6, 4.5)
-	for e in _eyes:
-		e.scale.y = 0.078 * eye_y
+	# Expressions: squint when hit, wide and worried when low, smiling after
+	# a KO; the mouth opens when hit or taunting.
+	if _eye_base.is_empty():
+		for e in _eyes:
+			_eye_base.append([e.scale, e.position])
+	var sx := 1.0
+	var sy := eye_y
+	var lift := 0.0
+	if hurt > 0.3:
+		sy = minf(sy, 0.35)
+		sx = 1.12
+	elif happy > 0.2:
+		sy = minf(sy, 0.3)
+		lift = 0.02
+	elif low_health:
+		sx = 1.18
+		sy *= 1.22
+	for i in _eyes.size():
+		var e: Node3D = _eyes[i]
+		var b: Array = _eye_base[i]
+		e.scale = Vector3(b[0].x * sx, b[0].y * sy, b[0].z)
+		e.position = b[1] + Vector3(0, lift, 0)
+	if _mouth != null:
+		var open := maxf(hurt, 1.0 if taunt >= 0 else 0.0)
+		_mouth.visible = open > 0.15 or happy > 0.2
+		if _mouth.visible:
+			var o := clampf(open, 0.0, 1.0)
+			_mouth.scale = Vector3(0.045 + 0.02 * happy, 0.012 + 0.04 * o, 0.02)
 
 	for f in _jet_flames:
 		f.visible = jetting

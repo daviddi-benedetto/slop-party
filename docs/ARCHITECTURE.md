@@ -684,6 +684,23 @@ across the UI.
   `bullet._impact` on level hits, scorch marks from `game.explode`) that
   project only onto layer 1 and fade out; `map._ground_decals` scatters
   10-44 dirt and crack decals on the floor. Option "decals" turns both off.
+- **Body language** (`character.animate`): player.gd sets `turn_rate`,
+  `wall_side`, `sliding`, `hurt`, `low_health`, `happy` every frame;
+  `hit_flash(from)` snaps the rig away from the hit. Eyes scale from their
+  built size (`_eye_base`); `_mouth` (under the nose; the duck has none)
+  opens when hurt or taunting.
+- **Reload paw** (`viewmodel._update_reload_paw`): the off arm (or a hidden
+  one on one-handed guns) carries `_mag_mesh` down, up to the magazine well
+  and back to rest over the reload.
+- **Surface impacts** (`map.surface_kind`, `Fx.impact`): floors use lawns /
+  the ground material, walls the wall material, props count as wood.
+- **Set pieces and wall art** (`map._set_pieces`, `_wall_art`,
+  `Fx.art_texture`): turbines (not in neon themes) and a blimp animated in
+  `_process`; graffiti / poster decals on perimeter walls 2.4 m or taller.
+- **Screen effects** (option "screenfx", in outline.gd's pass because two
+  screen-reading passes overwrite each other): `set_fx(speed, zoom,
+  aberr)` from game.gd; the quad hides when there are neither outlines nor
+  effects.
 - **Weathering and wet** (surface.gd uniforms `weather`, `wet`,
   `macro_tex`): patchy colour from a shared low-frequency noise in world
   units, grime below 1.3 m on walls, bleaching above 2.5 m; with a theme's

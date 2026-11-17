@@ -411,7 +411,7 @@ func _add_view(player) -> void:
 	hud.player = player
 	hud.game = self
 	hud_layer.add_child(hud)
-	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "rays": rays, "player": player, "fov": 70.0,
+	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "rays": rays, "ink": ink, "player": player, "fov": 70.0,
 		"scope_vp": null, "scope_cam": null}
 	_views.append(view)
 
@@ -549,6 +549,15 @@ func _update_cameras(delta: float) -> void:
 			else:
 				cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
 		v.gun.update(delta, p)
+		# Screen effects: speed blur, blast zoom, hurt fringing.
+		var spd: float = 0.0
+		if p.alive:
+			spd = maxf(p.fov_kick, 1.0 if p.sliding > 0.0 else 0.0) * 0.8
+		p.blast_blur = maxf(0.0, p.blast_blur - delta * 2.5)
+		var hurt_fx: float = 0.0
+		if p.alive and p.health < p.stats.max_health * 0.3:
+			hurt_fx = 0.5 + 0.5 * sin(time * 5.0)
+		v.ink.set_fx(spd, p.blast_blur, maxf(hurt_fx, p.hurt_flash * 0.6) if p.alive else 0.0)
 		v.blur.track(cam)
 		_focus(cam, delta)
 		if p.vehicle != null or p.picking or p.taunt_view > 0.05 or (_debug_third and p.index == 0):
@@ -997,6 +1006,7 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 		if p.alive:
 			var dp: float = p.global_position.distance_to(pos)
 			p.shake = maxf(p.shake, clampf(1.2 - dp / (radius * 4.0), 0.0, 1.0))
+			p.blast_blur = maxf(p.blast_blur, clampf(1.0 - dp / (radius * 3.0), 0.0, 1.0))
 	for prop in get_tree().get_nodes_in_group("props"):
 		if not is_instance_valid(prop) or prop.is_queued_for_deletion():
 			continue

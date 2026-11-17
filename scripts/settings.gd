@@ -39,6 +39,9 @@ const ITEMS := [
 	# Ink lines along silhouettes and creases (outline.gd): shapes stand
 	# apart even with flat colours.
 	# Grooves with real depth on bricks, tiles, planks, stone... (surface.gd).
+	# Speed blur on dashes and slides, zoom blur from nearby blasts, colour
+	# fringing when badly hurt (outline.gd).
+	{"key": "screenfx", "label": "Screen effects", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "parallax", "label": "Surface depth", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "outlines", "label": "Outlines", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "gi", "label": "Bounce light", "opts": ON_OFF, "vals": [false, true], "def": 1},

@@ -405,6 +405,8 @@ var _hazards: Array = []
 var _pad_rings: Array = []
 var _time := 0.0
 var _beacon: StandardMaterial3D   # skyline warning lights (blink together)
+var _rotors: Array = []           # wind turbine rotors (spin in _process)
+var _blimp: Node3D                # a blimp circling the arena far out
 var _flicker: Array = []         # [OmniLight3D, base energy, phase, speed]: neon that stutters
 var _water_t := 0.0
 
@@ -470,6 +472,8 @@ func build(index := 0, theme_key := "classic") -> void:
 	_build_floor()
 	_build_scenery()
 	_flush()
+	_set_pieces()
+	_wall_art()
 	_ambient_life()
 	_ground_decals()
 
@@ -484,6 +488,12 @@ func _process(delta: float) -> void:
 	if _beacon != null:
 		var bl := 1.0 if fmod(_time, 1.6) < 0.25 else 0.08
 		_beacon.emission_energy_multiplier = 6.0 * bl
+	for r in _rotors:
+		(r as Node3D).rotate_object_local(Vector3.FORWARD, delta * 0.9)
+	if _blimp != null:
+		var ba := _time * 0.012
+		_blimp.position = Vector3(cos(ba) * 230.0, 75.0, sin(ba) * 230.0)
+		_blimp.rotation.y = -ba
 	# Water ripples drift.
 	if _mats.has("water"):
 		_water_t += delta
@@ -672,6 +682,127 @@ func _beacon_mat() -> StandardMaterial3D:
 	return _beacon
 
 
+## Life on the horizon (outdoor maps): wind turbines turning slowly on
+## the hills, and a blimp drifting round the arena far out (lit at night).
+func _set_pieces() -> void:
+	if indoor or Settings.v("scenery") == 0:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 909 + map_index
+	var white := StandardMaterial3D.new()
+	white.albedo_color = Color(0.92, 0.93, 0.95) if time != "night" else Color(0.3, 0.32, 0.38)
+	white.roughness = 0.6
+	var r0 := maxf(half_x, half_z) + 140.0
+	if not theme.get("neon", false):
+		var tower := CylinderMesh.new()
+		tower.top_radius = 0.9
+		tower.bottom_radius = 1.6
+		tower.height = 46.0
+		tower.radial_segments = 10
+		var blade := BoxMesh.new()
+		blade.size = Vector3(1.2, 20.0, 0.4)
+		var hub := BoxMesh.new()
+		hub.size = Vector3(2.2, 2.2, 5.0)
+		var n := 6
+		for i in n:
+			var a := TAU * (i + rng.randf_range(-0.25, 0.25)) / n + 0.4
+			var d := r0 + rng.randf_range(0.0, 90.0)
+			var base := Vector3(cos(a) * d, 0.0, sin(a) * d)
+			var t := Node3D.new()
+			t.position = base
+			t.rotation.y = rng.randf() * TAU
+			add_child(t)
+			for spec in [[tower, Vector3(0, 23.0, 0)], [hub, Vector3(0, 46.5, 0.8)]]:
+				var mi := MeshInstance3D.new()
+				mi.mesh = spec[0]
+				mi.material_override = white
+				mi.position = spec[1]
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				t.add_child(mi)
+			var rotor := Node3D.new()
+			rotor.position = Vector3(0, 46.5, -1.9)
+			rotor.rotation.z = rng.randf() * TAU
+			t.add_child(rotor)
+			for k in 3:
+				var bm := MeshInstance3D.new()
+				bm.mesh = blade
+				bm.material_override = white
+				bm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				var arm := Basis(Vector3.FORWARD, TAU * k / 3.0)
+				bm.transform = Transform3D(arm, arm * Vector3(0, 10.0, 0))
+				rotor.add_child(bm)
+			_rotors.append(rotor)
+	# The blimp.
+	_blimp = Node3D.new()
+	add_child(_blimp)
+	var body := MeshInstance3D.new()
+	body.mesh = _unit_sphere
+	var bmat := StandardMaterial3D.new()
+	bmat.albedo_color = theme.accent_a.lerp(Color(0.85, 0.85, 0.9), 0.55)
+	bmat.roughness = 0.5
+	body.material_override = bmat
+	body.scale = Vector3(7.0, 6.5, 22.0)
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_blimp.add_child(body)
+	for f in [[Vector3(0, 4.5, 17.0), Vector3(0.4, 5.0, 4.0)], [Vector3(4.5, 0, 17.0), Vector3(5.0, 0.4, 4.0)], [Vector3(-4.5, 0, 17.0), Vector3(5.0, 0.4, 4.0)]]:
+		var fin := MeshInstance3D.new()
+		var fb := BoxMesh.new()
+		fb.size = f[1]
+		fin.mesh = fb
+		fin.material_override = bmat
+		fin.position = f[0]
+		_blimp.add_child(fin)
+	var band := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 7.05
+	cyl.bottom_radius = 7.05
+	cyl.height = 2.0
+	band.mesh = cyl
+	band.rotation.x = PI / 2
+	band.scale = Vector3(1.0, 1.0, 0.93)
+	band.material_override = _neon(theme.accent_b, 1.2 + 2.5 * night_amount)
+	_blimp.add_child(band)
+	_blimp.position = Vector3(230.0, 75.0, 0.0)
+
+
+## Posters and graffiti on the long perimeter walls (decals): the place has
+## been lived in. Graffiti in neon, ruined and street themes; posters
+## everywhere else; nothing on low fences.
+func _wall_art() -> void:
+	if wall_h < 2.4 or not Settings.v("decals") or Settings.v("scenery") == 0:
+		return
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 313 + map_index
+	var n := clampi(int((half_x + half_z) / 7.0), 4, 14)
+	for i in n:
+		var graffiti := rng.randf() < 0.55
+		var on_x := rng.randf() < half_x / (half_x + half_z)
+		var u := rng.randf_range(-0.85, 0.85)
+		var sgn := 1.0 if rng.randf() < 0.5 else -1.0
+		var size := Vector2(rng.randf_range(2.2, 3.6), rng.randf_range(1.2, 1.9)) if graffiti else Vector2(0.9, 1.3)
+		var y := (rng.randf_range(0.9, 1.6) if graffiti else rng.randf_range(1.4, 1.9))
+		var pos: Vector3
+		var normal: Vector3
+		if on_x:
+			pos = Vector3(u * half_x, y, sgn * (half_z - 0.02))
+			normal = Vector3(0, 0, -sgn)
+		else:
+			pos = Vector3(sgn * (half_x - 0.02), y, u * half_z)
+			normal = Vector3(-sgn, 0, 0)
+		var d := Decal.new()
+		d.texture_albedo = Fx.art_texture(("tag%d" if graffiti else "poster%d") % rng.randi_range(0, 2))
+		d.size = Vector3(size.x, 0.4, size.y)
+		d.cull_mask = 1
+		d.upper_fade = 0.2
+		d.lower_fade = 0.2
+		d.distance_fade_enabled = true
+		d.distance_fade_begin = 45.0
+		d.distance_fade_length = 10.0
+		var x_axis := normal.cross(Vector3.UP).normalized()
+		d.transform = Transform3D(Basis(x_axis, normal, x_axis.cross(normal)), pos)
+		add_child(d)
+
+
 ## Drifting specks in the air, one kind per theme: pollen and dandelion
 ## fluff by day, embers at sunset, fireflies at night, neon dust in the
 ## neon themes, dust motes indoors. GPU particles over the whole arena:
@@ -797,6 +928,32 @@ func _ground_decals() -> void:
 		d.distance_fade_length = 10.0
 		add_child(d)
 		placed += 1
+
+
+## What a bullet hit at `pos` is made of, for the impact effect: "stone",
+## "wood", "metal", "snow" or "dirt". Floors use the lawns and the map's
+## ground material; walls the map's wall material.
+func surface_kind(pos: Vector3, normal: Vector3) -> String:
+	var kind := ""
+	if normal.y > 0.6:
+		for r in lawns:
+			if (r as Rect2).has_point(Vector2(pos.x, pos.z)):
+				return "dirt"
+		kind = theme.mats.ground[1]
+		if theme.get("cover", false) and not indoor and pos.y < 0.3:
+			return "dirt"
+	else:
+		kind = theme.mats.get("wall", ["", "concrete"])[1]
+	match kind:
+		"planks", "siding", "shingles":
+			return "wood"
+		"plates", "corrugated":
+			return "metal"
+		"snow", "ice":
+			return "snow"
+		"lawn", "turf", "soft":
+			return "dirt"
+	return "stone"
 
 
 ## One box-projected reflection probe over the arena, rendered once: glass,
