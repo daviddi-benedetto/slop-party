@@ -1,5 +1,6 @@
 extends Control
-## Join screen: a 3D stage (stage.gd) with six podiums and a 2D overlay.
+## Join screen: a 3D stage (stage.gd) with six podiums in two rows of three
+## and a 2D overlay (each seat's plate sits beside its character).
 ## Polls every gamepad and the keyboard directly; whoever presses their join
 ## button takes the next free seat and their character pops onto a podium.
 ##
@@ -28,6 +29,8 @@ const Map = preload("res://scripts/map.gd")
 const Looks = preload("res://scripts/looks.gd")
 
 const MAX_PLAYERS := 6
+const STAGE_COL := 4.6          # metres between podium columns (front row)
+const BACK_TIER := 3.4          # podium height of the back row
 const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
 const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK", "LOOK"]
@@ -106,9 +109,9 @@ func _build_stage() -> void:
 	_stage = Stage.new()
 	add_child(_stage)
 	move_child(_stage, 0)
-	_stage.build(Vector3(0, 2.7, 11.6), Vector3(0, 1.5, 0), 36.0, _look_now)
+	_stage.build(Vector3(0, 4.9, 18.5), Vector3(0, 3.0, 0), 34.0, _look_now)
 	for i in MAX_PLAYERS:
-		_stage.add_podium(_slot_pos(i), 0.5, UiKit.PLAYER_COLORS[i])
+		_stage.add_podium(_slot_pos(i), _slot_h(i), UiKit.PLAYER_COLORS[i])
 		_slot_sig[i] = ""
 		_slot_char[i] = null
 
@@ -134,9 +137,19 @@ func deactivate() -> void:
 		_stage = null
 
 
+## Seats are two rows of three: P1-P3 on a raised back tier, P4-P6 in
+## front. Each character stands left of centre in its cell so its plate
+## fits beside it (_draw_seat). Returns the podium's base on the floor.
 func _slot_pos(i: int) -> Vector3:
-	var off := i - (MAX_PLAYERS - 1) * 0.5
-	return Vector3(off * 2.3, 0.0, absf(off) * -0.28)
+	var c := (i % 3) - 1
+	if i < 3:
+		return Vector3(c * STAGE_COL * 1.05 - 1.2, 0.0, -1.6)
+	return Vector3(c * STAGE_COL - 1.15, 0.0, 2.6)
+
+
+## Podium height: the back tier stands taller so it shows over the front.
+func _slot_h(i: int) -> float:
+	return BACK_TIER if i < 3 else 0.4
 
 
 func demo_fill(humans: int, cpu: int) -> void:
@@ -387,7 +400,7 @@ func _sync_stage() -> void:
 			_stage.remove_character(_slot_char[i])
 			_slot_char[i] = null
 		if not look.is_empty():
-			var pos := _slot_pos(i) + Vector3(0, 0.55, 0)
+			var pos := _slot_pos(i) + Vector3(0, _slot_h(i) + 0.05, 0)
 			_slot_char[i] = _stage.add_character(look, pos)
 			if was_empty:
 				_slot_bump[i] = 0.0
@@ -439,7 +452,7 @@ func _draw() -> void:
 
 	# Bouncing logo.
 	var title := "SLOP GAME"
-	var px := 150.0 * s
+	var px := 120.0 * s
 	var total := 0.0
 	var widths: Array = []
 	for ch in title:
@@ -449,7 +462,7 @@ func _draw() -> void:
 	var x := (w - total) * 0.5
 	for i in title.length():
 		var bounce := sin(_t * 2.6 - i * 0.55)
-		var pos := Vector2(x + widths[i] * 0.5, 160 * s - maxf(0.0, bounce) * 14 * s)
+		var pos := Vector2(x + widths[i] * 0.5, 124 * s - maxf(0.0, bounce) * 10 * s)
 		draw_set_transform(pos, bounce * 0.04, Vector2.ONE)
 		var la: Color = ui.logo_a
 		var lb: Color = ui.logo_b
@@ -459,8 +472,8 @@ func _draw() -> void:
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	var tag: String = TAGLINES[mode_i]
 	var tw := UiKit.text_width(tag, 24 * s) + 60 * s
-	UiKit.card(self, Rect2((w - tw) * 0.5, 190 * s, tw, 44 * s), panel, 22 * s, s)
-	UiKit.text(self, Vector2(0, 221 * s), tag, 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, w, 600, 0.0)
+	UiKit.card(self, Rect2((w - tw) * 0.5, 146 * s, tw, 40 * s), panel, 20 * s, s)
+	UiKit.text(self, Vector2(0, 174 * s), tag, 22 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, w, 600, 0.0)
 	# A screen running below 50 Hz (a 4K TV left in a 30 Hz mode) can never
 	# show a smooth game, whatever we render: say so.
 	var hz := DisplayServer.screen_get_refresh_rate()
@@ -473,8 +486,9 @@ func _draw() -> void:
 	# Seat plates, positioned under the 3D podiums.
 	if _stage != null and _stage.camera != null and not _options.visible:
 		for i in MAX_PLAYERS:
-			var base: Vector2 = _stage.camera.unproject_position(_slot_pos(i) + Vector3(0, 0.0, 0.9))
-			var head: Vector2 = _stage.camera.unproject_position(_slot_pos(i) + Vector3(0, 3.2, 0))
+			var top := _slot_pos(i) + Vector3(0, _slot_h(i), 0)
+			var base: Vector2 = _stage.camera.unproject_position(top + Vector3(0, 1.0, 0))
+			var head: Vector2 = _stage.camera.unproject_position(top + Vector3(0, 2.75, 0))
 			_draw_seat(i, base, head, s)
 
 	# Shared settings + start.
@@ -482,36 +496,47 @@ func _draw() -> void:
 	var pad: bool = not Input.get_connected_joypads().is_empty()
 	var mode: String = MODES[mode_i]
 	var map_info: Dictionary = Map.MAPS[{"frontline": Map.FRONTLINE, "zombies": Map.ZOMBIE, "medieval": Map.CASTLE}.get(mode, Map.ARENAS[map_i])]
-	var bot_chip := ["Y" if pad else "B", "BOTS", str(bots), 200.0]
-	var goal_chip := ["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i], 230.0]
+	var bot_chip := ["Y" if pad else "B", "BOTS", str(bots)]
+	var goal_chip := ["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i]]
 	if mode == "frontline":
-		bot_chip = ["Y" if pad else "B", "TEAMS", "VERSUS" if versus else "CO-OP", 270.0]
-		goal_chip = ["X" if pad else "K", "TICKETS", "%d" % TICKETS[target_i], 250.0]
+		bot_chip = ["Y" if pad else "B", "TEAMS", "VERSUS" if versus else "CO-OP"]
+		goal_chip = ["X" if pad else "K", "TICKETS", "%d" % TICKETS[target_i]]
 	elif mode == "zombies":
-		bot_chip = ["Y" if pad else "B", "ALLIES", str(bots), 210.0]
-		goal_chip = ["X" if pad else "K", "WAVES", "ENDLESS", 250.0]
+		bot_chip = ["Y" if pad else "B", "ALLIES", str(bots)]
+		goal_chip = ["X" if pad else "K", "WAVES", "ENDLESS"]
 	elif mode == "gungame":
-		goal_chip = ["X" if pad else "K", "LADDER", "ALL WEAPONS", 300.0]
+		goal_chip = ["X" if pad else "K", "LADDER", "ALL WEAPONS"]
 	var chips := [
-		["RT" if pad else "G", "MODE", MODE_LABELS[mode_i], 300.0],
+		["RT" if pad else "G", "MODE", MODE_LABELS[mode_i]],
 		bot_chip,
 		goal_chip,
-		["RB" if pad else "M", "MAP", "%s" % map_info.name, 340.0],
-		["LB" if pad else "T", "THEME", Looks.label(Looks.options()[theme_i]), 390.0],
-		["BACK" if pad else "O", "OPTIONS", "", 210.0],
+		["RB" if pad else "M", "MAP", "%s" % map_info.name],
+		["LB" if pad else "T", "THEME", Looks.label(Looks.options()[theme_i])],
+		["BACK" if pad else "O", "OPTIONS", ""],
 	]
-	var total_w := -16.0 * s
-	for chip in chips:
-		total_w += chip[3] * s + 16 * s
-	var cx := (w - total_w) * 0.5
-	for chip in chips:
-		var r := Rect2(cx, by, chip[3] * s, 58 * s)
-		UiKit.card(self, r, panel, 29 * s, s)
-		var ox := r.position.x + 16 * s
-		ox += UiKit.prompt(self, Vector2(ox, by + 41 * s), chip[0], 26 * s, not pad) + 12 * s
-		UiKit.text(self, Vector2(ox, by + 40 * s), chip[1], 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_LEFT, -1, 600, 0.0)
-		UiKit.text(self, Vector2(r.position.x, by + 41 * s), chip[2], 28 * s, value, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 22 * s)
-		cx += chip[3] * s + 16 * s
+	# Each chip is as wide as its own button, label and value plus fixed
+	# gaps; if the row is wider than the screen, everything shrinks to fit.
+	var k := 1.0
+	for attempt in 2:
+		var total_w := -14.0 * s * k
+		for chip in chips:
+			total_w += _chip_w(chip, s * k, pad) + 14.0 * s * k
+		if attempt == 0 and total_w > w - 40 * s:
+			k = (w - 40 * s) / total_w
+			continue
+		var cx := (w - total_w) * 0.5
+		var sk := s * k
+		for chip in chips:
+			var cw := _chip_w(chip, sk, pad)
+			var r := Rect2(cx, by, cw, 58 * sk)
+			UiKit.card(self, r, panel, 29 * sk, sk)
+			var ox := r.position.x + 18 * sk
+			ox += UiKit.prompt(self, Vector2(ox, by + 41 * sk), chip[0], 26 * sk, not pad) + 12 * sk
+			UiKit.text(self, Vector2(ox, by + 40 * sk), chip[1], 24 * sk, UiKit.CREAM, HORIZONTAL_ALIGNMENT_LEFT, -1, 600, 0.0)
+			if chip[2] != "":
+				UiKit.text(self, Vector2(r.position.x, by + 41 * sk), chip[2], 28 * sk, value, HORIZONTAL_ALIGNMENT_RIGHT, cw - 20 * sk)
+			cx += cw + 14 * sk
+		break
 
 	var ready := not seats.is_empty() and (seats.size() + bots >= 2 or mode != "rounds")
 	var sy := h - 58 * s
@@ -535,44 +560,62 @@ func _draw() -> void:
 		16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w, 500, 0.12)
 
 
+## Width of one option chip at scale s: padding, button, gap, label, gap,
+## value, padding.
+func _chip_w(chip: Array, s: float, pad: bool) -> float:
+	var btn: String = chip[0]
+	var bw := 26 * s * 1.25 if (pad and btn in ["A", "B", "X", "Y"]) else UiKit.text_width(btn, 26 * s * 0.8) + 26 * s * 0.8
+	var w := 18 * s + bw + 12 * s + UiKit.text_width(chip[1], 24 * s, 600) + 20 * s
+	if chip[2] != "":
+		w += 22 * s + UiKit.text_width(chip[2], 28 * s)
+	return w
+
+
+## Text size px, shrunk so the string fits within max_w.
+func _fit(txt: String, px: float, max_w: float) -> float:
+	var tw := UiKit.text_width(txt, px)
+	return px if tw <= max_w else px * max_w / tw
+
+
 func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
-	var pw := 276.0 * s
+	var pw := 250.0 * s
+	var ph := 124.0 * s
 	var bump := UiKit.back_out(_slot_bump[i])
 	var is_player := i < seats.size()
 	var is_bot := not is_player and i < seats.size() + bots
 	var look := _look(i)
 	var col: Color = look.color if not look.is_empty() else Color(0.4, 0.45, 0.6)
-	draw_set_transform(base, 0.0, Vector2(0.85 + 0.15 * bump, 0.85 + 0.15 * bump))
-	var r := Rect2(-pw * 0.5, 0, pw, 118 * s)
+	# The plate sits to the right of the character, centred on its middle.
+	draw_set_transform(base + Vector2(78 * s, -ph * 0.5), 0.0, Vector2(0.85 + 0.15 * bump, 0.85 + 0.15 * bump))
+	var r := Rect2(0, 0, pw, ph)
 	if is_player:
 		var seat: Dictionary = seats[i]
 		UiKit.panel(self, r, _ui().panel, 22 * s, col, 3 * s, 5 * s)
 		var dev := "KEYBOARD" if seat.device == KEYBOARD else "GAMEPAD %d" % (seat.device + 1)
-		UiKit.text(self, Vector2(r.position.x, 28 * s), dev, 18 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, pw, 600, 0.0)
-		# Category tabs: the selected one is lit.
-		var tab_w := (pw - 28 * s) / CATEGORIES.size()
-		for c in CATEGORIES.size():
-			var tr := Rect2(r.position.x + 14 * s + c * tab_w, 38 * s, tab_w - 4 * s, 24 * s)
-			var on: bool = c == seat.row
-			UiKit.panel(self, tr, col if on else Color(1, 1, 1, 0.08), 12 * s)
-			draw_string(UiKit.font(700), tr.position + Vector2(0, 17 * s), CATEGORIES[c], HORIZONTAL_ALIGNMENT_CENTER, tr.size.x, int(11 * s), UiKit.INK if on else Color(1, 1, 1, 0.6))
-		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back], "SPEED %d" % (seat.sens + 1)][seat.row]
+		UiKit.text(self, Vector2(0, 26 * s), dev, 16 * s, Color(1, 1, 1, 0.65), HORIZONTAL_ALIGNMENT_CENTER, pw, 600, 0.0)
+		# Which category up / down is on: its name and a row of dots.
+		UiKit.text(self, Vector2(0, 54 * s), CATEGORIES[seat.row], 20 * s, col.lerp(Color.WHITE, 0.35), HORIZONTAL_ALIGNMENT_CENTER, pw, 700, 0.12)
+		var n := CATEGORIES.size()
+		for c in n:
+			var dp := Vector2(pw * 0.5 + (c - (n - 1) * 0.5) * 14 * s, 66 * s)
+			draw_circle(dp, (4.0 if c == seat.row else 2.6) * s, col if c == seat.row else Color(1, 1, 1, 0.3))
+		var val: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back], "SPEED %d" % (seat.sens + 1)][seat.row]
 		var wob := sin(_t * 6.0) * 3 * s
-		UiKit.text(self, Vector2(r.position.x + 20 * s - wob, 102 * s), "<", 30 * s, _ui().value)
-		UiKit.text(self, Vector2(r.position.x, 102 * s), ">", 30 * s, _ui().value, HORIZONTAL_ALIGNMENT_RIGHT, pw - 20 * s - wob)
-		UiKit.text(self, Vector2(r.position.x, 102 * s), value, 30 * s if value.length() < 10 else 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, pw)
+		UiKit.text(self, Vector2(14 * s - wob, 108 * s), "<", 28 * s, _ui().value)
+		UiKit.text(self, Vector2(0, 108 * s), ">", 28 * s, _ui().value, HORIZONTAL_ALIGNMENT_RIGHT, pw - 14 * s + wob)
+		UiKit.text(self, Vector2(0, 107 * s), val, _fit(val, 28 * s, pw - 76 * s), UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, pw)
 	elif is_bot:
 		UiKit.panel(self, r, _ui().panel, 22 * s, col.darkened(0.3), 3 * s, 5 * s)
-		UiKit.text(self, Vector2(r.position.x, 56 * s), "CPU", 34 * s, col.lerp(Color.WHITE, 0.3), HORIZONTAL_ALIGNMENT_CENTER, pw)
-		UiKit.text(self, Vector2(r.position.x, 92 * s), UiKit.KIND_NAMES[look.kind], 22 * s, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER, pw, 600, 0.0)
+		UiKit.text(self, Vector2(0, 62 * s), "CPU", 34 * s, col.lerp(Color.WHITE, 0.3), HORIZONTAL_ALIGNMENT_CENTER, pw)
+		UiKit.text(self, Vector2(0, 98 * s), UiKit.KIND_NAMES[look.kind], 22 * s, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER, pw, 600, 0.0)
 	else:
 		var a := 0.6 + 0.3 * sin(_t * 3.0 + i)
 		UiKit.panel(self, r, Color(0.05, 0.06, 0.1, 0.6), 22 * s, Color(1, 1, 1, 0.25), 3 * s)
 		var jw := UiKit.text_width("JOIN", 28 * s) + 48 * s
-		var jx := -jw * 0.5
-		jx += UiKit.prompt(self, Vector2(jx, 58 * s), "A", 26 * s) + 12 * s
-		UiKit.text(self, Vector2(jx, 58 * s), "JOIN", 28 * s, Color(1, 1, 1, a))
-		UiKit.text(self, Vector2(r.position.x, 92 * s), "or SPACE on keyboard", 17 * s, Color(1, 1, 1, 0.55), HORIZONTAL_ALIGNMENT_CENTER, pw, 500, 0.0)
+		var jx := (pw - jw) * 0.5
+		jx += UiKit.prompt(self, Vector2(jx, 62 * s), "A", 26 * s) + 12 * s
+		UiKit.text(self, Vector2(jx, 62 * s), "JOIN", 28 * s, Color(1, 1, 1, a))
+		UiKit.text(self, Vector2(0, 96 * s), "or SPACE on keyboard", 17 * s, Color(1, 1, 1, 0.55), HORIZONTAL_ALIGNMENT_CENTER, pw, 500, 0.0)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	if is_player or is_bot:

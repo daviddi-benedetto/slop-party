@@ -109,7 +109,7 @@ parse error in one script.
 | `fonts/Fredoka.ttf` | The UI font (variable weight). Loaded by `ui_kit.gd`. |
 | `scripts/main.gd` | Entry point. Owns the lobby, creates/destroys a `game.gd` per match, screen fades, dev flags. |
 | `scripts/ui_kit.gd` | Shared UI look: colours, font, panels, bars, text with outline, icons, 2D animal portraits, button prompts, easing. |
-| `scripts/lobby.gd` | Join screen: 3D stage with podiums, per-player character customisation, map / bots / kill-target selection. Emits `start(config)`. |
+| `scripts/lobby.gd` | Join screen: 3D stage with six podiums in two rows of three (P1-P3 on a raised back tier, `_slot_pos` / `_slot_h`), each seat's plate drawn beside its character, per-player character customisation (category name + dots, value between arrows, shrunk to fit), and a row of option chips sized to their own text (`_chip_w`; the whole row scales down if the window is too narrow). Emits `start(config)`. |
 | `scripts/stage.gd` | Small 3D "showroom" (sky, floor, neon rings, skyline, podiums, camera) behind the lobby and results, coloured by the visual theme (`build(..., look)`; the lobby rebuilds it when the theme changes, results use the match's theme). |
 | `scripts/looks.gd` | Visual themes: `LOOKS` (time of day, sky, light, neon, surface grade, colour grading, lobby stage and overlay colours), `ORDER`, `grade()`, `apply_post()`. To add a theme: one `LOOKS` entry plus its key in `ORDER`. |
 | `scripts/game.gd` | One match: world, splitscreen viewports, cameras (incl. the vehicle chase camera), countdown, Rounds scoring, the mode hooks, teams (`is_enemy`, `damageables`, `hostiles`), respawn, explosions, pause menu, aim assist, hand-over to results. |
