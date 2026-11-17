@@ -476,7 +476,7 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(-mw * 0.5, 9 * s), message, 26 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, mw, 700, 0.12)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B crouch/slide  -  RB dash  -  LB block  -  X reload  -  Y pick up          KEYBOARD   LMB  -  RMB  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
+	UiKit.text(self, Vector2(0, h - 12 * s), "GAMEPAD   RT fire  -  LT aim  -  A jump  -  B crouch  -  R3 melee  -  RB dash  -  LB block  -  X reload  -  Y pick up          KEYBOARD   LMB  -  RMB  -  F melee  -  Space  -  Shift  -  C  -  Q  -  R  -  E          F11 fullscreen  -  Esc quit",
 		16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w, 500, 0.12)
 
 

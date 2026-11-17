@@ -56,8 +56,8 @@ arenas with readable colour and atmosphere at every time of day.
   annex, warehouse, motel, fenced campus, service roads, wooded edges, utility
   tunnel and underground triage room. Red emergency beacons and blood effects
   give it a scarier tone while keeping the spaces readable.
-- **Time of day and weather:** each match is day, sunset or night (or pick
-  one in the lobby), with random clear / rain / fog / snow weather.
+- **Time of day:** each match is day, sunset or night (or pick one in the
+  lobby). Weather stays clear; large outdoor maps use a light distance haze.
 - **Character customisation:** animal, colour, hat and face per player,
   remembered between sessions.
 
@@ -96,7 +96,8 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Fire | RT | Left click |
 | Aim down sights | LT (hold) | Right click (hold) |
 | Jump (hold with jetpack) | A | Space |
-| Crouch (hold) / slide (while running) | B or right-stick click | C or Ctrl |
+| Crouch (hold) / slide (while running) | B | C or Ctrl |
+| Melee | Right-stick click | F |
 | Dash | RB or left-stick click | Shift |
 | Block | LB | Q |
 | Reload | X | R |
@@ -124,7 +125,8 @@ Reachable from the lobby and from the pause menu:
 - **Display:** fullscreen, V-Sync, frame rate limit (60 by default; with V-Sync
   on a 60 Hz display the limiter steps aside so V-Sync alone paces frames).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing (Off, FXAA,
-  MSAA 2x/4x/8x), render scale, shadows, ambient occlusion, bloom, scenery.
+  MSAA 2x/4x/8x), motion blur slider, render scale, shadows, ambient
+  occlusion, bloom, scenery.
 - **Audio:** master, music and effects volume.
 - **Controls:** gamepad and mouse look speed, stick dead zone, invert Y, aim
   assist, rumble.

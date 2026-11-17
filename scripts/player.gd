@@ -92,6 +92,7 @@ var pitch := 0.0
 var ammo := 8
 var reload_left := 0.0
 var fire_cd := 0.0
+var melee_cd := 0.0
 var burst_left := 0
 var burst_t := 0.0
 var dash_cd := 0.0
@@ -171,6 +172,7 @@ var notice_t := 0.0
 var spawn_time := 0.0
 
 var character
+var viewmodel
 var name_label: Label3D
 var health_bar: MeshInstance3D
 var bullet_material: StandardMaterial3D
@@ -686,6 +688,9 @@ func _physics_process(delta: float) -> void:
 		pickup_prompt = ""
 		vehicle.control(self, delta)
 		return
+	melee_cd = maxf(0.0, melee_cd - delta)
+	if brain.melee and melee_cd <= 0.0:
+		_melee_attack()
 
 	# --- timers / status effects ---
 	fire_cd = maxf(0.0, fire_cd - delta)
@@ -1055,14 +1060,14 @@ func _fire_round() -> void:
 	q.exclude = [get_rid()]
 	var hit := space.intersect_ray(q)
 	var target: Vector3 = hit.position if hit else far
-	var muzzle := eye + basis * Vector3(lerpf(0.2, 0.0, aim_amount), lerpf(-0.16, -0.08, aim_amount), -0.55)
+	var muzzle: Vector3 = viewmodel.muzzle_position() if viewmodel != null and is_instance_valid(viewmodel) and viewmodel.visible else character.muzzle_position()
 	var block := PhysicsRayQueryParameters3D.create(eye, muzzle, WORLD_MASK)
 	if space.intersect_ray(block) or target.distance_to(eye) < 1.2:
 		muzzle = eye
 	var flash_col := Color(attr_color.lerp(Color(1.0, 0.95, 0.7), 0.5), 0.9)
-	Fx.flash(game.world, character.muzzle_position(), flash_col, 0.08, 0.22 + 0.1 * stats.recoil_kick, 0.07, body_layer_bit())
+	Fx.flash(game.world, muzzle, flash_col, 0.08, 0.22 + 0.1 * stats.recoil_kick, 0.07, viewmodel_layer_bit() if has_view else body_layer_bit())
 	if stats.recoil_kick > 1.5:
-		Fx.sparks(game.world, character.muzzle_position(), color.lerp(Color.WHITE, 0.5), 6, 6.0, -basis.z, 55.0, 0.4, body_layer_bit())
+		Fx.sparks(game.world, muzzle, color.lerp(Color.WHITE, 0.5), 6, 6.0, -basis.z, 55.0, 0.4, viewmodel_layer_bit() if has_view else body_layer_bit())
 
 	var aim_spread := lerpf(1.0, stats.ads_spread, aim_amount)
 	for i in stats.pellets:
@@ -1075,6 +1080,24 @@ func _fire_round() -> void:
 		b.global_position = muzzle
 		b.orient()
 		b.reset_physics_interpolation()
+
+
+func _melee_attack() -> void:
+	melee_cd = 0.62
+	var origin := eye_position()
+	var direction := -aim_basis().z
+	var query := PhysicsRayQueryParameters3D.create(origin, origin + direction * 2.15, WORLD_MASK | PLAYER_MASK)
+	query.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	if not hit.is_empty():
+		var target = hit.collider
+		if target != null and target.has_method("take_damage") and game.is_enemy(self, target):
+			target.take_damage(58.0, self)
+			Fx.sparks(game.world, hit.position, color.lerp(Color.WHITE, 0.55), 12, 4.5, direction, 75.0, 0.25)
+			Sfx.play("hit", -5.0, 0.82)
+			return
+	Fx.puff(game.world, origin + direction * 1.7, Color(color.lerp(Color.WHITE, 0.5), 0.65), 5, 0.24)
+	Sfx.play("dash", -9.0, 1.4)
 
 
 func launch(v: Vector3) -> void:

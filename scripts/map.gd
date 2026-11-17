@@ -3,7 +3,7 @@ extends Node3D
 ## lighting, sky, weather, foliage, spawn points, pickup spots, jump pads,
 ## hazards and the bot nav graph.
 ##
-## build(index, time, weather) makes one. MAPS lists the arenas; each is a
+## build(index, time) makes one. MAPS lists the arenas; each is a
 ## layout function plus a THEMES entry:
 ##   0  NEON YARD   medium  container yard, two-storey warehouses, tunnels
 ##   1  EMBER PIT   small   foundry: forge, smelter houses, lava, a tunnel
@@ -17,9 +17,8 @@ extends Node3D
 ## lighting; day and sunset start from the DAY / SUNSET presets and apply the
 ## theme's optional "day" / "sunset" overrides. The preset also scales neon
 ## emission (neon_scale) and point lights (light_scale) so each map reads well.
-## WEATHER: "clear", "rain", "fog", "snow" (theme "weathers" lists what is
-## allowed). Weather changes the sky, fog and wetness here; the falling rain
-## or snow is spawned per camera by game.gd.
+## Matches vary by time of day only. Rain and snow are disabled; subtle fog is
+## retained on large maps for depth.
 ##
 ## MATERIALS: a theme's "mats" maps a key to
 ## [colour, texture kind, tiles per metre, roughness, metallic]. Texture kinds
@@ -334,12 +333,14 @@ var _pad_rings: Array = []
 var _time := 0.0
 
 
-func build(index := 0, time_of_day := "night", weather_kind := "clear") -> void:
+func build(index := 0, time_of_day := "night") -> void:
 	map_index = clampi(index, 0, MAPS.size() - 1)
 	var info: Dictionary = MAPS[map_index]
 	theme = THEMES[info.theme]
 	time = time_of_day if time_of_day in TIMES else "night"
-	weather = weather_kind if weather_kind in theme.weathers else "clear"
+	# Matches vary by time of day only. Keep the atmosphere in the map theme;
+	# precipitation and random fog presets are intentionally disabled.
+	weather = "clear"
 	indoor = theme.get("indoor", false)
 	half_x = info.half.x
 	half_z = info.half.y
@@ -458,6 +459,10 @@ func _build_environment() -> void:
 	# shadows.
 	p.ambient = maxf(p.ambient, 0.78)
 	fog_density = minf(fog_density, 0.012)
+	# A slight distance haze gives the large outdoor arenas more depth without
+	# obscuring players or landmarks.
+	if half_x >= 44.0:
+		fog_density = maxf(fog_density, 0.0035)
 	light_scale = p.lights
 	neon_scale = p.neon
 
@@ -1462,9 +1467,10 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 	# Foundation band and corner posts: the building reads as built, not a box.
 	var trim := "trim" if _mats.has("trim") else ("block_a" if mat != "block_a" else "block_c")
 	_box(Vector3(c.x, c.y + 0.14, c.z), Vector3(sx + 0.16, 0.28, sz + 0.16), "dark", mirror, 0.0, false)
-	for cx in [x0, x1]:
-		for cz in [z0, z1]:
-			_box(Vector3(cx, c.y + floors * FLOOR_H * 0.5, cz), Vector3(0.22, floors * FLOOR_H, 0.22), trim, mirror, 0.0, false)
+	for cx_side in [[x0, 1.0], [x1, -1.0]]:
+		for cz_side in [[z0, 1.0], [z1, -1.0]]:
+			var post_pos := Vector3(cx_side[0] + cx_side[1] * 0.15, c.y + floors * FLOOR_H * 0.5, cz_side[0] + cz_side[1] * 0.15)
+			_box(post_pos, Vector3(0.22, floors * FLOOR_H, 0.22), trim, mirror, 0.0, false)
 	if pitched:
 		# Chimney through the ridge side.
 		var ry := c.y + floors * FLOOR_H
@@ -1481,10 +1487,15 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 			_model("toon/Building/Water_Tank_Floor", Vector3(c.x + sx * 0.1, ry2, c.z - sz * 0.3), PI * 0.5, 0.8, mirror)
 	if not pitched:
 		var y := c.y + floors * FLOOR_H
-		_wall_x(z0 + 0.15, x0, x1, y, 1.0, mat, [], mirror, 0.3)
-		_wall_x(z1 - 0.15, x0, x1, y, 1.0, mat, [], mirror, 0.3)
-		_wall_z(x0 + 0.15, z0 + 0.3, z1 - 0.3, y, 1.0, mat, [], mirror, 0.3)
-		_wall_z(x1 - 0.15, z0 + 0.3, z1 - 0.3, y, 1.0, mat, [], mirror, 0.3)
+		# Stop parapet runs at their corner joints so rounded segments do not
+		# intersect through each other at the outside edges.
+		_wall_x(z0 + 0.15, x0 + 0.45, x1 - 0.45, y, 1.0, mat, [], mirror, 0.3)
+		_wall_x(z1 - 0.15, x0 + 0.45, x1 - 0.45, y, 1.0, mat, [], mirror, 0.3)
+		_wall_z(x0 + 0.15, z0 + 0.45, z1 - 0.45, y, 1.0, mat, [], mirror, 0.3)
+		_wall_z(x1 - 0.15, z0 + 0.45, z1 - 0.45, y, 1.0, mat, [], mirror, 0.3)
+		for x_corner in [x0 + 0.15, x1 - 0.15]:
+			for z_corner in [z0 + 0.15, z1 - 0.15]:
+				_box(Vector3(x_corner, y + 0.5, z_corner), Vector3(0.3, 1.0, 0.3), mat, mirror)
 		if theme.neon:
 			_box(Vector3(c.x, y + 1.02, z0 + 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
 			_box(Vector3(c.x, y + 1.02, z1 - 0.15), Vector3(sx, 0.06, 0.34), "accent_b", mirror, 0.0, false)
@@ -1528,7 +1539,14 @@ func _facade(c: Vector3, sx: float, sz: float, y0: float, f: int, win_x: Array, 
 			_box(Vector3(c.x + sgn * 1.0, y0 + 1.25, z0 - 0.02), Vector3(0.14, 2.5, 0.16), trim, mirror, 0.0, false)
 			_box(Vector3(x1 + 0.02, y0 + 1.25, c.z + sgn * 1.0), Vector3(0.16, 2.5, 0.14), trim, mirror, 0.0, false)
 	else:
-		_box(Vector3(c.x, y0, c.z), Vector3(sx + 0.12, 0.12, sz + 0.12), trim, mirror, 0.0, false)
+		# Perimeter string-course only. A full-footprint trim slab here used to
+		# cover the stairwell cutout made by _slab(), so players hit an invisible
+		# floor while climbing.
+		var band := 0.12
+		_box(Vector3(c.x, y0, z0 + band * 0.5), Vector3(sx, band, band), trim, mirror, 0.0, false)
+		_box(Vector3(c.x, y0, z1 - band * 0.5), Vector3(sx, band, band), trim, mirror, 0.0, false)
+		_box(Vector3(x0 + band * 0.5, y0, c.z), Vector3(band, band, sz - 2.0 * band), trim, mirror, 0.0, false)
+		_box(Vector3(x1 - band * 0.5, y0, c.z), Vector3(band, band, sz - 2.0 * band), trim, mirror, 0.0, false)
 
 
 ## A dense patch of woodland in `r`: mostly light low-poly trees (cheap), a

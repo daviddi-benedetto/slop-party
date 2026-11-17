@@ -26,6 +26,7 @@ const ITEMS := [
 	{"section": "GRAPHICS"},
 	{"key": "preset", "label": "Quality preset", "opts": ["Custom", "Low", "Medium", "High", "Ultra"], "vals": [0, 1, 2, 3, 4], "def": 3},
 	{"key": "aa", "label": "Anti-aliasing", "opts": ["Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x"], "vals": [0, 1, 2, 3, 4], "def": 2},
+	{"key": "motion_blur", "label": "Motion blur", "range": [0, 10], "def": 0},
 	{"key": "scale", "label": "Render scale", "opts": ["50%", "67%", "75%", "85%", "100%"], "vals": [0.5, 0.67, 0.75, 0.85, 1.0], "def": 4},
 	{"key": "shadows", "label": "Shadows", "opts": ["Off", "Low", "High"], "vals": [0, 1, 2], "def": 2},
 	{"key": "ssao", "label": "Ambient occlusion", "opts": ON_OFF, "vals": [false, true], "def": 1},

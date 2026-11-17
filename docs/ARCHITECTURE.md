@@ -19,8 +19,9 @@ has not been verified.
   `map_places.gd`, `sfx.gd`): Neon Yard, Ember Pit, Frost Line, Museum,
   Stadium, Suburb. Zombies uses a separate, larger Quarantine campus map;
   Frontline has its own huge battlefield.
-  Every match also rolls a time of day (day / sunset / night, or the lobby's
-  choice) and a weather (clear / rain / fog / snow).
+  Every match rolls a time of day (day / sunset / night, or the lobby's
+  choice). Weather and precipitation are disabled; large outdoor maps use a
+  restrained distance haze.
 - ROUNDS-style progression: **on every death** the dead player is shown three
   random cards and must pick one before respawning. Cards permanently modify
   that player's stats for the match and stack.
@@ -76,7 +77,7 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
   `[match] over at ... s: <result>`.
 - `--force-aim` makes everyone aim down sights (to check the sight picture).
 - `--seed=N` seeds the random generator so runs are comparable.
-- `--time=day|sunset|night`, `--weather=clear|rain|fog|snow` fix the conditions.
+- `--time=day|sunset|night` fixes the time of day.
 - `--cards=2x Scope,Jetpack` gives every player those cards; `--weapon=N` a weapon.
 - `tools/contact_sheet.gd` combines screenshots into a grid (see its header).
 - `--lobby-demo=H,B` shows the lobby with H fake humans and B bots seated.
@@ -116,13 +117,13 @@ parse error in one script.
 | `scripts/vehicle.gd` | Buggy, tank and helicopter: models, driving / flying, turrets, visible muzzle flashes and tracers, weapons, damage, destruction. |
 | `scripts/map_front.gd` | Layout 6 (FRONTLINE): town, towers, warehouse, bunkers, trenches, farms, bases, vehicle spots, flags. |
 | `scripts/results.gd` | Victory screen: podium, crown, confetti, results table. |
-| `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day/weather lighting, procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. Building floor slabs reserve openings for the full stair flight. |
+| `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day lighting, procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. Stairwell openings are kept clear through slabs and facade trim. |
 | `scripts/map_places.gd` | Layouts 3-5 (Museum, Stadium, Suburb) built with the map.gd helpers. |
 | `scripts/map_zombie.gd` | Dedicated large Zombies map: hospital campus, annex, warehouse, motel, quarantine fence, yard, tunnel, basement and indoor/outdoor spawns. |
 | `scripts/player.gd` | `CharacterBody3D`: movement, weapon, health, status effects, feedback values, death → card pick → respawn. |
 | `scripts/character.gd` | The plush animal model (6 species, 11 hats, 7 faces) and its procedural animation. |
 | `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
-| `scripts/viewmodel.gd` | Gun model per weapon style (receiver, barrel, magazine, stock, sights; merged into one mesh per material), first-person sway/recoil/reload/pump/cylinder animation; also used as the pickup prop and, scaled up, as the third-person gun (`character.gd::set_weapon`). |
+| `scripts/viewmodel.gd` | Gun model per weapon style (receiver, barrel, magazine, stock, sights; merged into one mesh per material), first-person sway/recoil/reload/pump/cylinder animation and world-space muzzle position; also used as the pickup prop and, scaled up, as the third-person gun (`character.gd::set_weapon`). |
 | `scripts/pickup.gd` | Weapon and health pickup pads. |
 | `scripts/sky.gd` | Sky shader (gradient, sun halo, painted clouds) shared by the arena and the stage. |
 | `scripts/stats.gd` | Per-player stats, rebuilt from defaults + weapon + cards. |
@@ -131,9 +132,10 @@ parse error in one script.
 | `scripts/input_source.gd` | Human input for one device (keyboard+mouse or one gamepad). |
 | `scripts/bot_brain.gd` | AI that exposes the same interface as `input_source.gd`. |
 | `scripts/hud.gd` | Per-viewport HUD and the animated card picker. |
+| `scripts/motion_blur.gd` | Optional, per-viewport camera-motion blur controlled by the Graphics slider. |
 | `scripts/fx.gd` | Particles, flashes, rings, confetti, floating damage numbers and blood spray/stains. |
 | `scripts/sfx.gd` | Autoload. Synthesises all sound effects, composes and renders the music loops (one per map, lobby, zombies, frontline) in a thread, distance-attenuated playback. |
-| `scripts/settings.gd` | Autoload. The list of user options, their values, saving/loading, and applying display/AA/audio settings. |
+| `scripts/settings.gd` | Autoload. The list of user options, their values, saving/loading, and applying display, AA, motion blur and audio settings. |
 | `scripts/settings_menu.gd` | The Options screen (opened from the lobby and the pause menu). |
 
 No script uses `class_name`; scripts reference each other with `preload()`
@@ -479,8 +481,9 @@ screen at once.
   if so `bullet.gd::_reflect` hands it to the blocker and sends it back at the
   shooter – bullets, rockets, grenades, bubbles and flames alike. Cards hook in
   via `_blocked()` (heal, shockwave). A blocked zombie is shoved back.
-- **Crouch / slide:** B (held) or R3 on a gamepad, C / Ctrl on the keyboard;
-  pressed while running it becomes a slide. Dash moved to RB / L3, block to LB.
+- **Crouch / slide:** B (held) on a gamepad, C / Ctrl on the keyboard; pressed
+  while running it becomes a slide. R3 / F performs melee. Dash is RB / L3,
+  block is LB / Q.
 - **Aim down sights:** `aim_amount` (0–1, smoothed). It narrows the camera FOV
   by `stats.zoom` (`game.gd::_update_cameras`), scales look sensitivity
   (`zoom_factor`), tightens spread, slows movement, and slides the gun to the
@@ -538,10 +541,8 @@ data.
   lights), `neon_scale` (emission) and `night_amount` (windows, street lamps,
   floodlights) which the builders read. Indoor lights divide by light_scale so
   they stay on in daylight.
-- **Weather:** changes clouds, fog, sun and wetness (materials get glossier in
-  rain). `game.gd::_make_weather` adds a GPU particle emitter per camera,
-  on that player's private layer, following the camera. Lightning flashes
-  (`flash_lightning`) and thunder happen in night/sunset rain.
+- **Weather:** disabled. Matches keep clear conditions and vary only by time
+  of day; large outdoor arenas retain a subtle depth haze.
 
 ### Parkour, jetpack, scopes (`player.gd`, `viewmodel.gd`, `game.gd`)
 

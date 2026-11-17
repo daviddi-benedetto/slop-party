@@ -173,6 +173,11 @@ func muzzle_z() -> float:
 	return _muzzle_z
 
 
+## World-space bore exit for shots and muzzle effects.
+func muzzle_position() -> Vector3:
+	return global_transform * Vector3(0.0, 0.0, _muzzle_z)
+
+
 ## Weapon models. Bore axis = the Z axis (y = 0), muzzle towards -Z, the
 ## pistol grip at z = 0.1 where the paw holds it. Real-world layout: receiver,
 ## barrel, handguard, magazine, stock, sights; the player's colour goes on

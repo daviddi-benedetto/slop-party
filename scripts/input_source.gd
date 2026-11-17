@@ -13,7 +13,8 @@ extends RefCounted
 ##   block     LB                          Q
 ##   reload    X                           R
 ##   interact  Y (pick up weapon)          E
-##   crouch    B (hold) or R3              C or Ctrl  (slide when running)
+##   melee     right-stick click           F
+##   crouch    B (hold)                    C or Ctrl  (slide when running)
 ##   (in a vehicle: interact = get out, jump/crouch = climb/descend)
 ##
 ## Look is applied every rendered frame (update_look) for the lowest latency;
@@ -36,6 +37,7 @@ var dash := false             # edge triggered
 var block := false            # edge triggered
 var reload := false           # edge triggered
 var interact := false         # edge triggered
+var melee := false            # edge triggered
 var ui_left := false          # edge triggered
 var ui_right := false         # edge triggered
 var ui_accept := false        # edge triggered
@@ -111,6 +113,7 @@ func update_buttons(_player, _delta: float) -> void:
 		block = _edge("block", Input.is_physical_key_pressed(KEY_Q))
 		reload = _edge("reload", Input.is_physical_key_pressed(KEY_R))
 		interact = _edge("interact", Input.is_physical_key_pressed(KEY_E))
+		melee = _edge("melee", Input.is_physical_key_pressed(KEY_F))
 		ui_left = _edge("ui_left", Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT))
 		ui_right = _edge("ui_right", Input.is_physical_key_pressed(KEY_D) or Input.is_physical_key_pressed(KEY_RIGHT))
 		ui_accept = _edge("ui_accept", Input.is_physical_key_pressed(KEY_SPACE) or Input.is_physical_key_pressed(KEY_ENTER) or Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT))
@@ -121,12 +124,13 @@ func update_buttons(_player, _delta: float) -> void:
 		aim = Input.get_joy_axis(device, JOY_AXIS_TRIGGER_LEFT) > 0.3
 		jump_held = Input.is_joy_button_pressed(device, JOY_BUTTON_A)
 		jump = _edge("jump", jump_held)
-		# B (held) crouches, or slides when running; R3 does the same.
-		crouch = Input.is_joy_button_pressed(device, JOY_BUTTON_B) or Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_STICK)
+		# B crouches or slides when running; R3 is reserved for melee.
+		crouch = Input.is_joy_button_pressed(device, JOY_BUTTON_B)
 		dash = _edge("dash", Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_SHOULDER) or Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_STICK))
 		block = _edge("block", Input.is_joy_button_pressed(device, JOY_BUTTON_LEFT_SHOULDER))
 		reload = _edge("reload", Input.is_joy_button_pressed(device, JOY_BUTTON_X))
 		interact = _edge("interact", Input.is_joy_button_pressed(device, JOY_BUTTON_Y))
+		melee = _edge("melee", Input.is_joy_button_pressed(device, JOY_BUTTON_RIGHT_STICK))
 		var sx := Input.get_joy_axis(device, JOY_AXIS_LEFT_X)
 		ui_left = _edge("ui_left", Input.is_joy_button_pressed(device, JOY_BUTTON_DPAD_LEFT) or sx < -0.6)
 		ui_right = _edge("ui_right", Input.is_joy_button_pressed(device, JOY_BUTTON_DPAD_RIGHT) or sx > 0.6)
