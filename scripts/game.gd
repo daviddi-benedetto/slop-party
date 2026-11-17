@@ -41,7 +41,7 @@ extends Node
 ##
 ## config = { "participants": [ { "device": int, "bot": bool, "view": bool,
 ##            "kind": int, ... } ], "kill_target": int, "mode": String,
-##            "map": int, "time": String, "teams": "versus" | "coop" }
+##            "map": int, "theme": String (looks.gd key or "random"), "teams": "versus" | "coop" }
 
 signal finished
 
@@ -72,6 +72,7 @@ const MODE_NAMES := {"rounds": "ROUNDS", "zombies": "ZOMBIES", "frontline": "FRO
 var config := {}
 var world: Node3D
 var map
+var _look := {}               # the visual theme in play (looks.gd entry; for the results stage)
 var players: Array = []
 var kill_target := 15
 var match_over := false
@@ -152,10 +153,8 @@ func _ready() -> void:
 		rules = GunGame.new()
 	elif mode == "medieval":
 		rules = Medieval.new()
-	var tod: String = config.get("time", "random")
-	if not tod in Map.TIMES:
-		tod = Map.TIMES[randi() % Map.TIMES.size()]
-	map.build(map_i, tod)
+	map.build(map_i, str(config.get("theme", config.get("time", "random"))))
+	_look = map.look
 
 	var parts: Array = config.participants
 	if rules != null:
@@ -780,6 +779,7 @@ func _show_results() -> void:
 	Sfx.listeners = []
 	_results = Results.new()
 	_results.rows = rows
+	_results.look = _look
 	_results.title = title
 	add_child(_results)
 	move_child(_results, 0)

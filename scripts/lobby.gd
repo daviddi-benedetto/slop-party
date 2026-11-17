@@ -10,7 +10,8 @@ extends Control
 ##
 ## Shared controls: RT / G game mode (ROUNDS, ZOMBIES, FRONTLINE), Y / B-key
 ## bots (Frontline: teams versus / co-op), X / K kill target (Frontline:
-## tickets), RB / M next map (Frontline has its own), LB / T time of day,
+## tickets), RB / M next map (Frontline has its own), LB / T visual theme
+## (looks.gd: the stage behind the lobby and its colours change with it),
 ## Back / O options, Start / Enter to begin.
 ##
 ## main.gd calls activate() to show it and deactivate() before a match (the
@@ -24,6 +25,7 @@ const UiKit = preload("res://scripts/ui_kit.gd")
 const Fx = preload("res://scripts/fx.gd")
 const SettingsMenu = preload("res://scripts/settings_menu.gd")
 const Map = preload("res://scripts/map.gd")
+const Looks = preload("res://scripts/looks.gd")
 
 const MAX_PLAYERS := 6
 const KEYBOARD := -1
@@ -31,7 +33,6 @@ const KILL_TARGETS := [5, 10, 15, 20, 30]
 const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK", "LOOK"]
 const KEYS := ["kind", "color", "hat", "back", "sens"]
 const SENS_STEPS := 10          # LOOK: this player's own look speed, 1-10
-const TIME_OPTS := ["random", "day", "sunset", "night"]
 const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
 const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE", "GUN GAME", "MEDIEVAL"]
 const TICKETS := [50, 100, 150, 200, 300]
@@ -43,7 +44,7 @@ var seats: Array = []        # [{device, kind, color, hat, face, row}] in join o
 var bots := 0
 var target_i := 2
 var map_i := 0
-var time_i := 0
+var theme_i := 0             # index into Looks.options()
 var mode_i := 0
 var versus := true           # Frontline: humans split between the teams
 var message := ""
@@ -58,6 +59,7 @@ var _prev := {}
 var _t := 0.0
 var _armed := false          # ignore buttons still held from the previous screen
 var _options
+var _look_now := {}          # the theme the stage is showing (RANDOM resolved)
 
 
 func _ready() -> void:
@@ -73,7 +75,7 @@ func _ready() -> void:
 	bots = int(Settings.lobby.get("bots", 0))
 	target_i = clampi(int(Settings.lobby.get("target", 2)), 0, KILL_TARGETS.size() - 1)
 	map_i = clampi(int(Settings.lobby.get("map", 0)), 0, Map.ARENAS.size() - 1)
-	time_i = clampi(int(Settings.lobby.get("time", 0)), 0, TIME_OPTS.size() - 1)
+	theme_i = clampi(int(Settings.lobby.get("theme", 0)), 0, Looks.options().size() - 1)
 	mode_i = clampi(int(Settings.lobby.get("mode", 0)), 0, MODES.size() - 1)
 	versus = bool(Settings.lobby.get("versus", true))
 	_options = SettingsMenu.new()
@@ -90,14 +92,38 @@ func activate() -> void:
 	visible = true
 	Sfx.music("lobby")
 	if _stage == null:
-		_stage = Stage.new()
-		add_child(_stage)
-		move_child(_stage, 0)
-		_stage.build(Vector3(0, 2.7, 11.6), Vector3(0, 1.5, 0), 36.0)
-		for i in MAX_PLAYERS:
-			_stage.add_podium(_slot_pos(i), 0.5, UiKit.PLAYER_COLORS[i])
-			_slot_sig[i] = ""
-			_slot_char[i] = null
+		_build_stage()
+
+
+## The 3D stage in the selected theme (RANDOM shows a different theme
+## each time you land on it). Seated characters are re-added by _sync_stage.
+func _build_stage() -> void:
+	if _stage != null:
+		remove_child(_stage)
+		_stage.queue_free()
+	var key: String = Looks.options()[theme_i]
+	_look_now = Looks.get_look(key)
+	_stage = Stage.new()
+	add_child(_stage)
+	move_child(_stage, 0)
+	_stage.build(Vector3(0, 2.7, 11.6), Vector3(0, 1.5, 0), 36.0, _look_now)
+	for i in MAX_PLAYERS:
+		_stage.add_podium(_slot_pos(i), 0.5, UiKit.PLAYER_COLORS[i])
+		_slot_sig[i] = ""
+		_slot_char[i] = null
+
+
+## Lobby overlay colours of the theme on show.
+func _ui() -> Dictionary:
+	return _look_now.get("ui", Looks.LOOKS.classic.ui)
+
+
+## Dev / command line: select a theme by key.
+func pick_theme(key: String) -> void:
+	var i := Looks.options().find(key)
+	if i >= 0:
+		theme_i = i
+		Settings.lobby["theme"] = i
 
 
 func deactivate() -> void:
@@ -235,8 +261,10 @@ func _process(delta: float) -> void:
 		target_i = (target_i + 1) % KILL_TARGETS.size()
 		Sfx.play("tick", -8.0)
 	if time_step:
-		time_i = (time_i + 1) % TIME_OPTS.size()
+		theme_i = (theme_i + 1) % Looks.options().size()
+		Settings.lobby["theme"] = theme_i
 		Sfx.play("tick", -6.0, 1.1)
+		_build_stage()
 	if map_step:
 		if mode == "frontline":
 			_say("Frontline is fought on its own huge map")
@@ -375,7 +403,7 @@ func _remember() -> void:
 	Settings.lobby["bots"] = bots
 	Settings.lobby["target"] = target_i
 	Settings.lobby["map"] = map_i
-	Settings.lobby["time"] = time_i
+	Settings.lobby["theme"] = theme_i
 	Settings.lobby["mode"] = mode_i
 	Settings.lobby["versus"] = versus
 	Settings.save()
@@ -392,7 +420,7 @@ func _start() -> void:
 			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back,
 			"sens": (seats[i].sens + 1) if human else 5})
 	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
-	start.emit({"participants": parts, "kill_target": target, "map": Map.ARENAS[map_i], "time": TIME_OPTS[time_i], "mode": mode,
+	start.emit({"participants": parts, "kill_target": target, "map": Map.ARENAS[map_i], "theme": _look_now.get("key", "classic"), "mode": mode,
 		"teams": "versus" if versus else "coop"})
 
 
@@ -404,7 +432,10 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	var s := h / 1080.0
-	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.0, 0.0, 0.03, 0.55))
+	var ui: Dictionary = _look_now.get("ui", Looks.LOOKS.classic.ui)
+	var panel: Color = ui.panel
+	var value: Color = ui.value
+	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, ui.vignette)
 
 	# Bouncing logo.
 	var title := "SLOP GAME"
@@ -420,13 +451,15 @@ func _draw() -> void:
 		var bounce := sin(_t * 2.6 - i * 0.55)
 		var pos := Vector2(x + widths[i] * 0.5, 160 * s - maxf(0.0, bounce) * 14 * s)
 		draw_set_transform(pos, bounce * 0.04, Vector2.ONE)
-		var col := UiKit.GOLD.lerp(Color(1.0, 0.36, 0.2), 0.5 + 0.5 * sin(i * 0.9)) if i < 4 else Color(0.3, 0.75, 1.0).lerp(Color(0.6, 0.9, 1.0), 0.5 + 0.5 * sin(i * 0.9))
+		var la: Color = ui.logo_a
+		var lb: Color = ui.logo_b
+		var col := la.lerp(la.darkened(0.15).lerp(Color(1, 0.3, 0.2), 0.25), 0.5 + 0.5 * sin(i * 0.9)) if i < 4 else lb.lerp(lb.lerp(Color.WHITE, 0.4), 0.5 + 0.5 * sin(i * 0.9))
 		UiKit.text(self, Vector2(-widths[i] * 0.5, 0), title[i], px, col, HORIZONTAL_ALIGNMENT_CENTER, widths[i], 700, 0.12)
 		x += widths[i]
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	var tag: String = TAGLINES[mode_i]
 	var tw := UiKit.text_width(tag, 24 * s) + 60 * s
-	UiKit.card(self, Rect2((w - tw) * 0.5, 190 * s, tw, 44 * s), UiKit.PANEL, 22 * s, s)
+	UiKit.card(self, Rect2((w - tw) * 0.5, 190 * s, tw, 44 * s), panel, 22 * s, s)
 	UiKit.text(self, Vector2(0, 221 * s), tag, 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, w, 600, 0.0)
 	# A screen running below 50 Hz (a 4K TV left in a 30 Hz mode) can never
 	# show a smooth game, whatever we render: say so.
@@ -464,7 +497,7 @@ func _draw() -> void:
 		bot_chip,
 		goal_chip,
 		["RB" if pad else "M", "MAP", "%s" % map_info.name, 340.0],
-		["LB" if pad else "T", "TIME", TIME_OPTS[time_i].to_upper(), 260.0],
+		["LB" if pad else "T", "THEME", Looks.label(Looks.options()[theme_i]), 390.0],
 		["BACK" if pad else "O", "OPTIONS", "", 210.0],
 	]
 	var total_w := -16.0 * s
@@ -473,11 +506,11 @@ func _draw() -> void:
 	var cx := (w - total_w) * 0.5
 	for chip in chips:
 		var r := Rect2(cx, by, chip[3] * s, 58 * s)
-		UiKit.card(self, r, UiKit.PANEL, 29 * s, s)
+		UiKit.card(self, r, panel, 29 * s, s)
 		var ox := r.position.x + 16 * s
 		ox += UiKit.prompt(self, Vector2(ox, by + 41 * s), chip[0], 26 * s, not pad) + 12 * s
 		UiKit.text(self, Vector2(ox, by + 40 * s), chip[1], 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_LEFT, -1, 600, 0.0)
-		UiKit.text(self, Vector2(r.position.x, by + 41 * s), chip[2], 28 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 22 * s)
+		UiKit.text(self, Vector2(r.position.x, by + 41 * s), chip[2], 28 * s, value, HORIZONTAL_ALIGNMENT_RIGHT, r.size.x - 22 * s)
 		cx += chip[3] * s + 16 * s
 
 	var ready := not seats.is_empty() and (seats.size() + bots >= 2 or mode != "rounds")
@@ -486,7 +519,7 @@ func _draw() -> void:
 		var pulse := 1.0 + sin(_t * 5.0) * 0.04
 		draw_set_transform(Vector2(w * 0.5, sy - 14 * s), 0.0, Vector2(pulse, pulse))
 		var label := "PRESS  START  TO FIGHT!" if pad else "PRESS  ENTER  TO FIGHT!"
-		UiKit.text(self, Vector2(-w * 0.5, 16 * s), label, 46 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.16)
+		UiKit.text(self, Vector2(-w * 0.5, 16 * s), label, 46 * s, value, HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.16)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 	else:
 		UiKit.text(self, Vector2(0, sy), "WAITING FOR PLAYERS...", 36 * s, Color(1, 1, 1, 0.7 + 0.3 * sin(_t * 3.0)), HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.16)
@@ -513,7 +546,7 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 	var r := Rect2(-pw * 0.5, 0, pw, 118 * s)
 	if is_player:
 		var seat: Dictionary = seats[i]
-		UiKit.panel(self, r, UiKit.PANEL, 22 * s, col, 3 * s, 5 * s)
+		UiKit.panel(self, r, _ui().panel, 22 * s, col, 3 * s, 5 * s)
 		var dev := "KEYBOARD" if seat.device == KEYBOARD else "GAMEPAD %d" % (seat.device + 1)
 		UiKit.text(self, Vector2(r.position.x, 28 * s), dev, 18 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, pw, 600, 0.0)
 		# Category tabs: the selected one is lit.
@@ -525,11 +558,11 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 			draw_string(UiKit.font(700), tr.position + Vector2(0, 17 * s), CATEGORIES[c], HORIZONTAL_ALIGNMENT_CENTER, tr.size.x, int(11 * s), UiKit.INK if on else Color(1, 1, 1, 0.6))
 		var value: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back], "SPEED %d" % (seat.sens + 1)][seat.row]
 		var wob := sin(_t * 6.0) * 3 * s
-		UiKit.text(self, Vector2(r.position.x + 20 * s - wob, 102 * s), "<", 30 * s, UiKit.GOLD)
-		UiKit.text(self, Vector2(r.position.x, 102 * s), ">", 30 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, pw - 20 * s - wob)
+		UiKit.text(self, Vector2(r.position.x + 20 * s - wob, 102 * s), "<", 30 * s, _ui().value)
+		UiKit.text(self, Vector2(r.position.x, 102 * s), ">", 30 * s, _ui().value, HORIZONTAL_ALIGNMENT_RIGHT, pw - 20 * s - wob)
 		UiKit.text(self, Vector2(r.position.x, 102 * s), value, 30 * s if value.length() < 10 else 24 * s, UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, pw)
 	elif is_bot:
-		UiKit.panel(self, r, UiKit.PANEL, 22 * s, col.darkened(0.3), 3 * s, 5 * s)
+		UiKit.panel(self, r, _ui().panel, 22 * s, col.darkened(0.3), 3 * s, 5 * s)
 		UiKit.text(self, Vector2(r.position.x, 56 * s), "CPU", 34 * s, col.lerp(Color.WHITE, 0.3), HORIZONTAL_ALIGNMENT_CENTER, pw)
 		UiKit.text(self, Vector2(r.position.x, 92 * s), UiKit.KIND_NAMES[look.kind], 22 * s, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER, pw, 600, 0.0)
 	else:

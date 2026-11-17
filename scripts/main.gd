@@ -11,7 +11,9 @@ extends Node
 ##   --mode=rounds|zombies|frontline, --teams=versus|coop   game mode
 ##   --wave=N              zombies: start at wave N
 ##   --drive=buggy|tank|heli   frontline: player 1 starts in that vehicle
-##   --time=day|sunset|night   (default random)
+##   --theme=classic|toy|warm|cyberpunk|synthwave|spooky|moonlit|random
+##                         visual theme (match and lobby; default random in
+##                         autotest; --time=day|sunset|night still works)
 ##   --lobby-demo=H,B      show the lobby with H fake humans and B bots seated
 ##   --shot=<file.png>     save a screenshot, print stats, then quit
 ##   --shot-time=<sec>     when to take it (default 6)
@@ -70,12 +72,14 @@ func _ready() -> void:
 		if _args.has("kb"):
 			parts[0] = {"device": -1, "bot": false, "view": true, "kind": 0}
 		lobby.visible = false
-		_begin({"participants": parts, "kill_target": int(_args.get("target", "15")), "map": int(_args.get("map", "0")), "time": str(_args.get("time", "random")),
+		_begin({"participants": parts, "kill_target": int(_args.get("target", "15")), "map": int(_args.get("map", "0")), "theme": str(_args.get("theme", _args.get("time", "random"))),
 			"mode": str(_args.get("mode", "rounds")), "teams": str(_args.get("teams", "versus"))})
 	else:
 		if _args.has("lobby-demo"):
 			var hb := str(_args["lobby-demo"]).split(",")
 			lobby.demo_fill(int(hb[0]), int(hb[1]) if hb.size() > 1 else 0)
+		if _args.has("theme"):
+			lobby.pick_theme(str(_args.theme))
 		lobby.activate()
 		create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
 	if _args.has("options-demo"):

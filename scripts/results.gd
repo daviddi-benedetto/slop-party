@@ -12,6 +12,7 @@ const UiKit = preload("res://scripts/ui_kit.gd")
 const Fx = preload("res://scripts/fx.gd")
 
 var rows: Array = []
+var look := {}               # the match's visual theme (looks.gd), set by game.gd
 var title := ""              # set by game.gd for team / co-op modes; default "<winner> WINS!"
 var _stage
 var _t := 0.0
@@ -23,7 +24,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_stage = Stage.new()
 	add_child(_stage)
-	_stage.build(Vector3(0, 3.3, 12.5), Vector3(0, 2.1, 0), 34.0)
+	_stage.build(Vector3(0, 3.3, 12.5), Vector3(0, 2.1, 0), 34.0, look)
 
 	var spots := [
 		[Vector3(0, 0, 0), 1.7], [Vector3(-2.3, 0, 0.2), 1.15], [Vector3(2.3, 0, 0.2), 0.8],

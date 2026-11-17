@@ -1,6 +1,7 @@
 extends Node3D
-## A small 3D "showroom" used behind the lobby and the results screen: night
-## sky, a dark glossy floor with neon rings, a glowing skyline and a camera.
+## A small 3D "showroom" used behind the lobby and the results screen: sky,
+## floor with neon rings, a skyline and a camera, all coloured by the visual
+## theme passed to build() (looks.gd "stage"; default: the neon night).
 ## Characters placed with add_character() are animated here.
 ##
 ## It lives in the root viewport's World3D, the same one a match uses, so it
@@ -8,6 +9,7 @@ extends Node3D
 
 const Character = preload("res://scripts/character.gd")
 const SkyKit = preload("res://scripts/sky.gd")
+const Looks = preload("res://scripts/looks.gd")
 
 const ORANGE := Color(1.0, 0.42, 0.16)
 const CYAN := Color(0.15, 0.75, 1.0)
@@ -20,27 +22,36 @@ var _sun: DirectionalLight3D
 var _rings: Array = []
 
 
-func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
+func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float, look := {}) -> void:
+	# Theme colours (looks.gd "stage"); anything missing falls back to the
+	# original neon night showroom.
+	var st: Dictionary = look.get("stage", {})
+	var day: bool = st.get("day", false)
+	var ring_a: Color = st.get("ring_a", ORANGE)
+	var ring_b: Color = st.get("ring_b", CYAN)
+	var band_a: Color = st.get("band_a", ring_a)
+	var band_b: Color = st.get("band_b", ring_b)
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
-	env.sky = SkyKit.make({"top": Color(0.01, 0.015, 0.05), "horizon": Color(0.12, 0.1, 0.28), "ground": Color(0.02, 0.02, 0.05),
-		"sun": Color(0.75, 0.82, 1.0), "cloud_color": Color(0.14, 0.13, 0.28), "clouds": 0.6, "stars": 1.0, "aurora": 0.35})
+	env.sky = SkyKit.make(st.get("sky", {"top": Color(0.01, 0.015, 0.05), "horizon": Color(0.12, 0.1, 0.28), "ground": Color(0.02, 0.02, 0.05),
+		"sun": Color(0.75, 0.82, 1.0), "cloud_color": Color(0.14, 0.13, 0.28), "clouds": 0.6, "stars": 1.0, "aurora": 0.35}))
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 2.0
+	env.ambient_light_energy = st.get("ambient", 2.0)
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 1.3
+	env.tonemap_exposure = st.get("exposure", 1.3)
 	env.tonemap_white = 4.0
 	env.ssao_enabled = true
 	env.glow_enabled = true
 	env.glow_intensity = 0.5
 	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = 1.0
+	env.glow_hdr_threshold = st.get("glow", 1.0)
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.15
 	env.adjustment_contrast = 1.08
+	Looks.apply_post(look, env)
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.05, 0.06, 0.14)
+	env.fog_light_color = st.get("fog", Color(0.05, 0.06, 0.14))
 	env.fog_density = 0.008
 	env.fog_sky_affect = 0.0
 	var we := WorldEnvironment.new()
@@ -48,17 +59,18 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-40.0, -30.0, 0.0)
-	sun.light_color = Color(0.7, 0.78, 1.0)
-	sun.light_energy = 1.1
+	sun.rotation_degrees = Vector3(st.get("sun_pitch", -40.0), -30.0, 0.0)
+	sun.light_color = st.get("sun_color", Color(0.7, 0.78, 1.0))
+	sun.light_energy = st.get("sun_energy", 1.1)
 	sun.shadow_enabled = true
 	sun.shadow_blur = 2.0
+	sun.shadow_opacity = look.get("shadow", 1.0)
 	sun.directional_shadow_max_distance = 40.0
 	add_child(sun)
 	# Warm key light from the front so faces read well against the dark.
 	var key := SpotLight3D.new()
 	key.light_color = Color(1.0, 0.92, 0.82)
-	key.light_energy = 3.2
+	key.light_energy = 1.4 if day else 3.2
 	key.spot_range = 26.0
 	key.spot_angle = 50.0
 	add_child(key)
@@ -69,9 +81,9 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 	Settings.changed.connect(_on_settings)
 
 	var floor_mat := StandardMaterial3D.new()
-	floor_mat.albedo_color = Color(0.05, 0.06, 0.11)
-	floor_mat.roughness = 0.3
-	floor_mat.metallic = 0.3
+	floor_mat.albedo_color = st.get("floor", Color(0.05, 0.06, 0.11))
+	floor_mat.roughness = 0.55 if day else 0.3
+	floor_mat.metallic = 0.0 if day else 0.3
 	var ground := CylinderMesh.new()
 	ground.top_radius = 160.0
 	ground.bottom_radius = 160.0
@@ -82,36 +94,42 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float) -> void:
 		var torus := TorusMesh.new()
 		var r := 9.0 + i * 5.5
 		torus.inner_radius = r
-		torus.outer_radius = r + 0.09
+		torus.outer_radius = r + (0.16 if day else 0.09)
 		torus.rings = 96
 		torus.ring_segments = 6
-		var ring := _prop(torus, _neon(ORANGE if i % 2 == 0 else CYAN, 1.8), Vector3(0, 0.03, -0.5))
+		var ring := _prop(torus, _neon(ring_a if i % 2 == 0 else ring_b, 0.9 if day else 1.8), Vector3(0, 0.03, -0.5))
 		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_rings.append(ring)
 
-	# A glowing skyline behind the podiums.
+	# A skyline behind the podiums: glowing bands at night, painted toy
+	# blocks by day.
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
 	var box := BoxMesh.new()
-	var dark := StandardMaterial3D.new()
-	dark.albedo_color = Color(0.03, 0.035, 0.07)
-	dark.roughness = 0.5
+	var towers: Array = st.get("tower", [Color(0.03, 0.035, 0.07)])
+	var tower_mats: Array = []
+	for c in towers:
+		var m := StandardMaterial3D.new()
+		m.albedo_color = c
+		m.roughness = 0.8 if day else 0.5
+		m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+		tower_mats.append(m)
 	for i in 22:
 		var a := lerpf(PI * 1.05, PI * 1.95, i / 21.0)
 		var d := rng.randf_range(34.0, 80.0)
 		var w := rng.randf_range(5.0, 11.0)
 		var h := rng.randf_range(8.0, 36.0)
 		var p := Vector3(cos(a) * d, 0, sin(a) * d)
-		_prop(box, dark, p + Vector3(0, h * 0.5, 0), Vector3(w, h, w)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var neon := _neon(ORANGE if i % 2 == 0 else CYAN, 1.8)
+		_prop(box, tower_mats[i % tower_mats.size()], p + Vector3(0, h * 0.5, 0), Vector3(w, h, w)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var neon := _neon(band_a if i % 2 == 0 else band_b, 0.6 if day else 1.8)
 		for b in 3:
 			_prop(box, neon, p + Vector3(0, h * (0.3 + 0.3 * b), 0), Vector3(w + 0.12, 0.2, w + 0.12)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for sx in [-1.0, 1.0]:
 		for j in 3:
 			var l := OmniLight3D.new()
 			l.position = Vector3(sx * (6.0 + j * 4.0), 2.5, -4.0 - j * 2.0)
-			l.light_color = ORANGE if (j + int(sx)) % 2 == 0 else CYAN
-			l.light_energy = 2.5
+			l.light_color = ring_a if (j + int(sx)) % 2 == 0 else ring_b
+			l.light_energy = 0.8 if day else 2.5
 			l.omni_range = 10.0
 			add_child(l)
 

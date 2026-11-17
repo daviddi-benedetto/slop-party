@@ -19,8 +19,9 @@ has not been verified.
   `map_places.gd`, `sfx.gd`): Neon Yard, Ember Pit, Frost Line, Museum,
   Stadium, Suburb. Zombies uses a separate, larger Quarantine campus map;
   Frontline has its own huge battlefield.
-  Every match rolls a time of day (day / sunset / night, or the lobby's
-  choice). Weather and precipitation are disabled; large outdoor maps use a
+  Every match uses the lobby's visual theme (`looks.gd`: Classic, Toy, Warm,
+  Cyberpunk, Synthwave, Spooky, Moonlit or Random), which sets the time of
+  day and restyles light, sky, neon and colours; the lobby stage matches it. Weather and precipitation are disabled; large outdoor maps use a
   restrained distance haze.
 - ROUNDS-style progression: **on every death** the dead player is shown three
   random cards and must pick one before respawning. Cards permanently modify
@@ -77,7 +78,9 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
   `[match] over at ... s: <result>`.
 - `--force-aim` makes everyone aim down sights (to check the sight picture).
 - `--seed=N` seeds the random generator so runs are comparable.
-- `--time=day|sunset|night` fixes the time of day.
+- `--theme=classic|toy|warm|cyberpunk|synthwave|spooky|moonlit|random`
+  picks the visual theme (match, or the lobby with `--lobby-demo`). The old
+  `--time=day|sunset|night` still works (Classic / Warm / Moonlit).
 - `--cards=2x Scope,Jetpack` gives every player those cards; `--weapon=N` a weapon.
 - `tools/contact_sheet.gd` combines screenshots into a grid (see its header).
 - `--lobby-demo=H,B` shows the lobby with H fake humans and B bots seated.
@@ -107,7 +110,8 @@ parse error in one script.
 | `scripts/main.gd` | Entry point. Owns the lobby, creates/destroys a `game.gd` per match, screen fades, dev flags. |
 | `scripts/ui_kit.gd` | Shared UI look: colours, font, panels, bars, text with outline, icons, 2D animal portraits, button prompts, easing. |
 | `scripts/lobby.gd` | Join screen: 3D stage with podiums, per-player character customisation, map / bots / kill-target selection. Emits `start(config)`. |
-| `scripts/stage.gd` | Small sunny 3D "showroom" (sky, hills, podiums, camera) behind the lobby and results. |
+| `scripts/stage.gd` | Small 3D "showroom" (sky, floor, neon rings, skyline, podiums, camera) behind the lobby and results, coloured by the visual theme (`build(..., look)`; the lobby rebuilds it when the theme changes, results use the match's theme). |
+| `scripts/looks.gd` | Visual themes: `LOOKS` (time of day, sky, light, neon, surface grade, colour grading, lobby stage and overlay colours), `ORDER`, `grade()`, `apply_post()`. To add a theme: one `LOOKS` entry plus its key in `ORDER`. |
 | `scripts/game.gd` | One match: world, splitscreen viewports, cameras (incl. the vehicle chase camera), countdown, Rounds scoring, the mode hooks, teams (`is_enemy`, `damageables`, `hostiles`), respawn, explosions, pause menu, aim assist, hand-over to results. |
 | `scripts/models.gd` | Imported models: cached `scene()`, `parts()` (mesh + transform list) and `bounds()` by path relative to `assets/models/`. |
 | `tools/inspect_models.gd` | Dev tool: prints every model's size, node tree and animations. |
@@ -117,7 +121,7 @@ parse error in one script.
 | `scripts/vehicle.gd` | Buggy, tank and helicopter: models, driving / flying, turrets, visible muzzle flashes and tracers, weapons, damage, destruction. |
 | `scripts/map_front.gd` | Layout 6 (FRONTLINE): town, towers, warehouse, bunkers, trenches, farms, bases, vehicle spots, flags. |
 | `scripts/results.gd` | Victory screen: podium, crown, confetti, results table. |
-| `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day lighting, procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. Stairwell openings are kept clear through slabs and facade trim. |
+| `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day lighting and visual themes (`looks.gd`), procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. Stairwell openings are kept clear through slabs and facade trim. |
 | `scripts/map_places.gd` | Layouts 3-5 (Museum, Stadium, Suburb) built with the map.gd helpers. |
 | `scripts/map_zombie.gd` | Dedicated large Zombies map: hospital campus, annex, warehouse, motel, quarantine fence, yard, tunnel, basement and indoor/outdoor spawns. |
 | `scripts/player.gd` | `CharacterBody3D`: movement, weapon, health, status effects, feedback values, death → card pick → respawn. |
@@ -742,8 +746,17 @@ data.
   (room below ground), `_tree` / `_bush` (noise-displaced leaf clusters),
   `_pine`, `_lamp_post`, `_container`, `_sign`, `_lava`, `_jump_pad`,
   `_lawn` (grass area) and `no_grass` (rects kept clear).
-- **Time of day:** `_build_environment` picks night (theme values) or the
-  DAY / SUNSET presets plus theme overrides. It sets `light_scale` (point
+- **Visual theme and time of day:** `build(index, theme_key)` loads
+  `look = Looks.get_look(key)`; `look.base` is the time of day.
+  `_build_environment` picks night (map theme values) or the DAY / SUNSET
+  presets plus map theme overrides, then the visual theme overrides sky and
+  light keys, `ambient_color`, and the colour grading (`Looks.apply_post`:
+  saturation / contrast / brightness and a split-toning colour-correction
+  ramp). `theme` is a per-match copy whose accent colours, leaves and grass
+  come from the look; `_mat()` passes every surface colour through
+  `Looks.grade()`, and windows / lamps use the look's `window` / `lamp`
+  colours. Imported models keep their textures and are tinted only by the
+  light and grading. It sets `light_scale` (point
   lights), `neon_scale` (emission) and `night_amount` (windows, street lamps,
   floodlights) which the builders read. Indoor lights divide by light_scale so
   they stay on in daylight.

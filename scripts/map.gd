@@ -13,11 +13,14 @@ extends Node3D
 ##   5  SUBURB      large   houses with yards, a street, pools, storm drain
 ## Layouts 0-2 live in this file, 3-5 in map_places.gd (same helpers).
 ##
-## TIME OF DAY: "day", "sunset" or "night". Night uses the theme's own
-## lighting; day and sunset start from the DAY / SUNSET presets and apply the
-## theme's optional "day" / "sunset" overrides. The preset also scales neon
-## emission (neon_scale) and point lights (light_scale) so each map reads well.
-## Matches vary by time of day only. Rain and snow are disabled; subtle fog is
+## VISUAL THEME (looks.gd, picked in the lobby): sets the time of day ("day",
+## "sunset" or "night"). Night uses the map theme's own lighting; day and
+## sunset start from the DAY / SUNSET presets and apply the map theme's
+## optional "day" / "sunset" overrides. Then the visual theme overrides sky,
+## light, neon colours, surface colours (Looks.grade in _mat) and colour
+## grading (Looks.apply_post). The preset also scales neon emission
+## (neon_scale) and point lights (light_scale) so each map reads well.
+## Matches vary by theme only. Rain and snow are disabled; subtle fog is
 ## retained on large maps for depth.
 ##
 ## MATERIALS: a theme's "mats" maps a key to
@@ -54,6 +57,7 @@ const CastleMap = preload("res://scripts/map_castle.gd")
 const Arch = preload("res://scripts/arch.gd")
 const Door = preload("res://scripts/door.gd")
 const Rubble = preload("res://scripts/rubble.gd")
+const Looks = preload("res://scripts/looks.gd")
 
 signal nav_built
 
@@ -351,6 +355,7 @@ static var _blob_cache: Array = []
 var map_index := 0
 var theme := {}
 var time := "night"
+var look := {}                    # the visual theme (looks.gd entry)
 var weather := "clear"
 var half_x := 32.0
 var half_z := 24.0
@@ -398,11 +403,19 @@ var _pad_rings: Array = []
 var _time := 0.0
 
 
-func build(index := 0, time_of_day := "night") -> void:
+func build(index := 0, theme_key := "classic") -> void:
 	map_index = clampi(index, 0, MAPS.size() - 1)
 	var info: Dictionary = MAPS[map_index]
-	theme = THEMES[info.theme]
-	time = time_of_day if time_of_day in TIMES else "night"
+	# Old time-of-day names still work (command line): day, sunset, night.
+	theme_key = {"day": "classic", "sunset": "warm", "night": "moonlit"}.get(theme_key, theme_key)
+	look = Looks.get_look(theme_key)
+	time = look.base
+	theme = THEMES[info.theme].duplicate()
+	for k in ["accent_a", "accent_b"]:
+		if look.has(k):
+			theme[k] = look[k]
+	theme.leaf = theme.leaf.map(func(c): return Looks.grade(look, c))
+	theme.grass = theme.grass.map(func(c): return Looks.grade(look, c))
 	# Matches vary by time of day only. Keep the atmosphere in the map theme;
 	# precipitation and random fog presets are intentionally disabled.
 	weather = "clear"
@@ -479,7 +492,7 @@ func music_key() -> String:
 
 
 func label() -> String:
-	return "%s  -  %s%s" % [MAPS[map_index].name, time.to_upper(), "" if weather == "clear" else "  -  " + weather.to_upper()]
+	return "%s  -  %s" % [MAPS[map_index].name, look.get("name", time.to_upper())]
 
 
 # --------------------------------------------------------------------------
@@ -507,6 +520,13 @@ func _build_environment() -> void:
 					sky[sk] = over.sky[sk]
 			else:
 				p[k] = over[k]
+	# The visual theme has the last word on sky and light.
+	for k in look:
+		if k == "sky":
+			for sk in look.sky:
+				sky[sk] = look.sky[sk]
+		elif p.has(k):
+			p[k] = look[k]
 	var fog_density: float = night.fog_density * p.fog_mult
 	var fog_col: Color = p.fog
 	var dim := 0.2 if time == "night" else 1.0
@@ -551,6 +571,9 @@ func _build_environment() -> void:
 	env.sky = SkyKit.make(sky)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = p.ambient
+	if look.has("ambient_color"):
+		env.ambient_light_color = look.ambient_color
+		env.ambient_light_sky_contribution = 0.5
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.tonemap_exposure = p.exposure
@@ -576,6 +599,7 @@ func _build_environment() -> void:
 	env.fog_light_color = fog_col
 	env.fog_density = fog_density
 	env.fog_sky_affect = 0.35 if weather == "fog" else 0.0
+	Looks.apply_post(look, env)
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -586,7 +610,7 @@ func _build_environment() -> void:
 	sun.light_energy = p.sun_energy
 	sun.shadow_enabled = true
 	sun.shadow_blur = 2.6
-	sun.shadow_opacity = 0.72
+	sun.shadow_opacity = look.get("shadow", 0.72)
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	sun.directional_shadow_max_distance = 90.0
 	sun.shadow_bias = 0.06
@@ -656,7 +680,7 @@ func _make_materials() -> void:
 	_mats["rail"] = _neon(theme.accent_b, 0.9 * neon_scale)
 	_mats["pad"] = _neon(Color(0.3, 1.0, 0.85), 2.0 * maxf(neon_scale, 0.6))
 	_mats["beacon"] = _neon(Color(1.0, 0.2, 0.2), 3.0)
-	_mats["lamp"] = _neon(Color(1.0, 0.86, 0.6), 0.4 + 3.2 * night_amount)
+	_mats["lamp"] = _neon(look.get("lamp", Color(1.0, 0.86, 0.6)), 0.4 + 3.2 * night_amount)
 	var glass := StandardMaterial3D.new()
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.albedo_color = Color(0.6, 0.8, 0.9, 0.18)
@@ -669,7 +693,7 @@ func _make_materials() -> void:
 	window.roughness = 0.1
 	window.metallic = 0.5
 	window.emission_enabled = night_amount > 0.0
-	window.emission = Color(1.0, 0.78, 0.45)
+	window.emission = look.get("window", Color(1.0, 0.78, 0.45))
 	window.emission_energy_multiplier = 1.6 * night_amount
 	_mats["window"] = window
 	var water := StandardMaterial3D.new()
@@ -702,6 +726,7 @@ func _make_materials() -> void:
 ## painted clay rather than gritty photo-noise.
 func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
+	tint = Looks.grade(look, tint)
 	var toy := Color.from_hsv(tint.h, minf(1.0, tint.s * 1.12), minf(1.0, tint.v * 1.06 + 0.03), tint.a)
 	m.albedo_color = toy.lerp(Color.WHITE, 0.06)
 	m.roughness = maxf(rough, 0.62) if metal < 0.5 else rough

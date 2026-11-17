@@ -27,7 +27,7 @@ game modes:
   cards and weapon pads only deal medieval weapons.
 
 You play as one of seven customisable, rigged animal characters in stylised
-arenas with readable colour and atmosphere at every time of day.
+arenas, in a visual theme of your choice (Toy, Warm, Cyberpunk...).
 
 - **Melee with anything in hand:** click the right stick (or F) for a punch
   that also smashes props, doors and crumbling walls. Eight melee cards
@@ -113,8 +113,18 @@ arenas with readable colour and atmosphere at every time of day.
   walkway; a field of triage tents; a warehouse with a mezzanine and a
   container yard; a motel with fuel pumps; a service tunnel, a morgue
   cellar, and dead woods pressing on the fence.
-- **Time of day:** each match is day, sunset or night (or pick one in the
-  lobby). Weather stays clear; large outdoor maps use a light distance haze.
+- **Themes:** one lobby setting restyles every map and the lobby itself:
+  - **Classic:** each map's own colours in clear daylight.
+  - **Toy:** pastel paint, bright soft daylight, gentle shadows.
+  - **Warm:** a relaxing golden hour, low amber sun, peach and lilac sky.
+  - **Cyberpunk:** every map at night with magenta haze and blooming pink
+    and cyan neon.
+  - **Synthwave:** a retro pink sunset with teal and pink neon.
+  - **Spooky:** a Halloween night, pale moon, green haze, pumpkin lights.
+  - **Moonlit:** a calm clear night with each map's own lamps and stars.
+  - **Random:** a different theme each match.
+
+  Weather stays clear; large outdoor maps use a light distance haze.
 - **Castle**, a seventh arena (and Medieval mode's home): curtain walls you
   can walk on, towers, gatehouses with gates you can open or smash, a
   three-storey keep, a market courtyard and a siege camp outside.
@@ -146,7 +156,7 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Bots (Zombies: CPU allies; Frontline: teams versus / co-op) | Y | B |
 | Kill target (Frontline: tickets) | X | K |
 | Next map (Rounds and Zombies) | RB | M |
-| Time of day | LB | T |
+| Theme | LB | T |
 | Options | Back / Select | O |
 | Start | Start | Enter |
 
