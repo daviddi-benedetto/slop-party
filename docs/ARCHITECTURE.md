@@ -71,8 +71,8 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `--kb` makes player 1 a keyboard/mouse human.
 - `--target=K` sets the kill target (`--target=1` reaches the podium quickly).
 - `--map=N` picks the arena (0 Neon Yard, 1 Ember Pit, 2 Frost Line, 3 Museum,
-  4 Stadium, 5 Suburb).
-- `--mode=rounds|zombies|frontline` and `--teams=versus|coop` pick the mode.
+  4 Stadium, 5 Suburb, 8 Castle).
+- `--mode=rounds|zombies|frontline|gungame|medieval` and `--teams=versus|coop` pick the mode.
 - `--wave=N` (Zombies) starts at wave N; `--drive=buggy|tank|heli`
   (Frontline) puts player 1 in that vehicle. A finished match prints
   `[match] over at ... s: <result>`.
@@ -85,7 +85,11 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `tools/contact_sheet.gd` combines screenshots into a grid (see its header).
 - `--lobby-demo=H,B` shows the lobby with H fake humans and B bots seated.
 - `--pause-at=S` opens the pause menu after S seconds.
-- `--options-demo` opens the Options screen in the lobby after one second.
+- `--options-demo` opens the Options screen in the lobby after one second
+  (`--options-page=N` on its Nth page).
+- `--start-after=S` (with `--lobby-demo`) starts the match after S seconds,
+  showing the loading card.
+- `--balance` logs weapon / card statistics (see `tools/balance.sh`).
 - `--uncapped` stops `settings.gd` from applying v-sync and the frame limit.
   **Benchmarks need both** `--disable-vsync` (engine flag, before `--`) and
   `--uncapped` (after `--`), otherwise the default 60 FPS cap hides the result.
@@ -94,7 +98,8 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `--debug` adds bot position / path / line-of-sight info to that printout.
 
 This is how the game was verified during development: run, read the printed
-stats, look at the PNG. Script errors show up on stderr as `SCRIPT ERROR`.
+stats, look at the PNG. `tools/smoke.sh` does this for every arena and mode
+in one go. Script errors show up on stderr as `SCRIPT ERROR`.
 After adding or renaming script files run
 `engine\...console.exe --headless --path . --import` once.
 `--headless --path . --check-only --script res://scripts/x.gd` pinpoints a
@@ -113,7 +118,7 @@ parse error in one script.
 | `scripts/stage.gd` | Small 3D backyard behind the lobby and results: striped lawn, picket fence with flower beds, trees, hills and snow-capped mountains (or a neon skyline when the theme's stage has `city`), party-light strings in the theme's colours, pumpkins in Spooky; seats are tree stumps (`add_podium`) or rugs on a wooden deck (`add_deck`). Repeated pieces are MultiMeshes. Coloured coloured by the visual theme (`build(..., look)`; the lobby rebuilds it when the theme changes, results use the match's theme). |
 | `scripts/looks.gd` | Visual themes: `LOOKS` (time of day, sky, light, neon, surface grade, colour grading, lobby stage and overlay colours), `ORDER`, `grade()`, `apply_post()`. To add a theme: one `LOOKS` entry plus its key in `ORDER`. |
 | `scripts/game.gd` | One match: world, splitscreen viewports, cameras (incl. the vehicle chase camera), countdown, Rounds scoring, the mode hooks, teams (`is_enemy`, `damageables`, `hostiles`), respawn, explosions, pause menu, aim assist, hand-over to results. |
-| `scripts/models.gd` | Imported models: cached `scene()`, `parts()` (mesh + transform list) and `bounds()` by path relative to `assets/models/`. |
+| `scripts/models.gd` | Imported models: cached `scene()`, `parts()` (mesh + transform list) and `bounds()` by path relative to `assets/models/`; `toy()` / `toy_node()` restyle their materials like the generated surfaces (matte wrapped lighting, rim sheen, theme grade from `Models.look`), so props, furniture, doors, pets, zombies and pickups match the world. |
 | `tools/inspect_models.gd` | Dev tool: prints every model's size, node tree and animations. |
 | `scripts/zombies.gd` | Zombies mode rules: endless waves, spawning, intermission card picks, revival, game over. |
 | `scripts/zombie.gd` | One zombie (walker / runner / brute / boss): model, nav pathing, melee, non-teleporting jam recovery, blood effects, damage interface. |
@@ -139,9 +144,12 @@ parse error in one script.
 | `scripts/hud.gd` | Per-viewport HUD and the animated card picker. |
 | `scripts/motion_blur.gd` | Optional, per-viewport camera-motion blur controlled by the Graphics slider. |
 | `scripts/fx.gd` | Particles, flashes, rings, confetti, floating damage numbers and blood spray/stains. |
-| `scripts/sfx.gd` | Autoload. Synthesises all sound effects, composes and renders the music loops (one per map, lobby, zombies, frontline) in a thread, distance-attenuated playback. |
+| `scripts/sfx.gd` | Autoload. Synthesises all sound effects (a recording in `assets/audio` named like the sound replaces it; `_name_1`, `_name_2`... are random takes), composes and renders the music loops in a thread; world sounds fade with distance and are panned left / right relative to the nearest player's view (five panner buses). |
 | `scripts/settings.gd` | Autoload. The list of user options, their values, saving/loading, and applying display, AA, motion blur and audio settings. |
-| `scripts/settings_menu.gd` | The Options screen (opened from the lobby and the pause menu). |
+| `scripts/settings_menu.gd` | The Options screen (lobby and pause menu), in pages: one per `Settings` section plus HOW TO PLAY and MODES; LB / RB or Q / E turn pages. |
+| `scripts/help.gd` | Player-facing text: the button reference and mode descriptions for the Options pages, and the loading-card tips (`TIPS`, `tip()`). |
+| `tools/smoke.sh` | Smoke test: a short bot match on every arena and in every mode (each in another theme), the lobby and the results screen; fails on any script error or under 50 FPS. Run before every release. |
+| `tools/balance.sh`, `tools/balance.py`, `tools/balance.gd` | Balance check: bot-only matches with `--balance` log time held, kills and deaths per weapon and card; the report flags outliers by kills per minute held. |
 
 No script uses `class_name`; scripts reference each other with `preload()`
 constants. This avoids depending on Godot's global class cache.
@@ -806,7 +814,9 @@ podium always wears the crown. Two humans can never pick the same colour.
 
 `Settings.ITEMS` is the single list of options (display, graphics, audio,
 controls, gameplay). Each is stored as an index into its choices; read the
-value anywhere with `Settings.v("key")`. The menu is generated from that list.
+value anywhere with `Settings.v("key")`. The menu is generated from that list:
+every `{"section": ...}` entry starts a page, and the HOW TO PLAY and MODES
+pages come from `help.gd`.
 
 **To add an option:** add one entry to `ITEMS`, then either read
 `Settings.v()` where the value is used, or react to the `Settings.changed`
@@ -825,8 +835,9 @@ What applies where:
 - shadows, ambient occlusion, bloom: `Settings.apply_environment()` from
   `map.gd` and `stage.gd`.
 - "Scenery detail" is read when a map is built, so it takes effect next match.
-- look speed, invert Y, aim assist: `input_source.gd`. These are global, not
-  per player.
+- look speed, aim assist: `input_source.gd`. Each player also has their own
+  look speed multiplier (`sens`) and Y axis (`invert`), set on their lobby
+  card and passed in the participant dictionary.
 - FOV, screen shake, bot difficulty, rumble: `game.gd`. Damage numbers:
   `player.gd`.
 
@@ -848,8 +859,10 @@ snare and hats, with side-chain pumping on the chords.
 
 ### Audio (`sfx.gd`)
 
-There are no audio files. Effects are small functions of time rendered to
-16-bit mono WAV data at startup (`_build_effects`). Music is a hand-written
+Effects are small functions of time rendered to 16-bit mono WAV data at
+startup (`_build_effects`); `_load_recordings()` then replaces any of them
+with a recording of the same name from `assets/audio` (its README lists the
+names). Music is a hand-written
 8-bar tune in C major (`PROGRESSION`, `MELODY`) rendered twice by
 `_render_track` – a slow "lobby" arrangement and a faster "battle" one – in a
 worker thread, so it starts a second or two after launch. The buffers are
@@ -990,11 +1003,10 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
   human (bots do not use them); the numbers are first guesses.
 - Block, aim down sights and the pick-up button were only exercised by bots
   (block, pickups) or a forced-aim screenshot; no human has pressed them.
-- Weapon balance. Every weapon and card runs without errors in bot matches,
-  but the numbers in `weapons.gd` and `cards.gd` are first guesses.
-- Anything audible, including the new songs: they render without errors
-  but nobody has listened to them. The music and sound effects are generated without errors
-  but nobody has listened to them; expect to tune `sfx.gd` by ear.
+- Weapon balance: `tools/balance.sh` measures bots against bots, which says
+  how strong a weapon is in bot hands, not in a human's.
+- Anything audible: the music and sound effects render without errors, but
+  nobody has listened to them closely; expect to tune `sfx.gd` by ear.
 - The Options screen was only rendered, not operated: changing values at
   runtime (fullscreen toggle, AA switch mid-match) has not been exercised.
 
@@ -1009,16 +1021,12 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 ## 8. Known limitations / ideas
 
 - Only one keyboard + mouse player (Windows gives one shared mouse).
-- Audio is fully synthesised; distance affects volume but there is no
-  stereo positioning.
-- Control options (look speed, invert Y) are global rather than per player,
-  and buttons cannot be rebound.
+- Sound effects are synthesised until recordings are added to
+  `assets/audio`.
+- Buttons cannot be rebound.
 - If a gamepad in use disconnects, the match pauses with a message; it resumes
   with that seat on the same device id when it is plugged back in.
-- Characters are primitive shapes with procedural animation; real modelled,
-  rigged characters would be the biggest visual step up from here.
 - If performance is a problem, use the Low or Medium quality preset in
   Options.
-- Possible next steps: more maps, per-player control options and rebinding,
-  kill-cam, bots that use vehicles, a Frontline spawn-point chooser, more
-  Frontline maps.
+- Possible next steps: more maps, rebinding, a replay kill-cam, bots that use
+  vehicles, a Frontline spawn-point chooser, more Frontline maps.

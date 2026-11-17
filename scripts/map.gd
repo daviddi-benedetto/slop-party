@@ -409,6 +409,7 @@ func build(index := 0, theme_key := "classic") -> void:
 	# Old time-of-day names still work (command line): day, sunset, night.
 	theme_key = {"day": "classic", "sunset": "warm", "night": "moonlit"}.get(theme_key, theme_key)
 	look = Looks.get_look(theme_key)
+	Models.look = look
 	time = look.base
 	theme = THEMES[info.theme].duplicate()
 	for k in ["accent_a", "accent_b"]:
@@ -1068,7 +1069,7 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 		for part in Models.parts(path):
 			var mesh: Mesh = part[0]
 			for si in mesh.get_surface_count():
-				_add(mesh, mesh.surface_get_material(si), xf * part[1], shadow, si, "g%d" % mesh.surface_get_format(si))
+				_add(mesh, Models.toy(mesh.surface_get_material(si)), xf * part[1], shadow, si, "g%d" % mesh.surface_get_format(si))
 		if collide == "box":
 			_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
 		if _audit:

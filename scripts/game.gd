@@ -77,6 +77,7 @@ var players: Array = []
 var kill_target := 15
 var match_over := false
 var _debug_top := false
+var _balance = null           # dev flag --balance: tools/balance.gd
 var _debug_eye: Array = []
 var _debug_third := false    # dev flag --third: watch player 1 from the taunt camera
 var debug_aim := false       # dev flag --force-aim: everyone aims down sights
@@ -125,6 +126,11 @@ func _ready() -> void:
 	debug_aim = "--force-aim" in OS.get_cmdline_user_args()
 	_debug_third = "--third" in OS.get_cmdline_user_args()
 	_debug_top = "--top" in OS.get_cmdline_user_args()
+	if "--balance" in OS.get_cmdline_user_args():
+		# Dev: weapon / card statistics for tools/balance.py.
+		_balance = load("res://tools/balance.gd").new()
+		_balance.game = self
+		add_child(_balance)
 	for a in OS.get_cmdline_user_args():
 		# Dev flag --eye=x,y,z,tx,ty,tz: a fixed spectator camera (interiors).
 		if a.begins_with("--eye="):
@@ -185,6 +191,7 @@ func _ready() -> void:
 			p.brain = InputSource.new(part.device)
 			# Each player's own look speed (lobby: LOOK 1-10, 5 = the global setting).
 			p.brain.sens = 0.4 + 0.12 * float(part.get("sens", 5))
+			p.brain.invert = bool(part.get("invert", false))
 			if part.device == InputSource.KEYBOARD:
 				_kb_brain = p.brain
 		p.wants_view = part.get("view", not part.bot)
@@ -437,6 +444,7 @@ func _layout() -> void:
 
 func _update_cameras(delta: float) -> void:
 	var ears: Array = []
+	var ear_yaws: Array = []
 	var shake_amount: float = Settings.v("shake")
 	var to_sun: Vector3 = map.sun_direction()
 	var ray_power: float = 0.0 if map.indoor else {"day": 0.55, "sunset": 0.95, "night": 0.3}.get(map.time, 0.5)
@@ -509,16 +517,27 @@ func _update_cameras(delta: float) -> void:
 					v.scope_cam.global_transform = cam.global_transform
 					v.scope_cam.fov = cam.fov / p.stats.scope
 		else:
-			# Death cam: drift up and tilt away.
-			cam.global_position += Vector3(0, delta * 0.5, 0)
-			cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
+			# Death cam: rise a little and turn to face whoever got you, so
+			# you see where the shot came from; otherwise tilt down.
+			cam.global_position += Vector3(0, delta * 0.4, 0)
+			var kp = p.killer
+			var target := Vector3.ZERO
+			if kp != null and is_instance_valid(kp) and kp.alive:
+				target = kp.get_global_transform_interpolated().origin + Vector3(0, 1.0, 0)
+			if target != Vector3.ZERO and target.distance_to(cam.global_position) > 1.0:
+				var face := Basis.looking_at(target - cam.global_position, Vector3.UP)
+				cam.global_transform.basis = cam.global_transform.basis.orthonormalized().slerp(face.orthonormalized(), clampf(delta * 3.5, 0.0, 1.0)).orthonormalized()
+			else:
+				cam.rotation.x = lerpf(cam.rotation.x, -0.5, clampf(delta * 0.8, 0.0, 1.0))
 		v.gun.update(delta, p)
 		v.blur.track(cam)
 		_focus(cam, delta)
 		if p.vehicle != null or p.picking or p.taunt_view > 0.05 or (_debug_third and p.index == 0):
 			v.gun.visible = false
 		ears.append(cam.global_position)
+		ear_yaws.append(cam.global_rotation.y)
 	Sfx.listeners = ears
+	Sfx.listener_yaws = ear_yaws
 
 
 ## Third-person chase camera while driving or flying; the view direction is
@@ -795,6 +814,8 @@ func _yaw_to_centre(pos: Vector3) -> float:
 
 
 func on_player_died(victim, attacker) -> void:
+	if _balance != null:
+		_balance.kill(attacker, victim)
 	var credited: bool = attacker != null and is_instance_valid(attacker) and attacker != victim and is_player(attacker)
 	if rules != null:
 		if credited and is_enemy(attacker, victim):

@@ -214,7 +214,16 @@ func _draw_alive(w: float, h: float) -> void:
 		draw_arc(c, 40 * s, PI * 0.7, PI * 1.3, 24, Color(UiKit.INK, 0.7), 6.0 * s)
 		if ff > 0.01:
 			draw_arc(c, 40 * s, PI * 1.3 - PI * 0.6 * ff, PI * 1.3, 24, Color(1.0, 0.6, 0.2, 0.9), 3.5 * s)
-	if player.hit_marker > 0.0:
+	if player.kill_flash > 0.7:
+		# KO: a big red cross that snaps in and fades.
+		var kt: float = (player.kill_flash - 0.7) / 0.3
+		var kr := (12.0 + (1.0 - kt) * 8.0) * s
+		var kc := Color(1.0, 0.25, 0.25, clampf(kt * 1.5, 0.0, 1.0))
+		for d4 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+			var dn: Vector2 = d4.normalized()
+			draw_line(c + dn * (kr - s), c + dn * (kr + 18 * s), Color(UiKit.INK, kc.a), 9.0 * s)
+			draw_line(c + dn * kr, c + dn * (kr + 17 * s), kc, 5.0 * s)
+	elif player.hit_marker > 0.0:
 		var hm: float = player.hit_marker
 		var hc := UiKit.GOLD if player.hit_crit else Color.WHITE
 		hc.a = clampf(hm * 2.0, 0.0, 1.0)
@@ -355,9 +364,12 @@ func _draw_dead(w: float, h: float) -> void:
 		_t(Vector2(x, head_y), label, 20, Color(1.0, 0.5, 0.5, a))
 		UiKit.portrait(self, Vector2(x + lw + 23 * s, head_y - 5 * s), 10 * s, Color(player.killer.color, a), player.killer.kind)
 		_t(Vector2(x + lw + 46 * s, head_y), player.killer.pname, 20, Color(player.killer.color.lerp(Color.WHITE, 0.4), a))
+		if player.killer_hp > 0.0:
+			# How close it was.
+			_t(Vector2(0, head_y + 30 * s), "THEY HAD %d HP LEFT" % ceili(player.killer_hp), 14, Color(1, 1, 1, 0.75 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	else:
 		_t(Vector2(0, head_y), "OOPS!", 26, Color(1.0, 0.5, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, w)
-	_t(Vector2(0, h * 0.185 + 30 * s), "PICK A POWERUP", 20, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	_t(Vector2(0, h * 0.185 + 54 * s), "PICK A POWERUP", 20, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 
 	var n: int = player.card_choices.size()
 	if n == 0:

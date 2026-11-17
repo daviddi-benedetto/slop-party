@@ -19,6 +19,9 @@ extends Node
 ##   --shot-time=<sec>     when to take it (default 6)
 ##   --pause-at=<sec>      open the pause menu after that many seconds
 ##   --options-demo        open the Options screen in the lobby after 1 second
+##   --options-page=N      ...on its Nth page (0 = DISPLAY)
+##   --start-after=<sec>   with --lobby-demo: start the match after that long
+##                         (shows the loading card)
 ##   --uncapped            ignore the v-sync / frame-limit settings (benchmarking)
 ##   --debug               extra bot info in the --shot printout
 ##   --eye=x,y,z,tx,ty,tz  with --views=0: a fixed camera at x,y,z looking at t
@@ -30,11 +33,16 @@ extends Node
 const Lobby = preload("res://scripts/lobby.gd")
 const Game = preload("res://scripts/game.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
+const Help = preload("res://scripts/help.gd")
+const Looks = preload("res://scripts/looks.gd")
+const MapScript = preload("res://scripts/map.gd")
 
 var lobby
 var game = null
 var _args := {}
 var _fade: ColorRect
+var _card: Control            # the loading card drawn over the black fade
+var _card_info := {}          # {mode, map, theme, tip} while it shows
 
 
 func _ready() -> void:
@@ -62,6 +70,12 @@ func _ready() -> void:
 	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_fade)
+	_card = Control.new()
+	_card.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_card.visible = false
+	_card.draw.connect(_draw_card)
+	layer.add_child(_card)
 
 	if _args.has("autotest"):
 		seed(int(_args.get("seed", "1")))
@@ -83,7 +97,12 @@ func _ready() -> void:
 		lobby.activate()
 		create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
 	if _args.has("options-demo"):
-		get_tree().create_timer(1.0).timeout.connect(func(): lobby._options.open())
+		get_tree().create_timer(1.0).timeout.connect(func():
+			lobby._options.open()
+			for i in int(_args.get("options-page", "0")):
+				lobby._options._turn(1))
+	if _args.has("start-after"):
+		get_tree().create_timer(float(_args["start-after"])).timeout.connect(func(): lobby._start())
 	if _args.has("pause-at"):
 		get_tree().create_timer(float(_args["pause-at"])).timeout.connect(func():
 			if game != null:
@@ -96,9 +115,17 @@ func _start_match(config: Dictionary) -> void:
 	if game != null or _fade.color.a > 0.01:
 		return
 	Sfx.play("go", -4.0)
+	_card_info = _card_for(config)
 	var tw := create_tween()
 	tw.tween_property(_fade, "color:a", 1.0, 0.3)
+	# The loading card: mode, map, theme and a tip, held long enough to read
+	# before the (blocking) map build starts.
+	tw.tween_callback(func():
+		_card.visible = true
+		_card.queue_redraw())
+	tw.tween_interval(1.8)
 	tw.tween_callback(_begin.bind(config))
+	tw.tween_callback(func(): _card.visible = false)
 
 
 func _begin(config: Dictionary) -> void:
@@ -109,6 +136,35 @@ func _begin(config: Dictionary) -> void:
 	add_child(game)
 	move_child(game, 1)
 	_fade.color.a = 0.0      # the match has its own fade-in
+
+
+## What the loading card says for a match config.
+func _card_for(config: Dictionary) -> Dictionary:
+	var mode: String = config.get("mode", "rounds")
+	var mi: int = {"frontline": MapScript.FRONTLINE, "zombies": MapScript.ZOMBIE, "medieval": MapScript.CASTLE}.get(mode, int(config.get("map", 0)))
+	var tk := str(config.get("theme", "classic"))
+	return {"mode": {"gungame": "GUN GAME"}.get(mode, mode.to_upper()), "line": Help.mode_line(mode),
+		"map": MapScript.MAPS[clampi(mi, 0, MapScript.MAPS.size() - 1)].name, "theme": Looks.label(tk), "tip": Help.tip(),
+		"ui": Looks.LOOKS.get(tk, Looks.LOOKS.classic).ui}
+
+
+func _draw_card() -> void:
+	if _card_info.is_empty():
+		return
+	var w := _card.size.x
+	var h := _card.size.y
+	var s := h / 1080.0
+	var ui: Dictionary = _card_info.ui
+	UiKit.text(_card, Vector2(0, 330 * s), _card_info.mode, 110 * s, ui.logo_a, HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.12)
+	UiKit.text(_card, Vector2(0, 400 * s), "%s   -   %s" % [_card_info.map, _card_info.theme], 36 * s, ui.logo_b, HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.1)
+	var lw := minf(1100.0 * s, w - 80 * s)
+	_card.draw_multiline_string(UiKit.font(600), Vector2((w - lw) * 0.5, 470 * s), _card_info.line, HORIZONTAL_ALIGNMENT_CENTER, lw, int(28 * s), 3, Color(UiKit.CREAM, 0.9))
+	var tw := minf(1200.0 * s, w - 80 * s)
+	var r := Rect2((w - tw) * 0.5, 700 * s, tw, 150 * s)
+	UiKit.card(_card, r, ui.panel, 30 * s, s)
+	UiKit.text(_card, Vector2(r.position.x, r.position.y + 46 * s), "TIP", 26 * s, ui.value, HORIZONTAL_ALIGNMENT_CENTER, tw, 700, 0.0)
+	_card.draw_multiline_string(UiKit.font(600), Vector2(r.position.x + 40 * s, r.position.y + 92 * s), _card_info.tip, HORIZONTAL_ALIGNMENT_CENTER, tw - 80 * s, int(28 * s), 2, UiKit.CREAM)
+	UiKit.text(_card, Vector2(0, h - 60 * s), "LOADING...", 26 * s, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.0)
 
 
 func _end_match() -> void:

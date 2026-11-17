@@ -33,8 +33,8 @@ const STAGE_COL := 4.6          # metres between podium columns (front row)
 const BACK_TIER := 3.4          # podium height of the back row
 const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
-const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK", "LOOK"]
-const KEYS := ["kind", "color", "hat", "back", "sens"]
+const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK", "LOOK", "Y AXIS"]
+const KEYS := ["kind", "color", "hat", "back", "sens", "inv"]
 const SENS_STEPS := 10          # LOOK: this player's own look speed, 1-10
 const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
 const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE", "GUN GAME", "MEDIEVAL"]
@@ -316,7 +316,9 @@ func _join(device: int, quiet := false) -> void:
 		return
 	var i := seats.size()
 	var saved: Array = Settings.lobby.get("seat%d" % i, [])
-	var seat := {"device": device, "kind": i % UiKit.KIND_NAMES.size(), "color": i, "hat": 0, "face": 0, "back": 0, "sens": 4, "row": 0}
+	var seat := {"device": device, "kind": i % UiKit.KIND_NAMES.size(), "color": i, "hat": 0, "face": 0, "back": 0, "sens": 4, "inv": 0, "row": 0}
+	if saved.size() >= 7:
+		seat.inv = 1 if int(saved[6]) != 0 else 0
 	if saved.size() >= 6:
 		seat.sens = clampi(int(saved[5]), 0, SENS_STEPS - 1)
 	if saved.size() >= 5:
@@ -349,7 +351,7 @@ func _edit(seat_i: int, dh: int, dv: int) -> void:
 	if dh == 0:
 		return
 	var key: String = KEYS[seat.row]
-	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.BACK_NAMES.size(), SENS_STEPS][seat.row]
+	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.BACK_NAMES.size(), SENS_STEPS, 2][seat.row]
 	if key == "sens":
 		seat.sens = clampi(seat.sens + dh, 0, SENS_STEPS - 1)
 		Sfx.play("tick", -8.0, 0.8 + seat.sens * 0.06)
@@ -411,7 +413,7 @@ func _sync_stage() -> void:
 
 func _remember() -> void:
 	for i in seats.size():
-		Settings.lobby["seat%d" % i] = [seats[i].kind, seats[i].color, seats[i].hat, seats[i].face, seats[i].back, seats[i].sens]
+		Settings.lobby["seat%d" % i] = [seats[i].kind, seats[i].color, seats[i].hat, seats[i].face, seats[i].back, seats[i].sens, seats[i].inv]
 	Settings.lobby["bots"] = bots
 	Settings.lobby["target"] = target_i
 	Settings.lobby["map"] = map_i
@@ -430,7 +432,7 @@ func _start() -> void:
 		var human := i < seats.size()
 		parts.append({"device": seats[i].device if human else -2, "bot": not human, "view": human,
 			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back,
-			"sens": (seats[i].sens + 1) if human else 5})
+			"sens": (seats[i].sens + 1) if human else 5, "invert": human and seats[i].inv == 1})
 	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
 	start.emit({"participants": parts, "kill_target": target, "map": Map.ARENAS[map_i], "theme": _look_now.get("key", "classic"), "mode": mode,
 		"teams": "versus" if versus else "coop"})
@@ -592,7 +594,7 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 		for c in n:
 			var dp := Vector2(pw * 0.5 + (c - (n - 1) * 0.5) * 14 * s, 66 * s)
 			draw_circle(dp, (4.0 if c == seat.row else 2.6) * s, col if c == seat.row else Color(1, 1, 1, 0.3))
-		var val: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back], "SPEED %d" % (seat.sens + 1)][seat.row]
+		var val: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back], "SPEED %d" % (seat.sens + 1), "INVERTED" if seat.inv == 1 else "NORMAL"][seat.row]
 		var wob := sin(_t * 6.0) * 3 * s
 		UiKit.text(self, Vector2(14 * s - wob, 108 * s), "<", 28 * s, _ui().value)
 		UiKit.text(self, Vector2(0, 108 * s), ">", 28 * s, _ui().value, HORIZONTAL_ALIGNMENT_RIGHT, pw - 14 * s + wob)

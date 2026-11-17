@@ -10,10 +10,54 @@ extends RefCounted
 ## `path` is relative to res://assets/models/, e.g. "toon/Weapon/AK".
 
 const ROOT := "res://assets/models/"
+const Looks = preload("res://scripts/looks.gd")
 
 static var _scenes := {}
 static var _parts := {}
 static var _bounds := {}
+static var _toys := {}
+## The visual theme in play (looks.gd entry), set by map.gd / stage.gd so
+## toy() grades imported colours like the generated ones.
+static var look := {}
+
+
+## An imported model's material restyled to match the generated surfaces
+## (map._mat): matte, wrapped soft lighting, a faint rim sheen, and its
+## colour run through the theme's grade. Cached per material and theme, so
+## batching by material still works.
+static func toy(m: Material) -> Material:
+	if not (m is BaseMaterial3D):
+		return m
+	var key := "%d|%s" % [m.get_instance_id(), look.get("key", "")]
+	if _toys.has(key):
+		return _toys[key]
+	var t: BaseMaterial3D = m.duplicate()
+	t.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	t.rim_enabled = true
+	t.rim = 0.22
+	t.rim_tint = 0.6
+	if t.metallic < 0.5:
+		t.roughness = maxf(t.roughness, 0.62)
+	t.metallic *= 0.6
+	t.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
+	t.albedo_color = Looks.grade(look, t.albedo_color)
+	_toys[key] = t
+	return t
+
+
+## toy() on every surface of every MeshInstance3D under `n` (instanced
+## models: props, doors, pets, vehicles, zombies, pickups).
+static func toy_node(n: Node) -> void:
+	for mi in mesh_instances(n):
+		var mesh: Mesh = (mi as MeshInstance3D).mesh
+		if mesh == null:
+			continue
+		for si in mesh.get_surface_count():
+			var src: Material = mi.get_surface_override_material(si)
+			if src == null:
+				src = mesh.surface_get_material(si)
+			if src != null:
+				mi.set_surface_override_material(si, toy(src))
 
 
 static func scene(path: String) -> PackedScene:

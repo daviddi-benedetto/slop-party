@@ -49,6 +49,7 @@ func _ready() -> void:
 	inst.scale = Vector3.ONE * _scl
 	inst.position = -Vector3(b.get_center().x, b.position.y, b.get_center().z) * _scl
 	add_child(inst)
+	Models.toy_node(inst)
 	# Small things are not drawn from far away (and never cast long shadows).
 	var far := clampf(b.size.length() * _scl * 16.0, 22.0, 48.0)
 	for mi in Models.mesh_instances(inst):

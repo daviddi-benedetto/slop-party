@@ -43,6 +43,7 @@ var sprint := false           # held (keyboard) / latched until you slow down (g
 var melee := false            # edge triggered
 var taunt := -1               # edge triggered: 0-3 = which taunt (D-pad / keys 1-4), -1 none
 var sens := 1.0               # this player's own look-speed multiplier (lobby: LOOK)
+var invert := false           # this player's own inverted look Y (lobby: Y AXIS)
 var ui_left := false          # edge triggered
 var ui_right := false         # edge triggered
 var ui_accept := false        # edge triggered
@@ -84,7 +85,7 @@ func _stick(axis_x: int, axis_y: int, power: float) -> Vector2:
 ## Called every rendered frame while alive: turns the view.
 func update_look(player, delta: float) -> void:
 	var zoom: float = player.zoom_factor()
-	var inv := -1.0 if Settings.v("invert_y") else 1.0
+	var inv := -1.0 if invert else 1.0
 	if device == KEYBOARD:
 		var ms: float = mouse_sens * (0.4 + Settings.v("mouse") * 0.15) * zoom * sens
 		player.yaw -= mouse_accum.x * ms

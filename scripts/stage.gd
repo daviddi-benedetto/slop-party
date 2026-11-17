@@ -91,6 +91,7 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float, look := {}) -> vo
 	Settings.changed.connect(_on_settings)
 
 	_look = look
+	Models.look = look
 	_backyard(look, st, day, ring_a, ring_b, band_a, band_b)
 
 	camera = Camera3D.new()
@@ -320,6 +321,7 @@ func _backyard(look: Dictionary, st: Dictionary, day: bool, light_a: Color, ligh
 		tree.scale = Vector3.ONE * spec[2]
 		tree.rotation.y = rng.randf() * TAU
 		add_child(tree)
+		Models.toy_node(tree)
 
 	if st.get("city", false):
 		# A neon skyline beyond the fence.

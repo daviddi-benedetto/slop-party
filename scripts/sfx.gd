@@ -1,13 +1,18 @@
 extends Node
-## Autoload "Sfx": all audio. Nothing is loaded from disk - sound effects are
-## synthesised at startup and the music is composed and rendered in a
-## background thread (so startup is not delayed; a track fades in when ready).
+## Autoload "Sfx": all audio. Sound effects are synthesised at startup, then
+## any recording in assets/audio replaces the synthesised sound of the same
+## name: "<name>.ogg" / ".wav", or several takes "<name>_1.ogg", "<name>_2.ogg"
+## ... picked at random each time (see assets/audio/README.md for the names).
+## The music is composed and rendered in a background thread (so startup is
+## not delayed; a track fades in when ready).
 ##
 ## play(name)            UI / personal feedback, always full volume.
 ## play_at(name, pos)    world sounds. Volume falls off with the distance to
 ##                       the nearest entry of `listeners` (game.gd keeps that
-##                       list filled with the human players' positions). With
-##                       several players on one screen there is no stereo pan.
+##                       list filled with the human players' positions) and
+##                       is panned left / right relative to the nearest
+##                       listener's view (`listener_yaws`), through five
+##                       panner buses (stronger with one human player).
 ## music(name)           a key of TRACKS ("lobby", "map0".."map5", "zombies",
 ##                       "frontline") or
 ##                       "" - cross-fades. A track that is not rendered yet
@@ -60,6 +65,9 @@ const TRACKS := {
 }
 
 var listeners: Array = []          # Vector3 world positions of human players
+var listener_yaws: Array = []      # their view yaw (radians), same order
+var _takes := {}                   # name -> [AudioStream, ...] recorded variants
+var _pan_buses: Array = []         # bus names, hard left .. hard right
 
 var _streams := {}
 var _players: Array = []
@@ -85,6 +93,8 @@ func _ready() -> void:
 	_music_player.volume_db = -60.0
 	add_child(_music_player)
 	_build_effects()
+	_load_recordings()
+	_build_pan_buses()
 	_thread = Thread.new()
 	_thread.start(_render_music)
 
@@ -101,15 +111,17 @@ func _exit_tree() -> void:
 # Playback
 # --------------------------------------------------------------------------
 
-func play(sound: String, volume_db := 0.0, pitch := 1.0) -> void:
-	if not _streams.has(sound):
+func play(sound: String, volume_db := 0.0, pitch := 1.0, pan := 2) -> void:
+	if not _streams.has(sound) and not _takes.has(sound):
 		return
 	var level: int = Settings.v("sfx")
 	if level == 0:
 		return
 	var p: AudioStreamPlayer = _players[_next]
 	_next = (_next + 1) % VOICES
-	p.stream = _streams[sound]
+	var takes: Array = _takes.get(sound, [])
+	p.stream = takes[randi() % takes.size()] if not takes.is_empty() else _streams[sound]
+	p.bus = _pan_buses[pan] if pan >= 0 and pan < _pan_buses.size() else &"Master"
 	p.volume_db = volume_db - 5.0 + linear_to_db(level / 8.0)
 	p.pitch_scale = pitch * randf_range(0.96, 1.04)
 	p.play()
@@ -120,11 +132,62 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, pitch := 1.0) -> voi
 		play(sound, volume_db, pitch)
 		return
 	var nearest := 1e9
-	for l in listeners:
-		nearest = minf(nearest, pos.distance_to(l))
+	var who := 0
+	for i in listeners.size():
+		var d: float = pos.distance_to(listeners[i])
+		if d < nearest:
+			nearest = d
+			who = i
 	if nearest > 75.0:
 		return
-	play(sound, volume_db - 20.0 * log(1.0 + nearest / 9.0) / log(10.0), pitch)
+	# Left / right of the nearest listener's view: one of five pan buses.
+	var pan := 2
+	if who < listener_yaws.size() and nearest > 1.0:
+		var to: Vector3 = pos - listeners[who]
+		var right := Vector3(cos(listener_yaws[who]), 0, -sin(listener_yaws[who]))
+		var side := right.dot(Vector3(to.x, 0, to.z).normalized())
+		var spread := 1.0 if listeners.size() == 1 else 0.5
+		pan = clampi(2 + roundi(side * 2.0 * spread), 0, 4)
+	play(sound, volume_db - 20.0 * log(1.0 + nearest / 9.0) / log(10.0), pitch, pan)
+
+
+## Recorded sounds from assets/audio (see the header). Works in exported
+## builds too: ResourceLoader lists the imported files.
+func _load_recordings() -> void:
+	const DIR := "res://assets/audio/"
+	if not DirAccess.dir_exists_absolute(DIR):
+		return
+	for f in ResourceLoader.list_directory(DIR):
+		var ext := f.get_extension().to_lower()
+		if not ext in ["ogg", "wav", "mp3"]:
+			continue
+		var base := f.get_basename()
+		var name := base
+		var cut := base.rfind("_")
+		if cut > 0 and base.substr(cut + 1).is_valid_int():
+			name = base.substr(0, cut)
+		var s = load(DIR + f)
+		if s is AudioStream:
+			if not _takes.has(name):
+				_takes[name] = []
+			_takes[name].append(s)
+
+
+## Five buses with a panner each (hard left .. hard right), all into Master.
+func _build_pan_buses() -> void:
+	var pans := [-0.75, -0.35, 0.0, 0.35, 0.75]
+	for i in pans.size():
+		var bus := "SfxPan%d" % i
+		var idx := AudioServer.get_bus_index(bus)
+		if idx < 0:
+			idx = AudioServer.bus_count
+			AudioServer.add_bus(idx)
+			AudioServer.set_bus_name(idx, bus)
+			AudioServer.set_bus_send(idx, &"Master")
+			var fx := AudioEffectPanner.new()
+			fx.pan = pans[i]
+			AudioServer.add_bus_effect(idx, fx)
+		_pan_buses.append(StringName(bus))
 
 
 func music(track: String) -> void:

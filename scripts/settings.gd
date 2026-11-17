@@ -48,7 +48,6 @@ const ITEMS := [
 	{"key": "stick", "label": "Gamepad look speed", "range": [1, 10], "def": 5},
 	{"key": "deadzone", "label": "Stick dead zone", "opts": ["Small", "Normal", "Large"], "vals": [0.08, 0.14, 0.24], "def": 1},
 	{"key": "mouse", "label": "Mouse look speed", "range": [1, 10], "def": 4},
-	{"key": "invert_y", "label": "Invert look Y", "opts": ON_OFF, "vals": [false, true], "def": 0},
 	{"key": "aim_assist", "label": "Gamepad aim assist", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "rumble", "label": "Controller rumble", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"section": "GAMEPLAY"},

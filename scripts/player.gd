@@ -164,6 +164,7 @@ var card_choices: Array = []
 var card_sel := 1
 var dead_time := 0.0
 var killer = null
+var killer_hp := -1.0             # the killer's health when they got you (death screen)
 var respawn_pending := false
 var pick_time := 0.0             # seconds since the card was confirmed
 
@@ -1461,6 +1462,7 @@ func _die(attacker) -> void:
 	_set_alive_visuals(false)
 	velocity = Vector3.ZERO
 	killer = attacker if (attacker != null and is_instance_valid(attacker) and attacker != self) else null
+	killer_hp = killer.health if (killer != null and game.is_player(killer)) else -1.0
 	if stats.martyr > 0.0 and not game.match_over:
 		game.explode(chest_position(), stats.martyr, 70.0, self, self)
 	_slamming = false

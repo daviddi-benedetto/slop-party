@@ -103,6 +103,7 @@ func _fill() -> void:
 		kit.scale = Vector3.ONE * 0.75
 		kit.position = Vector3(0, -0.2, 0)
 		_holder.add_child(kit)
+		Models.toy_node(kit)
 	_holder.visible = true
 	_active = true
 	_ring_mat.emission_energy_multiplier = 1.8

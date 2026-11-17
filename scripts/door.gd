@@ -59,6 +59,7 @@ func _ready() -> void:
 		mi.transform = Transform3D(rot * Basis.from_scale(scl), Vector3(width * 0.5, 0, 0) - rot * (Vector3(b.get_center().x, b.position.y, b.get_center().z) * scl)) * part[1]
 		mi.visibility_range_end = 70.0
 		holder.add_child(mi)
+		Models.toy_node(mi)
 		var mesh: Mesh = part[0]
 		var mat := mesh.surface_get_material(0)
 		if mat is StandardMaterial3D and (mat as StandardMaterial3D).albedo_texture == null:

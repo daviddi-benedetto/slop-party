@@ -126,6 +126,7 @@ func _build_model() -> void:
 	inst.scale = Vector3.ONE * k
 	inst.rotation.y = PI
 	_body.add_child(inst)
+	Models.toy_node(inst)
 	_meshes_inst = Models.mesh_instances(inst)
 	if _flash_mat == null:
 		_flash_mat = StandardMaterial3D.new()
