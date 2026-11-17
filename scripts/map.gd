@@ -1632,7 +1632,7 @@ func _build_floor() -> void:
 ## roof (opts.pitched). Needs sz >= 8.5. c = footprint centre at ground level.
 ## opts: mirror, pitched, roof, floor (materials), glass (bool: glazed windows),
 ## style (arch.gd: house, cabin, store, office, warehouse, barn, clinic,
-## motel, garage, barracks, lab, workshop: exterior character and a room
+## motel, garage, barracks, lab, workshop, clubhouse: exterior character and a room
 ## programme per storey), roof_h (ridge height), tiers (office tower).
 func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts := {}) -> void:
 	var mirror: bool = opts.get("mirror", true)
@@ -1648,6 +1648,8 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 	var sw := 1.5
 	var flights := floors - 1 if pitched else floors
 	var stair_x := [x0 + t + sw * 0.5 + 0.05, x1 - t - sw * 0.5 - 0.05]
+	# A real ground floor (boards or tiles), not the lawn or street outside.
+	_surface(Rect2(x0 + t, z0 + t, sx - t * 2.0, sz - t * 2.0), c.y + 0.015, floor_mat, mirror)
 	for f in floors:
 		var y0 := c.y + f * FLOOR_H
 		var win_x: Array = []

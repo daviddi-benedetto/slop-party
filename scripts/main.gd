@@ -19,6 +19,7 @@ extends Node
 ##   --options-demo        open the Options screen in the lobby after 1 second
 ##   --uncapped            ignore the v-sync / frame-limit settings (benchmarking)
 ##   --debug               extra bot info in the --shot printout
+##   --eye=x,y,z,tx,ty,tz  with --views=0: a fixed camera at x,y,z looking at t
 ##   --cards=A,B / --weapon=N   give every player these cards / this weapon
 ##   --force-aim           everyone aims down sights
 ## Example:

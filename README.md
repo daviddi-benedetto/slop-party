@@ -99,8 +99,10 @@ arenas with readable colour and atmosphere at every time of day.
 - **Block** catches and reflects every bullet, rocket, grenade, bubble and
   flame that comes near you back at whoever fired it.
 - **6 arena maps** for Rounds: Neon Yard, Ember Pit, Frost Line, and three based on real
-  places: a **Museum** (indoor, balconies, vaults), a **Stadium** (pitch,
-  bleachers, floodlights, locker rooms) and a **Suburb** (houses with stairs,
+  places: a **Museum** (indoor, balconies, vaults, a cafe, an armoury hall with a
+  catapult and ballista, a gift shop, antiquities on pedestals), a **Stadium**
+  (pitch, bleachers, floodlights, locker rooms, and a two-storey club stand
+  with a bar, a trophy lounge and a viewing balcony) and a **Suburb** (houses with stairs,
   yards, pools, a treehouse, a storm drain). Two-storey buildings, tunnels and
   basements on every outdoor map.
 - **Quarantine**, the Zombies map: a sealed-off hospital campus around an

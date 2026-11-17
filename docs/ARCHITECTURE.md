@@ -350,15 +350,19 @@ collision off (the vehicle takes the hits).
 
 ### Building styles and interiors (`arch.gd`)
 
+- Every `_building` now lays a real ground floor (`floor` material) over
+  the lawn or street inside its walls.
 - `map._building(..., {"style": S})` still makes the shell; `arch.gd` adds
   the character. `Arch.exterior()` = massing and detail outside per style;
   `Arch.interior()` = partition walls (on storeys at least 11 m wide: two
-  back rooms either side of a 2.8 m opening, clear of both stairs) and a
+  back rooms either side of a 2.8 m doorway, clear of both stairs; the walls
+  run up into the ceiling slab, with skirting, lintel and door frame) and a
   room per slot (north-east, north-west, south-east) chosen by style and
   storey. Rooms are small functions (`_kitchen`, `_ward`, `_shop`...) that
   take the room centre and the wall their big furniture stands against.
 - Styles: house, cabin, store, office (tower: `tiers`), warehouse, barn,
-  clinic, motel, garage, barracks, lab, workshop. store / office / clinic
+  clinic, motel, garage, barracks, lab, workshop, clubhouse (a narrow club
+  stand: bar below, trophy lounge above, viewing balcony). store / office / clinic
   also get a glazed front (display windows in `_building`). `roof_h` sets
   the ridge height of pitched roofs.
 - To add a style: a branch in `exterior()`, one in `interior()`, and pass
@@ -367,8 +371,11 @@ collision off (the vehicle takes the hits).
   (clinics, motel, warehouse, fuel-station store), Frontline (town tower,
   store, clinic, houses, barn, cabin, barracks), Neon Yard (office
   towers), Ember Pit (workshops), Frost Line (labs), Castle (cabin; the
-  keep is hand-furnished). Museum and Stadium interiors are hand-built in
-  `map_places.gd` and do not use styles.
+  keep is hand-furnished), Stadium (clubhouse). The Museum is one hall,
+  furnished by hand in `map_places._galleries()`: cafe, armoury, gift shop,
+  antiquities and coin vitrines in the galleries under the balconies.
+- The furniture kit's model origin is a corner, not the centre: `_prop`
+  centres it, `_model` does not (offset static furniture by half its size).
 
 ### Ground cover, mounds, lamps, sun rays (`map.gd`, `sun_rays.gd`)
 
@@ -402,7 +409,8 @@ collision off (the vehicle takes the hits).
 - `sun_rays.gd`: a full-screen quad on each camera (its own layer, bits
   15-20). The shader marches from each pixel towards the sun's screen
   position counting open sky in the depth buffer. Option `rays`.
-- Dev: `--top` (views=0) is an overhead camera; `--audit` prints models
+- Dev: `--top` (views=0) is an overhead camera; `--eye=x,y,z,tx,ty,tz`
+  (views=0) a fixed camera for looking at interiors up close; `--audit` prints models
   whose box cuts into another collider; the `--shot` report now includes
   slow-frame and worst-frame counts (hitches hide in averages);
   environment variable `SLOP_TEST=nograss|nomounds` switches those off for

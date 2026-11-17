@@ -59,6 +59,8 @@ static func museum(m) -> void:
 	# Galleries under the balconies: red walls and partitions.
 	m._box(Vector3(0, 2.1, hz - 0.08), Vector3(hx * 2.0, 4.2, 0.1), "block_b", true, 0.0, false)
 	m._box(Vector3(hx - 0.08, 2.1, 0), Vector3(0.1, 4.2, 30.0), "block_b", true, 0.0, false)
+	m._box(Vector3(hx - 0.08, 2.1, 17.55), Vector3(0.1, 4.2, 4.9), "block_b", true, 0.0, false)
+	m._box(Vector3(-hx + 0.08, 2.1, 17.55), Vector3(0.1, 4.2, 4.9), "block_b", true, 0.0, false)
 	m._box(Vector3(-15, 2.1, 17.6), Vector3(0.3, 4.2, 4.8), "block_b")
 	m._box(Vector3(15, 2.1, 17.6), Vector3(0.3, 4.2, 4.8), "block_b")
 	m._box(Vector3(23.6, 2.1, 0), Vector3(4.8, 4.2, 0.3), "block_b")
@@ -91,20 +93,26 @@ static func museum(m) -> void:
 		m._ball(p + Vector3(0, 1.05, 0), Vector3.ONE * 0.09, "gold", false)
 
 	# Display cases with gold artefacts, statues, benches, potted trees.
+	var finds := [["fantasy/Chalice", 2.4], ["fantasy/Vase_4", 1.4], ["fantasy/Vase_2", 0.9]]
+	var fi := 0
 	for p in [Vector3(-16, 0, -9), Vector3(-16, 0, 8), Vector3(-6, 0, -11)]:
 		m._box(p + Vector3(0, 0.5, 0), Vector3(1.3, 1.0, 1.3), "block_c")
+		m._box(p + Vector3(0, 1.0, 0), Vector3(1.36, 0.05, 1.36), "gold", true, 0.0, false)
 		m._box(p + Vector3(0, 1.5, 0), Vector3(1.1, 1.0, 1.1), "glass")
-		m._ball(p + Vector3(0, 1.35, 0), Vector3(0.22, 0.32, 0.22), "gold")
+		m._model(finds[fi][0], p + Vector3(0, 1.03, 0), 0.6 * fi, finds[fi][1], true, "none")
+		fi += 1
 	for p in [Vector3(-11, 0, -4), Vector3(-19, 0, 2)]:
+		# Broken classical columns either side of each statue.
+		for sgn in [-1.0, 1.0]:
+			m._model("retro/Column_Damaged", p + Vector3(sgn * 1.5, 0, 0), 0.5 * sgn, Vector3(3.5, 2.4, 3.5), true)
 		m._box(p + Vector3(0, 0.6, 0), Vector3(1.4, 1.2, 1.4), "block_a")
 		m._cyl(p + Vector3(0, 1.2, 0), 0.35, 1.3, "block_a", true, false, 0.28)
 		m._ball(p + Vector3(0, 2.75, 0), Vector3.ONE * 0.3, "block_a")
 		m._rod(p + Vector3(0.2, 2.3, 0), p + Vector3(0.65, 2.9, 0.1), 0.08, "block_a")
 		m._collider(p + Vector3(0, 1.6, 0), Vector3(0.8, 1.0, 0.8))
 	for p in [Vector3(-7, 0, 5.5), Vector3(-13, 0, -13)]:
-		m._box(p + Vector3(0, 0.45, 0), Vector3(2.6, 0.12, 0.8), "block_c")
-		m._box(p + Vector3(-1.1, 0.2, 0), Vector3(0.15, 0.4, 0.7), "dark")
-		m._box(p + Vector3(1.1, 0.2, 0), Vector3(0.15, 0.4, 0.7), "dark")
+		for i in 3:
+			m._model("furniture/Bench_Cushion", p + Vector3(-0.88 + i * 0.88, 0, 0), 0.0, 2.15, true)
 	for p in [Vector3(-17.5, 0, 12.0), Vector3(-2.0, 0, -13.5)]:
 		m._cyl(p, 0.7, 0.8, "block_c", true, true, 0.55)
 		m._tree(p + Vector3(0, 0.8, 0), 0.75)
@@ -126,6 +134,8 @@ static func museum(m) -> void:
 	for x in [-6.0, 6.0]:
 		m._box(Vector3(x, 8.8, 14.9), Vector3(1.4, 3.6, 0.05), "teal", true, 0.0, false)
 		m._box(Vector3(x, 10.7, 14.9), Vector3(1.6, 0.12, 0.12), "gold", true, 0.0, false)
+
+	_galleries(m)
 
 	# Vaults under the floor.
 	m._basement(Rect2(-19, -7, 11, 6))
@@ -149,6 +159,74 @@ static func museum(m) -> void:
 	m._spawns([Vector3(-18, 0.1, -12), Vector3(-5, 0.1, 12), Vector3(0, 4.3, 17.5), Vector3(23.5, 4.3, -8), Vector3(-23.5, 0.1, 17.5),
 		Vector3(-10, -DEPTH + 0.1, -2.5)])
 	m._pickups([["weapon", Vector3(0, 4.2, 18.5)], ["weapon", Vector3(23.5, 4.2, 4.0)], ["health", Vector3(-12, -DEPTH, -3.0)], ["weapon", Vector3(-8, 0, -7)]])
+
+
+## The rooms under the balconies, each with its own purpose (all mirrored,
+## so each appears twice): a cafe in the north-west bay, an armoury hall with
+## a catapult and a ballista on plinths behind ropes in the long north bay,
+## a gift shop in the north-east corner, antiquities on column pedestals
+## along the east gallery and coin vitrines along the west one.
+static func _galleries(m) -> void:
+	var f := 2.15
+	# Cafe: counter with coffee machine, bar stools, two tables.
+	for i in 3:
+		m._prop("furniture/Kitchen_Bar", Vector3(-16.7, 0, 16.4 + i * 1.16), -PI * 0.5, f * 1.25, 5.0)
+		m._prop("furniture/Stool_Bar", Vector3(-17.7, 0, 16.4 + i * 1.16), 0.0, f, 5.0)
+	m._prop("furniture/Kitchen_Coffee_Machine", Vector3(-16.7, 1.14, 16.4), PI * 0.5, f, 5.0)
+	m._prop("furniture/Kitchen_Fridge", Vector3(-15.65, 0, 19.3), -PI * 0.5, f, 5.0)
+	for tz in [16.4, 18.9]:
+		m._prop("furniture/Table_Round", Vector3(-20.2, 0, tz), 0.0, f, 5.0)
+		m._prop("furniture/Chair", Vector3(-21.3, 0, tz), PI * 0.5, f, 5.0)
+		m._prop("furniture/Chair_Cushion", Vector3(-19.1, 0, tz), -PI * 0.5, f, 5.0)
+	m._prop("furniture/Potted_Plant", Vector3(-25.4, 0, 19.4), 0.0, f, 5.0)
+	# Armoury: siege engines on plinths, roped off, weapon racks on the wall.
+	for ex in [["castle/Siege_Catapult", -4.0, 4.6], ["castle/Siege_Ballista", 3.0, 4.4]]:
+		var x: float = ex[1]
+		var w: float = ex[2]
+		m._box(Vector3(x, 0.15, 17.7), Vector3(w, 0.3, 3.0), "block_a")
+		m._box(Vector3(x, 0.31, 17.7), Vector3(w + 0.06, 0.03, 3.06), "gold", true, 0.0, false)
+		m._model(ex[0], Vector3(x, 0.3, 17.7), 0.0, 2.2, true, "none")
+		m._collider(Vector3(x, 1.5, 17.7), Vector3(w - 0.6, 2.4, 2.4))
+		for sx in [-1.0, 1.0]:
+			m._cyl(Vector3(x + sx * w * 0.5, 0, 15.85), 0.05, 0.95, "gold", true, false)
+			m._ball(Vector3(x + sx * w * 0.5, 1.0, 15.85), Vector3.ONE * 0.08, "gold")
+		m._rod(Vector3(x - w * 0.5, 0.85, 15.85), Vector3(x + w * 0.5, 0.85, 15.85), 0.03, "block_b")
+	for x in [-11.5, 11.5]:
+		m._model("medieval/Weapon_Rack", Vector3(x, 0, 19.45), 0.0, 2.6, true)
+	# Gift shop: shelves on the back wall, a till, a book table.
+	for i in 4:
+		var bx := 22.0 + i * 0.86
+		# (The furniture kit's origin is a corner: offset to centre it.)
+		m._model("furniture/Bookcase_Open", Vector3(bx + 0.43, 0, 19.28), PI, f, true)
+		for lvl in 4:
+			m._model("fantasy/BookGroup_Medium_%d" % (1 + (i + lvl) % 3), Vector3(bx, 0.07 + lvl * 0.465, 19.5), PI, 0.7, true, "none", false)
+	for i in 2:
+		m._prop("furniture/Kitchen_Bar", Vector3(17.6 + i * 1.16, 0, 17.0), 0.0, f * 1.25, 5.0)
+	m._prop("furniture/Laptop", Vector3(17.6, 1.14, 17.0), PI, f, 5.0)
+	m._prop("furniture/Table_Cross_Cloth", Vector3(20.4, 0, 16.4), 0.0, f, 5.0)
+	m._prop("furniture/Books", Vector3(20.2, 0.75, 16.4), 0.4, f, 5.0)
+	m._prop("furniture/Books", Vector3(20.8, 0.75, 16.5), 1.3, f, 5.0)
+	# Antiquities on column pedestals along the east gallery.
+	var antiques := [["fantasy/Vase_2", 0.9], ["fantasy/Vase_4", 1.3], ["fantasy/Chalice", 2.6]]
+	for i in 3:
+		var z := 3.5 + i * 4.0
+		m._box(Vector3(25.2, 0.55, z), Vector3(0.7, 1.1, 0.7), "block_a")
+		m._box(Vector3(25.2, 0.06, z), Vector3(0.8, 0.12, 0.8), "gold", true, 0.0, false)
+		m._box(Vector3(25.2, 1.12, z), Vector3(0.8, 0.05, 0.8), "gold", true, 0.0, false)
+		m._model(antiques[i][0], Vector3(25.2, 1.15, z), 0.7 * i, antiques[i][1], true, "none")
+		m._glow(Vector3(24.2, 2.6, z), Color(1.0, 0.88, 0.7), 2.6, 0.5 / maxf(m.light_scale, 0.55))
+	for i in 3:
+		m._model("furniture/Bench_Cushion", Vector3(23.2, 0, 6.4 + i * 0.86), PI * 0.5, f, true)
+	m._model("fantasy/BookStand", Vector3(22.6, 0, 13.4), -0.6, 1.0, true)
+	# Coin vitrines along the west gallery.
+	for z in [3.5, 8.5]:
+		m._box(Vector3(-25.2, 0.45, z), Vector3(0.8, 0.9, 1.8), "block_c")
+		m._box(Vector3(-25.2, 1.08, z), Vector3(0.76, 0.36, 1.76), "glass")
+		for k in 5:
+			var cz: float = z - 0.6 + k * 0.3
+			m._cyl(Vector3(-25.25 + 0.1 * (k % 2), 0.9, cz), 0.07, 0.04 + 0.03 * ((k * 7) % 4), "gold", true, false)
+		m._box(Vector3(-25.05, 0.95, z + 0.55), Vector3(0.12, 0.08, 0.26), "gold", true, 0.0, false)
+		m._box(Vector3(-25.05, 0.95, z - 0.55), Vector3(0.12, 0.08, 0.26), "gold", true, 0.0, false)
 
 
 static func _painting_materials() -> Array:
@@ -317,11 +395,15 @@ static func stadium(m) -> void:
 		m._box(Vector3(37.0 + i * 1.2, -DEPTH + 1.0, 16.6), Vector3(1.1, 2.0, 0.6), "block_b")
 	m._box(Vector3(40.5, -DEPTH + 0.25, 14.0), Vector3(5.0, 0.12, 0.6), "block_c")
 
-	# Trees and bushes in the corners outside the track.
-	for p in [Vector3(-42, 0, 21), Vector3(-41, 0, 12)]:
+	# The club stand in the corner outside the track: a bar downstairs, a
+	# trophy lounge upstairs, a viewing balcony on the pitch side and a roof
+	# terrace (arch.gd "clubhouse").
+	m._building(Vector3(-41.8, 0, 15.2), 7.6, 11.0, 2, "wall", {"style": "clubhouse", "roof": "block_c"})
+	# Trees and a lawn behind it.
+	for p in [Vector3(-42, 0, 25.5), Vector3(-44.6, 0, 22.6)]:
 		m._tree(p, 1.1)
-	m._bush(Vector3(-44.5, 0, 16), 1.2)
-	m._lawn(Rect2(-46, 9, 8, 12))
+	m._bush(Vector3(-39.5, 0, 26.5), 1.2)
+	m._lawn(Rect2(-46, 21.5, 8, 8.5))
 
 	m._spawns([Vector3(35, 0.1, 20.5), Vector3(-20, 4.7, 29.0), Vector3(41.5, 3.5, 0), Vector3(36, 0.1, -14), Vector3(-28, 0.1, 21.0),
 		Vector3(20, 0.1, -10), Vector3(40, -DEPTH + 0.1, 14.5)])

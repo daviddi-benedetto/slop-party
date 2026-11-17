@@ -76,6 +76,7 @@ var players: Array = []
 var kill_target := 15
 var match_over := false
 var _debug_top := false
+var _debug_eye: Array = []
 var _debug_third := false    # dev flag --third: watch player 1 from the taunt camera
 var debug_aim := false       # dev flag --force-aim: everyone aims down sights
 var frozen := true
@@ -123,6 +124,12 @@ func _ready() -> void:
 	debug_aim = "--force-aim" in OS.get_cmdline_user_args()
 	_debug_third = "--third" in OS.get_cmdline_user_args()
 	_debug_top = "--top" in OS.get_cmdline_user_args()
+	for a in OS.get_cmdline_user_args():
+		# Dev flag --eye=x,y,z,tx,ty,tz: a fixed spectator camera (interiors).
+		if a.begins_with("--eye="):
+			var v := a.trim_prefix("--eye=").split_floats(",")
+			if v.size() == 6:
+				_debug_eye = [Vector3(v[0], v[1], v[2]), Vector3(v[3], v[4], v[5])]
 	world = Node3D.new()
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
@@ -442,7 +449,10 @@ func _update_cameras(delta: float) -> void:
 		var cam: Camera3D = v.camera
 		if p == null:
 			var a := time * 0.1
-			if _debug_top:
+			if not _debug_eye.is_empty():
+				cam.look_at_from_position(_debug_eye[0], _debug_eye[1])
+				(cam.attributes as CameraAttributesPractical).dof_blur_far_enabled = false
+			elif _debug_top:
 				# Dev flag --top: a fixed overhead view of the whole map.
 				cam.look_at_from_position(Vector3(0, maxf(map.half_x * 1.05, map.half_z * 1.75), map.half_z * 0.45), Vector3(0, 0, 0))
 				cam.far = 900.0
@@ -452,7 +462,7 @@ func _update_cameras(delta: float) -> void:
 			else:
 				cam.look_at_from_position(Vector3(cos(a) * map.half_x * 1.2, map.half_x * 0.55, sin(a) * map.half_z * 1.35), Vector3(0, 1.5, 0))
 			v.blur.track(cam)
-			if not _debug_top:
+			if not _debug_top and _debug_eye.is_empty():
 				_focus(cam, delta)
 			continue
 		if p.alive and p.vehicle != null:

@@ -13,7 +13,7 @@ extends RefCounted
 ##               a clinic has reception and wards; a store has aisles, a
 ##               counter and a stock room...).
 ## Styles: house, cabin, store, office, warehouse, barn, clinic, motel,
-## garage, barracks, lab, workshop.
+## garage, barracks, lab, workshop, clubhouse.
 ##
 ## Buildings are axis-aligned: south = -Z (front door), east = +X (side
 ## door). Stairs run along the west wall on even storeys and the east wall
@@ -220,6 +220,45 @@ static func exterior(m, style: String, c: Vector3, sx: float, sz: float, floors:
 				m._cyl(Vector3(x0 - 2.2, c.y, c.z + sgn * sz * 0.3), 0.1, 2.2, wood, mirror, false)
 			m._prop("fantasy/Anvil", Vector3(x0 - 1.3, c.y, c.z), 0.4, 1.1, 5.0, mirror)
 			m._prop("survival/Barrel", Vector3(x0 - 1.4, c.y, c.z + 1.4), 0.0, 3.0, 5.0, mirror)
+		"clubhouse":
+			# A sports club stand: a viewing balcony on the pitch side (east)
+			# with a glass rail, a row of seats and a canopy; a club-colour
+			# band under the parapet, a crest board, flagpoles on the roof, a
+			# ticket window by the front door and a vending machine.
+			var club := _mat(m, ["seat_red", "car_red", "accent_a"])
+			var club2 := _mat(m, ["block_b", "teal"])
+			var metal := _mat(m, ["metal", "trim"])
+			var by: float = c.y + m.FLOOR_H
+			m._box(Vector3(x1 + 1.0, by - 0.1, c.z), Vector3(2.0, 0.2, sz - 1.0), _mat(m, ["deck"]), mirror)
+			m._box(Vector3(x1 + 1.96, by + 0.55, c.z), Vector3(0.06, 1.1, sz - 1.0), "glass", mirror)
+			for sgn in [-1.0, 1.0]:
+				m._box(Vector3(x1 + 1.0, by + 0.55, c.z + sgn * (sz * 0.5 - 0.53)), Vector3(2.0, 1.1, 0.06), "glass", mirror)
+				m._cyl(Vector3(x1 + 1.8, c.y, c.z + sgn * (sz * 0.5 - 0.7)), 0.09, by - c.y - 0.2, metal, mirror, false)
+			for i in int((sz - 2.4) / 0.75):
+				var sz_i: float = c.z - (sz - 2.4) * 0.5 + 0.37 + i * 0.75
+				m._box(Vector3(x1 + 1.15, by + 0.22, sz_i), Vector3(0.5, 0.44, 0.6), club, mirror, 0.0, false)
+				m._box(Vector3(x1 + 0.88, by + 0.55, sz_i), Vector3(0.06, 0.5, 0.6), club, mirror, 0.0, false)
+			m._box(Vector3(x1 + 1.2, top - 0.2, c.z), Vector3(2.6, 0.15, sz), _mat(m, ["block_c", "metal"]), mirror)
+			# Club band and crest.
+			m._box(Vector3(c.x, top - 0.5, z0 - 0.04), Vector3(sx + 0.1, 0.32, 0.06), club, mirror, 0.0, false)
+			m._box(Vector3(c.x, top - 0.5, z1 + 0.04), Vector3(sx + 0.1, 0.32, 0.06), club, mirror, 0.0, false)
+			m._box(Vector3(x0 - 0.04, top - 0.5, c.z), Vector3(0.06, 0.32, sz + 0.1), club, mirror, 0.0, false)
+			m._box(Vector3(c.x, top + 1.3, z0 + 0.15), Vector3(2.6, 1.6, 0.25), dark, mirror)
+			m._box(Vector3(c.x, top + 1.3, z0 - 0.03), Vector3(1.9, 1.1, 0.06), club2, mirror, 0.0, false)
+			m._box(Vector3(c.x, top + 1.3, z0 - 0.07), Vector3(1.9, 0.3, 0.04), club, mirror, 0.0, false)
+			m._glow(Vector3(c.x, top + 0.6, z0 - 1.2), m.theme.accent_b, 6.0, 1.0, mirror)
+			# Flags on the roof corners.
+			for fl in [[x0 + 0.5, club2], [x1 - 0.5, club]]:
+				m._cyl(Vector3(fl[0], top, z0 + 0.5), 0.05, 4.2, metal, mirror, false)
+				m._box(Vector3(fl[0] + 0.62, top + 3.75, z0 + 0.5), Vector3(1.2, 0.7, 0.03), fl[1], mirror, 0.0, false)
+			# Ticket window west of the door, vending machine by the side door.
+			var tx: float = c.x - sx * 0.3
+			m._box(Vector3(tx, c.y + 1.35, z0 - 0.03), Vector3(1.2, 0.8, 0.05), "window", mirror, 0.0, false)
+			m._box(Vector3(tx, c.y + 0.92, z0 - 0.2), Vector3(1.4, 0.08, 0.4), metal, mirror)
+			m._box(Vector3(tx, c.y + 2.05, z0 - 0.45), Vector3(1.6, 0.08, 0.9), club, mirror, 0.0, false)
+			m._box(Vector3(x1 + 0.5, c.y + 0.9, c.z - 3.2), Vector3(0.8, 1.8, 0.9), club2, mirror)
+			m._box(Vector3(x1 + 0.92, c.y + 1.2, c.z - 3.2), Vector3(0.04, 1.0, 0.6), "lamp", mirror, 0.0, false)
+			m._prop("furniture/Bench", Vector3(c.x + sx * 0.3, c.y, z0 - 0.9), 0.0, F, 5.0, mirror)
 
 
 # --------------------------------------------------------------------------
@@ -231,17 +270,25 @@ static func interior(m, style: String, f: int, floors: int, c: Vector3, sx: floa
 	var wide := sx >= 11.0
 	var hall_z := c.z + sz * 0.16            # the partition line
 	var wall := _mat(m, ["trim", "block_a"])
-	var h: float = m.FLOOR_H - 0.3
+	var h: float = m.FLOOR_H - 0.32       # up into the ceiling slab (0.3 thick)
 	var back_z := (hall_z + c.z + sz * 0.5) * 0.5 + 0.1
 	var back_d := c.z + sz * 0.5 - hall_z - 0.5
 	if wide and sz >= 8.5 and not style in ["warehouse", "barn", "garage", "cabin"]:
-		# Back rooms either side of a 2.8 m opening, clear of both stairs.
+		# Back rooms either side of a 2.8 m doorway, clear of both stairs:
+		# full-height walls (into the ceiling slab, so they read as walls and
+		# not as free-standing boards), a skirting board, a lintel and a
+		# frame round the doorway.
+		var h2: float = h + 0.3
 		for sgn in [-1.0, 1.0]:
 			var a: float = c.x + sgn * 1.4
 			var b: float = c.x + sgn * (sx * 0.5 - 2.3)
-			m._box(Vector3((a + b) * 0.5, y + h * 0.5, hall_z), Vector3(absf(b - a), h, 0.16), wall, mirror)
-		# A stub wall between the two back rooms.
-		m._box(Vector3(c.x, y + h * 0.5, c.z + sz * 0.5 - back_d * 0.3 - 0.3), Vector3(0.16, h, back_d * 0.6), wall, mirror)
+			m._box(Vector3((a + b) * 0.5, y + h2 * 0.5, hall_z), Vector3(absf(b - a), h2, 0.16), wall, mirror)
+			m._box(Vector3((a + b) * 0.5, y + 0.06, hall_z), Vector3(absf(b - a), 0.12, 0.2), "dark", mirror, 0.0, false)
+			m._box(Vector3(c.x + sgn * 1.35, y + 1.27, hall_z), Vector3(0.1, 2.55, 0.22), _mat(m, ["deck", "dark"]), mirror, 0.0, false)
+		m._box(Vector3(c.x, y + 2.55 + (h2 - 2.55) * 0.5, hall_z), Vector3(2.8, h2 - 2.55, 0.16), wall, mirror)
+		m._box(Vector3(c.x, y + 2.6, hall_z), Vector3(2.8, 0.1, 0.22), _mat(m, ["deck", "dark"]), mirror, 0.0, false)
+		# A wall between the two back rooms, also full height.
+		m._box(Vector3(c.x, y + h2 * 0.5, c.z + sz * 0.5 - back_d * 0.3 - 0.3), Vector3(0.16, h2, back_d * 0.6), wall, mirror)
 	var ne := Vector3(c.x + (sx * 0.27 if wide else 0.0), y, back_z)
 	var nw := Vector3(c.x - sx * 0.25, y, back_z)
 	var se := Vector3(c.x + sx * 0.28, y, c.z - sz * 0.3)
@@ -325,6 +372,8 @@ static func interior(m, style: String, f: int, floors: int, c: Vector3, sx: floa
 		"workshop":
 			_workshop(m, ne, north, mirror)
 			_storage(m, se, south, mirror)
+		"clubhouse":
+			_clubhouse(m, c, sx, sz, y, mirror, upper)
 
 
 # ---- rooms: `at` is the middle of the room on the floor; `wall_z` the z of
@@ -350,7 +399,7 @@ static func _bathroom(m, at: Vector3, wall_z: float, mirror: bool) -> void:
 	_p(m, "furniture/Bathtub", at + Vector3(0.2, 0, z - at.z), 0.0, mirror)
 	_p(m, "furniture/Toilet", at + Vector3(-1.6, 0, z - at.z + 0.1), PI, mirror)
 	_p(m, "furniture/Washer", at + Vector3(1.9, 0, z - at.z + 0.2), PI, mirror)
-	m._model("furniture/Rug_Round", at + Vector3(0, 0.01, -0.6), 0.0, F, mirror, "none", false)
+	m._model("furniture/Rug_Round", at + Vector3(0.5, 0.01, -0.2), 0.0, F * 0.8, mirror, "none", false)
 
 
 static func _living(m, at: Vector3, wall_z: float, mirror: bool) -> void:
@@ -530,3 +579,42 @@ static func _garage(m, c: Vector3, sx: float, sz: float, y: float, mirror: bool)
 	_p(m, "furniture/Cardboard_Box_Open", Vector3(c.x + 1.7, y, c.z - sz * 0.5 + 1.1), 1.2, mirror, 2.4)
 	_p(m, "toon/Prop/Gas_Can", Vector3(c.x + 0.2, y, c.z - sz * 0.5 + 0.8), 0.0, mirror, 0.8)
 	_p(m, "furniture/Trashcan", Vector3(c.x + sx * 0.5 - 0.7, y, c.z - sz * 0.5 + 0.9), 0.0, mirror)
+
+
+## A narrow club stand (stairs on the west wall below, east wall above).
+## Ground floor: a bar along the back wall with stools, two tables, a TV.
+## Upper floor: a lit trophy cabinet, a lounge under the front window.
+static func _clubhouse(m, c: Vector3, sx: float, sz: float, y: float, mirror: bool, upper: bool) -> void:
+	var b := Vector3(c.x, y, c.z)
+	var n := sz * 0.5 - 0.3
+	var e := sx * 0.5 - 0.3
+	if not upper:
+		for i in 3:
+			_p(m, "furniture/Kitchen_Bar", b + Vector3(-1.0 + i * 1.16, 0, n - 1.1), 0.0, mirror, F * 1.25)
+			_p(m, "furniture/Stool_Bar", b + Vector3(-1.0 + i * 1.16, 0, n - 2.0), 0.0, mirror)
+		_p(m, "furniture/Kitchen_Coffee_Machine", b + Vector3(-1.0, 1.14, n - 1.1), PI, mirror)
+		_p(m, "survival/Bottle", b + Vector3(0.3, 1.14, n - 1.05), 0.0, mirror, 2.4)
+		_p(m, "survival/Bottle", b + Vector3(0.55, 1.14, n - 1.15), 0.0, mirror, 2.4)
+		_p(m, "furniture/Bookcase_Open", b + Vector3(0.0, 0, n - 0.32), PI, mirror)
+		_p(m, "furniture/Kitchen_Fridge", b + Vector3(e - 0.5, 0, n - 0.45), PI, mirror)
+		_p(m, "furniture/Table_Round", b + Vector3(1.6, 0, 1.9), 0.0, mirror)
+		_p(m, "furniture/Chair", b + Vector3(0.45, 0, 1.9), PI * 0.5, mirror)
+		_p(m, "furniture/Chair", b + Vector3(2.75, 0, 1.9), -PI * 0.5, mirror)
+		_p(m, "furniture/Table_Round", b + Vector3(2.1, 0, -3.5), 0.0, mirror)
+		_p(m, "furniture/Chair", b + Vector3(2.1, 0, -4.6), 0.0, mirror)
+		_p(m, "furniture/Chair", b + Vector3(2.1, 0, -2.4), PI, mirror)
+		_p(m, "furniture/Cabinet_Television", b + Vector3(-2.6, 0, -n + 0.45), PI, mirror)
+		_p(m, "furniture/Television_Modern", b + Vector3(-2.6, 0.69, -n + 0.45), PI, mirror)
+		_p(m, "furniture/Potted_Plant", b + Vector3(-3.1, 0, n - 0.5), 0.0, mirror)
+	else:
+		m._box(b + Vector3(-0.3, 0.45, n - 0.3), Vector3(3.0, 0.9, 0.55), "dark", mirror)
+		m._box(b + Vector3(-0.3, 1.35, n - 0.3), Vector3(2.9, 0.9, 0.5), "glass", mirror)
+		for i in 3:
+			m._model("fantasy/Chalice", b + Vector3(-1.3 + i * 1.0, 0.9, n - 0.3), 0.5 * i, 2.8 - 0.4 * absf(i - 1), mirror, "none")
+		m._glow(b + Vector3(-0.3, 2.4, n - 0.9), Color(1.0, 0.85, 0.6), 3.5, 0.8, mirror)
+		m._model("furniture/Rug_Rectangle", b + Vector3(0, 0.01, -n + 1.6), 0.0, F, mirror, "none", false)
+		_p(m, "furniture/Lounge_Sofa", b + Vector3(0, 0, -n + 0.6), PI, mirror)
+		_p(m, "furniture/Table_Coffee", b + Vector3(0, 0, -n + 1.7), 0.0, mirror)
+		_p(m, "furniture/Lounge_Chair", b + Vector3(-1.5, 0, -n + 1.8), PI * 0.5, mirror)
+		_p(m, "furniture/Lounge_Chair", b + Vector3(1.2, 0, -n + 1.9), -PI * 0.5, mirror)
+		_p(m, "furniture/Potted_Plant", b + Vector3(-3.1, 0, -n + 0.5), 0.0, mirror)
