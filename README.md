@@ -57,7 +57,9 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Movement inspired by Titanfall:** sprint, crouch, slide, wall run, wall
   jump, mantle, dash and aim down sights.
 - **Block** reflects every bullet, rocket, grenade and flame back at whoever
-  fired it. **Melee** with any gun in hand: your other paw draws a knife
+  fired it. In first person you see your own animal's plush arms (its fur
+  and paw colours, a wrist band in your colour): paws on the gun, open
+  mitten paws with toe beans for magic. **Melee** with any gun in hand: your other paw draws a knife
   for a heavy slash (wind-up, fast cut, a jolt on impact). Swords, axes and
   spears swing the blade itself.
 - **Clear feedback:** hit markers (gold for headshots), a red cross and a

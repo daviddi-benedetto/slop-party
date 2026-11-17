@@ -15,6 +15,7 @@ extends Node3D
 ##   and the slide to the centre of the screen when aiming down sights.
 ## The "bob" setting scales the walking part.
 
+const FpArm = preload("res://scripts/fp_arm.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
 
@@ -95,6 +96,7 @@ void fragment() {
 var weapon := -1
 var scope_texture: Texture2D          # set by game.gd: the live view of the scope camera
 var _color := Color.WHITE
+var kind := 0                    # the animal you play (fp_arm.gd fur colours); set before build()
 var _layer := 1
 var _with_paw := true
 var _knife: Node3D               # the melee knife rig (under the camera, built on first use)
@@ -196,14 +198,13 @@ func set_weapon(id: int) -> void:
 	_build_gun(_style)
 	_attach = null
 	_attach_key = ""
-	if _with_paw and not _style.begins_with("hands_"):
-		var plush := _mat(_color.lerp(Color(1, 0.97, 0.9), 0.25), 0.95)
-		plush.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-		plush.rim_enabled = true
-		plush.rim = 0.5
-		_ball(plush, Vector3(0.005, -0.11, 0.11), Vector3(0.075, 0.07, 0.08))
-		_ball(plush, Vector3(0.04, -0.22, 0.3), Vector3(0.065, 0.065, 0.22))
 	_merge()
+	if _with_paw and not _style.begins_with("hands_"):
+		# Your own plush arms: the right paw on the grip, and on long guns
+		# the left paw under the fore-end.
+		_arm(Vector3(0.008, -0.1, 0.1), Vector3(0.06, -0.12, 0.2), 1.0, 0.55)
+		if two_handed and not _style in ["magnum", "twins", "bow"]:
+			_arm(Vector3(grip_l.x - 0.03, grip_l.y - 0.075, grip_l.z + 0.02), Vector3(-0.4, -0.3, 0.38), -1.0, 0.6)
 	var fmat := StandardMaterial3D.new()
 	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -579,26 +580,14 @@ func _build_upright(style: String, spec: Array) -> void:
 func _build_hands(style: String) -> void:
 	var fire := style == "hands_fire"
 	var col := Color(1.0, 0.5, 0.12) if fire else Color(0.55, 0.85, 1.0)
-	var skin := _mat(_color.lerp(Color(1, 0.95, 0.88), 0.35), 0.8)
-	skin.rim_enabled = true
-	skin.rim = 0.4
-	var cuff := _mat(Color(0.2, 0.14, 0.3) if not fire else Color(0.32, 0.1, 0.08), 0.7)
 	if _with_paw:
 		for sx in [0.0, -0.54]:
 			var inward := 1.0 if sx == 0.0 else -1.0
 			var hand := _node(Vector3(sx, 0.02, -0.04))
-			hand.rotation = Vector3(-0.35, inward * 0.5, inward * 0.5)
-			_target = hand
-			_ball(skin, Vector3(0, 0, 0), Vector3(0.05, 0.022, 0.06))
-			for f in 4:
-				var fx := (f - 1.5) * 0.024
-				_tilt(_tube(skin, 0.0105, 0.07 - absf(f - 1.5) * 0.008, Vector3(fx, 0.012, -0.085), true), 0.25).rotation.y = -fx * 5.0
-			var thumb := _tube(skin, 0.012, 0.05, Vector3(-inward * 0.05, 0.0, -0.02), true)
-			thumb.rotation.y = inward * 1.0
-			_tube(skin, 0.036, 0.3, Vector3(0, -0.02, 0.2), true)
-			_tube(cuff, 0.046, 0.07, Vector3(0, -0.012, 0.09))
-			_tube(_glow, 0.048, 0.012, Vector3(0, -0.012, 0.06))
-			_target = self
+			# Forearms rise from the bottom corners, palms (toe beans) up.
+			hand.rotation = Vector3(0.45, inward * 0.42, inward * 0.3)
+			# Your own open plush paw, toe beans up, a glow round the wrist.
+			hand.add_child(FpArm.build(kind, _color, _layer, inward, "open", 0.42))
 	_orb = _ball(_spell_mat(col), Vector3(-0.27, 0.1, -0.2), Vector3.ONE * (0.055 if _with_paw else 0.11))
 	if not _with_paw:
 		_orb.position = Vector3(-0.12, 0.0, -0.1)
@@ -733,6 +722,16 @@ func _irons(rear_z: float, front_z: float, rear_base: float, front_base: float) 
 func _tilt(mi: MeshInstance3D, angle: float) -> MeshInstance3D:
 	mi.rotation.x = angle
 	return mi
+
+
+## A first-person plush arm (fp_arm.gd) with its paw at `at`, the forearm
+## running back along `back` (towards the bottom edge of the screen).
+func _arm(at: Vector3, back: Vector3, side: float, length: float, pose := "fist", parent: Node3D = null) -> Node3D:
+	var a := FpArm.build(kind, _color, _layer, side, pose, length)
+	a.position = at
+	a.basis = Basis.looking_at(-back.normalized(), Vector3.UP)
+	(parent if parent != null else self).add_child(a)
+	return a
 
 
 ## An empty pivot for animated parts (pump, cylinder, barrels, warhead).
@@ -1121,24 +1120,7 @@ func _build_knife() -> void:
 	_knife = Node3D.new()
 	_knife.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	get_parent().add_child(_knife)
-	var plush := _mat(_color.lerp(Color(1, 0.97, 0.9), 0.25), 0.95)
-	plush.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
-	plush.rim_enabled = true
-	plush.rim = 0.15
-	var paw := MeshInstance3D.new()
-	paw.mesh = _sphere
-	paw.material_override = plush
-	paw.scale = Vector3(0.05, 0.046, 0.055)
-	var arm := MeshInstance3D.new()
-	arm.mesh = _sphere
-	arm.material_override = plush
-	arm.scale = Vector3(0.042, 0.042, 0.17)
-	arm.position = Vector3(0.015, -0.045, 0.17)
-	for mi in [paw, arm]:
-		mi.layers = _layer
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
-		_knife.add_child(mi)
+	_knife.add_child(FpArm.build(kind, _color, _layer, 1.0, "fist", 0.45))
 	# Blade along the model's +Y; grip 15 % up the model sits in the paw,
 	# the blade pointing forward and a little up.
 	var path := "medieval/Knife"

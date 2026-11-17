@@ -377,6 +377,7 @@ func _add_view(player) -> void:
 		cam.cull_mask = 1 | (all_bodies & ~player.body_layer_bit()) | player.viewmodel_layer_bit()
 		gun = Viewmodel.new()
 		cam.add_child(gun)
+		gun.kind = player.kind
 		gun.build(player.color, player.viewmodel_layer_bit(), player.weapon)
 		player.viewmodel = gun
 	else:
