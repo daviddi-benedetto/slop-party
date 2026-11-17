@@ -29,6 +29,7 @@ extends Node
 
 const RATE := 22050
 const VOICES := 24
+const RECORDED_DB := 4.0         # recordings are mastered louder than the synth: play them this much quieter
 
 ## chords: [bass note, then chord tones] as MIDI numbers; each lasts two bars.
 const TRACKS := {
@@ -123,6 +124,8 @@ func play(sound: String, volume_db := 0.0, pitch := 1.0, pan := 2) -> void:
 	p.stream = takes[randi() % takes.size()] if not takes.is_empty() else _streams[sound]
 	p.bus = _pan_buses[pan] if pan >= 0 and pan < _pan_buses.size() else &"Master"
 	p.volume_db = volume_db - 5.0 + linear_to_db(level / 8.0)
+	if not takes.is_empty():
+		p.volume_db -= RECORDED_DB
 	p.pitch_scale = pitch * randf_range(0.96, 1.04)
 	p.play()
 
@@ -171,6 +174,8 @@ func _load_recordings() -> void:
 			if not _takes.has(name):
 				_takes[name] = []
 			_takes[name].append(s)
+	if not _takes.is_empty():
+		print("[sfx] %d recorded sounds replace the synthesised ones" % _takes.size())
 
 
 ## Five buses with a panner each (hard left .. hard right), all into Master.

@@ -92,6 +92,32 @@ slows enemies to a crawl",
 ]
 
 
+## Balance: damage multipliers from tools/balance.sh (bots, even weapon
+## exposure, kills per minute held pulled towards the average; see
+## docs/ARCHITECTURE.md). 1.0 = unchanged; names not listed are 1.0.
+## Two runs on 2026-11-17 (31 weapons, 62 bot-minutes; run 2 scaled back by
+## the first tune), average 3.64 kills per minute held; multiplier =
+## (average / weapon)^0.4, kept within 0.8-1.3 because bot data is noisy.
+const TUNE := {
+	"Crossbow": 0.80,  # 6.6 kills/min
+	"Tripler": 0.83,  # 5.8 kills/min
+	"Longshot": 0.83,  # 5.8 kills/min
+	"Arcane Staff": 0.86,  # 5.2 kills/min
+	"Longbow": 0.88,  # 5.0 kills/min
+	"Frost Hands": 0.89,  # 4.8 kills/min
+	"Fire Hands": 1.09,  # 2.9 kills/min
+	"Lobber": 1.09,  # 2.9 kills/min
+	"Sticky": 1.11,  # 2.8 kills/min
+	"Spear": 1.23,  # 2.2 kills/min
+	"Blaster": 1.25,  # 2.1 kills/min
+	"Scatter": 1.27,  # 2.0 kills/min
+	"Spinner": 1.29,  # 1.9 kills/min
+	"Battle Axe": 1.25,  # 1.8 kills/min
+	"Cluster": 1.30,  # 1.7 kills/min
+	"Sword": 1.25,  # 1.5 kills/min
+}
+
+
 static func era(id: int) -> String:
 	return LIST[id].get("era", "modern")
 
@@ -115,6 +141,12 @@ static func ladder() -> Array:
 
 
 static func apply(id: int, s) -> void:
+	_profile(id, s)
+	s.damage *= TUNE.get(LIST[id].name, 1.0)
+
+
+## Each weapon's base numbers (before TUNE).
+static func _profile(id: int, s) -> void:
 	match id:
 		1:  # Scatter
 			s.pellets = 6

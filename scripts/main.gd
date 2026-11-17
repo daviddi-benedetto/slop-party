@@ -20,6 +20,8 @@ extends Node
 ##   --pause-at=<sec>      open the pause menu after that many seconds
 ##   --options-demo        open the Options screen in the lobby after 1 second
 ##   --options-page=N      ...on its Nth page (0 = DISPLAY)
+##   --melee-at=<sec>      player 1 swings their melee then
+##   --box-at=<sec>        player 1 opens a mystery box then
 ##   --start-after=<sec>   with --lobby-demo: start the match after that long
 ##                         (shows the loading card)
 ##   --uncapped            ignore the v-sync / frame-limit settings (benchmarking)
@@ -101,6 +103,25 @@ func _ready() -> void:
 			lobby._options.open()
 			for i in int(_args.get("options-page", "0")):
 				lobby._options._turn(1))
+	if _args.has("melee-at"):
+		# Dev: player 1 swings their melee at that time (knife screenshots).
+		get_tree().create_timer(float(_args["melee-at"]), true, false, true).timeout.connect(func():
+			if game != null and not game.players.is_empty():
+				game.players[0]._melee_start())
+	if _args.has("box-at"):
+		# Dev: player 1 stands in front of a mystery box and opens it.
+		get_tree().create_timer(float(_args["box-at"]), true, false, true).timeout.connect(func():
+			if game == null or game.players.is_empty():
+				return
+			for pk in game.world.get_children():
+				if pk.get_script() != null and pk.get_script().resource_path.ends_with("pickup.gd") and str(pk.kind) == "weapon":
+					var p = game.players[0]
+					p.global_position = pk.global_position + Vector3(0, 0.1, 2.4)
+					p.yaw = 0.0
+					p.pitch = -0.25
+					pk.take(p)
+					print("[box] at ", pk.global_position)
+					break)
 	if _args.has("start-after"):
 		get_tree().create_timer(float(_args["start-after"])).timeout.connect(func(): lobby._start())
 	if _args.has("pause-at"):

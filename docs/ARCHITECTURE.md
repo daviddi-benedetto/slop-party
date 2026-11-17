@@ -27,7 +27,7 @@ has not been verified.
   random cards and must pick one before respawning. Cards permanently modify
   that player's stats for the match and stack.
 - Twelve weapons (everyone starts with the Blaster). Weapons come from weapon
-  cards in the deck and from pickup pads (press interact); health pads too.
+  cards in the deck and from mystery boxes (press interact; a random weapon from the mode's pool); health pads too.
 - Abilities everyone has: jump, dash, block (short guard that negates damage
   and reflects every projectile passing within 1.1 m; 4 s cooldown), aim down
   sights, crouch, slide, wall run, wall jump and mantle.
@@ -89,7 +89,11 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
   (`--options-page=N` on its Nth page).
 - `--start-after=S` (with `--lobby-demo`) starts the match after S seconds,
   showing the loading card.
-- `--balance` logs weapon / card statistics (see `tools/balance.sh`).
+- `--balance` logs weapon / card statistics and hands each respawning bot
+  the least-used weapon (see `tools/balance.sh`).
+- `--melee-at=S` makes player 1 swing their melee at S seconds;
+  `--box-at=S` makes them open a mystery box (prints its position, for an
+  `--eye` camera).
 - `--uncapped` stops `settings.gd` from applying v-sync and the frame limit.
   **Benchmarks need both** `--disable-vsync` (engine flag, before `--`) and
   `--uncapped` (after `--`), otherwise the default 60 FPS cap hides the result.
@@ -134,7 +138,7 @@ parse error in one script.
 | `scripts/plush.gd` | The seven animals as signed-distance shapes with painted patches, and the surface-nets mesher that turns them into smooth bodies (`tools/make_plush.gd` bakes them to `assets/models/plush/`). |
 | `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
 | `scripts/viewmodel.gd` | Gun model per weapon style (receiver, barrel, magazine, stock, sights; merged into one mesh per material), first-person sway/recoil/reload/pump/cylinder animation and world-space muzzle position; also used as the pickup prop and, scaled up, as the third-person gun (`character.gd::set_weapon`). |
-| `scripts/pickup.gd` | Weapon and health pickup pads. |
+| `scripts/pickup.gd` | Mystery boxes (kind "weapon": interact opens the lid, `_roll_step` shows three decoys then the prize, which goes to the opener after `OPEN_TIME`; the box turns so the lid swings away; shut for 16 s after) and health pads. |
 | `scripts/sky.gd` | Sky shader (gradient, sun halo, painted clouds) shared by the arena and the stage. |
 | `scripts/stats.gd` | Per-player stats, rebuilt from defaults + weapon + cards. |
 | `scripts/cards.gd` | The card deck (stat cards and weapon cards) and the weighted draw. |
@@ -329,7 +333,12 @@ collision off (the vehicle takes the hits).
   stepping feet, tail wag, blink, hit flash, crouch. Both paws hold the
   weapon on its grip markers (`_grip_r` / `_grip_l`, placed by
   `set_weapon()` from the viewmodel); taunts (wave, spin, wiggle, flex),
-  cheer / sad emotes and punches pose the paws instead.
+  cheer / sad emotes and the melee knife slash pose the paws instead (the
+  knife is shown in the right paw, `_show_knife`). In first person the
+  slash is `viewmodel._update_knife()`: a paw and knife under the camera
+  following `KNIFE_KEYS` (wind-up, eased-in cut, overshoot, recovery)
+  while the gun drops away; the hit lands at the cut (player.gd
+  `_melee_pending`) with a view jolt and a thud.
 - To add an animal: append to `plush.NAMES` and `SPEC`, add its shapes to
   `sdf()` / `tail_sdf()` and colours to `_paint()` / `_tail_paint()`, a
   `ui_kit.KIND_NAMES` and `PORTRAIT` entry, bump `KIND_COUNT`, run the tool.
@@ -1021,8 +1030,10 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 ## 8. Known limitations / ideas
 
 - Only one keyboard + mouse player (Windows gives one shared mouse).
-- Sound effects are synthesised until recordings are added to
-  `assets/audio`.
+- Only some sound effects are recordings (Kenney CC0 packs in
+  `assets/audio`); guns other than the sci-fi ones, pets, taunts and music
+  stings are still synthesised. Recordings play `RECORDED_DB` quieter; their
+  levels have not been checked by ear.
 - Buttons cannot be rebound.
 - If a gamepad in use disconnects, the match pauses with a message; it resumes
   with that seat on the same device id when it is plugged back in.

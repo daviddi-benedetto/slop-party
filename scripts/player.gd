@@ -1184,7 +1184,9 @@ func _melee_start(rush := 0.0) -> void:
 	melee_cd = (stats.fire_interval / (1.0 + rush)) if _melee_weapon else stats.melee_cd
 	melee_t = 0.0
 	melee_n += 1
-	_melee_pending = 0.1 if not _melee_weapon else minf(0.16, stats.fire_interval * 0.3)
+	# Fists / knife: the hit lands as the slash crosses the view (viewmodel
+	# KNIFE_KEYS); weapons as they swing through.
+	_melee_pending = minf(0.19, stats.melee_cd * 0.32) if not _melee_weapon else minf(0.16, stats.fire_interval * 0.3)
 	_end_taunt()
 	recoil = maxf(recoil, 0.5)
 	if stats.melee_parry:
@@ -1197,7 +1199,7 @@ func _melee_start(rush := 0.0) -> void:
 	elif is_on_floor():
 		velocity += fwd * 3.5
 	character.swing(_melee_weapon)
-	Sfx.play_at("swing", global_position, -5.0, 0.8 if _melee_weapon and stats.fire_interval > 0.8 else 1.1)
+	Sfx.play_at("swing", global_position, -5.0, 0.8 if _melee_weapon and stats.fire_interval > 0.8 else 1.25)
 
 
 func _melee_strike() -> void:
@@ -1264,6 +1266,11 @@ func _melee_strike() -> void:
 		var dealt: float = d.take_damage(m, self, false, crit)
 		if dealt > 0.0:
 			hits += 1
+			# Weight: the view jolts and the slash thuds home.
+			shake = maxf(shake, 0.45)
+			recoil = maxf(recoil, 1.6)
+			fov_kick = maxf(fov_kick, 0.5)
+			Sfx.play_at("slash", c, -2.0, 0.85)
 			Fx.sparks(game.world, c, color.lerp(Color.WHITE, 0.55), 10, 5.0, fwd, 80.0, 0.25)
 			if d.alive:
 				if stats.poison > 0.0:

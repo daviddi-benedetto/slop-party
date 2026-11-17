@@ -18,6 +18,7 @@ extends Node3D
 
 const Viewmodel = preload("res://scripts/viewmodel.gd")
 const Weapons = preload("res://scripts/weapons.gd")
+const Models = preload("res://scripts/models.gd")
 const Plush = preload("res://scripts/plush.gd")
 const KIND_COUNT := 7
 
@@ -37,6 +38,7 @@ var _back_node: Node3D
 var taunt := -1                # player.TAUNTS index while taunting, else -1
 var _swing_t := 9.0            # seconds since swing() (melee animation)
 var _swing_weapon := false
+var _knife: Node3D               # third-person melee knife (shown while slashing)
 var _swing_n := 0
 var _grip_r: Node3D
 var _grip_l: Node3D
@@ -557,6 +559,28 @@ func swing(with_weapon: bool) -> void:
 	_swing_n += 1
 
 
+## The knife in the right paw at `at` (rig space), blade tilting through the
+## slash as f goes 0..1.
+func _show_knife(at: Vector3, f: float) -> void:
+	if _knife == null:
+		_knife = Node3D.new()
+		rig.add_child(_knife)
+		var path := "medieval/Knife"
+		var bb: AABB = Models.bounds(path)
+		var k := 0.42 / bb.size.y
+		var grip := Vector3(bb.get_center().x, bb.position.y + bb.size.y * 0.15, bb.get_center().z)
+		for part in Models.parts(path):
+			var mi := MeshInstance3D.new()
+			mi.mesh = part[0]
+			mi.transform = Transform3D(Basis.from_scale(Vector3.ONE * k), -grip * k) * part[1]
+			_knife.add_child(mi)
+			Models.toy_node(mi)
+	_knife.visible = true
+	_knife.position = at
+	# Blade up and back on the wind-up, forward and down through the cut.
+	_knife.rotation = Vector3(lerpf(0.6, -1.9, smoothstep(0.15, 0.5, f)), 0.0, lerpf(-0.5, 0.7, smoothstep(0.2, 0.5, f)))
+
+
 func hit_flash() -> void:
 	_flash = 1.0
 	_squash_v -= 1.6
@@ -650,17 +674,25 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 		paw_l = sh_l + Vector3(0.05, -0.38, 0.05)
 		paw_r = sh_r + Vector3(-0.05, -0.38, 0.05)
 		pitch = -0.4
-	elif _swing_t < 0.45 and not _swing_weapon:
-		# A punch with the paw on the swinging side.
-		var jab := sin(clampf(_swing_t / 0.3, 0.0, 1.0) * PI)
-		var fwd := Basis(Vector3.RIGHT, pitch) * Vector3(0, 0, -1)
-		if _swing_n % 2 == 0:
-			paw_r = sh_r + Vector3(-0.12, 0.02, 0) + fwd * (0.2 + 0.4 * jab)
-			paw_l = sh_l + Vector3(0.1, -0.1, -0.2)
+	elif _swing_t < 0.5 and not _swing_weapon:
+		# A knife slash with the right paw: wind up high, whip it down
+		# across the body, recover.
+		var f := clampf(_swing_t / 0.5, 0.0, 1.0)
+		var up := sh_r + Vector3(0.12, 0.38, 0.12)
+		var down := sh_r + Vector3(-0.5, -0.18, -0.45)
+		var rest := sh_r + Vector3(0.0, -0.3, -0.1)
+		if f < 0.25:
+			paw_r = rest.lerp(up, 1.0 - pow(1.0 - f / 0.25, 2.0))
+		elif f < 0.45:
+			var u := (f - 0.25) / 0.2
+			paw_r = up.lerp(down, u * u * u)
 		else:
-			paw_l = sh_l + Vector3(0.12, 0.02, 0) + fwd * (0.2 + 0.4 * jab)
-			paw_r = sh_r + Vector3(-0.1, -0.1, -0.2)
-		roll += (0.12 if _swing_n % 2 == 0 else -0.12) * jab
+			paw_r = down.lerp(rest, smoothstep(0.0, 1.0, (f - 0.45) / 0.55))
+		paw_l = sh_l + Vector3(0.1, -0.1, -0.2)
+		var cut := sin(clampf((f - 0.2) / 0.35, 0.0, 1.0) * PI)
+		roll += -0.18 * cut
+		lean += 0.12 * cut
+		_show_knife(paw_r, f)
 	elif busy:
 		# Arms swing as it walks.
 		paw_l = sh_l + Vector3(-0.06, -0.36, -sw * 0.22)
@@ -683,6 +715,8 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 		paw_r = sh_r + Vector3(0, -0.36, 0)
 	_reach(_arm_l, paw_l)
 	_reach(_arm_r, paw_r)
+	if _knife != null and not (_swing_t < 0.5 and not _swing_weapon):
+		_knife.visible = false
 
 	# Feet: step in time, tuck up in the air.
 	var fl: Vector3

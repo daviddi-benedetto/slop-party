@@ -18,12 +18,12 @@ game modes:
   buggies, tanks and helicopters.
 - **Gun Game** – free-for-all where every KO hands you the next weapon on a
   ladder of all 31 (guns, then magic, then medieval arms, ending on the
-  Sword). Being finished off with a punch knocks you one rung down. First to
+  Sword). Being finished off with a melee knife knocks you one rung down. First to
   score with the last weapon wins. No cards, quick respawns.
 - **Medieval** – a free-for-all in the **Castle** with medieval arms only:
   Sword, Battle Axe, Spear, Longbow, Crossbow, Throwing Knives and Powder
   Bombs. Your block is a shield (it lasts longer and returns sooner), and
-  cards and weapon pads only deal medieval weapons.
+  cards and mystery boxes only deal medieval weapons.
 
 You play as one of seven plush animals in split screen, on seven arenas plus
 a zombie campus and a huge battlefield, in a visual theme of your choice.
@@ -47,7 +47,8 @@ PLAY** lists every button and **MODES** explains each mode.
   Bubbler, Tripler, Magnum, Spinner, Pinball, Flamer, Tesla, Cluster, Vortex,
   Ripper, Sticky, Longshot, Frostbite and the akimbo Twins), 4 magic weapons
   (Fire Hands, Frost Hands, Storm Staff, Arcane Staff) and 7 medieval ones.
-  Pick them up from purple weapon pads or from weapon cards.
+  Get them from weapon cards or from **mystery boxes**: open one (Y / E),
+  watch the weapons spin up out of it, and the last one is yours.
 - **77 powerup cards** in three rarities (common, rare, epic): scopes and a
   red-dot sight, a jetpack, block perks that turn your block into a weapon
   (Blink Guard, Frost Guard, Radiant Guard...), eight melee upgrades, and
@@ -56,7 +57,9 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Movement inspired by Titanfall:** sprint, crouch, slide, wall run, wall
   jump, mantle, dash and aim down sights.
 - **Block** reflects every bullet, rocket, grenade and flame back at whoever
-  fired it. **Melee** with anything in hand: a punch, or a blade swing.
+  fired it. **Melee** with any gun in hand: your other paw draws a knife
+  for a heavy slash (wind-up, fast cut, a jolt on impact). Swords, axes and
+  spears swing the blade itself.
 - **Clear feedback:** hit markers (gold for headshots), a red cross on a
   knockout, arcs showing where damage came from, a pulsing red edge when
   your health is low, and on death your view turns to face whoever got you
@@ -102,9 +105,11 @@ everything generated, so the world reads as one place. Weather stays clear;
 large outdoor maps use a light distance haze.
 
 Built with [Godot 4.7.2](https://godotengine.org) (MIT licensed), 100% GDScript.
-The map layouts, textures, icons, characters, sounds and music are generated
-in code; a recording dropped into `assets/audio` replaces the generated sound
-of the same name (see the README there). Weapons, zombies, cars, trees,
+The map layouts, textures, icons, characters and music are generated in
+code. Sound effects are a mix: footsteps, impacts, the knife, breaking glass
+and wood, explosions, UI clicks, reloads and the sci-fi guns are CC0
+recordings from Kenney's audio packs (`assets/audio`); the rest is
+synthesised. Weapons, zombies, cars, trees,
 furniture, doors and castle pieces are public-domain (CC0) 3D models by
 Quaternius, Kenney and Kay Lousberg. **[ASSETS.md](ASSETS.md) lists every
 asset, its author, licence and download source**; `THIRD_PARTY_LICENSES.txt`
@@ -143,9 +148,9 @@ Every match opens on a loading card with the mode, map, theme and a tip.
 | Sprint | Left-stick click (runs until you ease off) | Shift (hold) |
 | Dash | RB | Alt or V |
 | Block | LB | Q |
-| Melee (punch, or swing a melee weapon) | Right-stick click | F or middle mouse |
+| Melee (knife slash, or swing a melee weapon) | Right-stick click | F or middle mouse |
 | Reload | X | R |
-| Pick up weapon / get in or out of a vehicle | Y | E |
+| Open a mystery box / get in or out of a vehicle | Y | E |
 | Taunt (Wave / Dance / Nope / Flex) | D-pad up / right / down / left | 1 / 2 / 3 / 4 |
 | Wall run / mantle | Jump at a wall and keep moving / move into a ledge in the air | same |
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |

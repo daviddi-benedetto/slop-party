@@ -60,6 +60,17 @@ const UPRIGHT := {
 	"bomb": ["medieval/Bomb", 0.26, 0.3, 0.0, 0.0],
 }
 const MELEE_STYLES := ["sword", "axe", "spear"]
+const KNIFE_TIME := 0.55         # the knife slash (melee with a gun in hand)
+## Knife slash keyframes [time 0-1, position, rotation] in camera space: the
+## off-paw draws the knife up and back (wind-up), whips it down across the
+## view (fast, eased in), overshoots a touch, then lowers it away.
+const KNIFE_KEYS := [
+	[0.0, Vector3(0.5, -0.72, -0.5), Vector3(0.3, 0.6, -0.6)],
+	[0.24, Vector3(0.42, -0.04, -0.56), Vector3(0.35, 0.5, -1.1)],
+	[0.42, Vector3(-0.3, -0.34, -0.74), Vector3(-0.9, -0.35, 1.05)],
+	[0.58, Vector3(-0.38, -0.4, -0.7), Vector3(-1.0, -0.45, 1.25)],
+	[1.0, Vector3(-0.12, -0.86, -0.5), Vector3(-0.6, -0.2, 0.9)],
+]
 
 const HIP := Vector3(0.27, -0.25, -0.58)
 const ADS := Vector3(0.0, -0.155, -0.5)
@@ -86,6 +97,7 @@ var scope_texture: Texture2D          # set by game.gd: the live view of the sco
 var _color := Color.WHITE
 var _layer := 1
 var _with_paw := true
+var _knife: Node3D               # the melee knife rig (under the camera, built on first use)
 var _flash: MeshInstance3D
 var _spin: Node3D                # rotating barrel cluster (Spinner)
 var _muzzle_z := -0.3
@@ -893,6 +905,8 @@ func update(delta: float, p) -> void:
 	if not p.alive:
 		_last_yaw = p.yaw
 		_last_pitch = p.pitch
+		if _knife != null:
+			_knife.visible = false
 		return
 	_t += delta
 	var hip := 1.0 - aim
@@ -997,7 +1011,9 @@ func update(delta: float, p) -> void:
 		var pulse := 1.0 + sin(_t * 7.0) * 0.12 + exp(-st * 6.0) * 0.9
 		_orb.scale = Vector3.ONE * (0.055 if _style.begins_with("hands_") and _with_paw else 0.06) * pulse
 	# Melee: weapons slash or thrust; anything else is a quick butt strike.
-	var mdur: float = 0.34 if not _style in MELEE_STYLES else clampf(p.stats.fire_interval * 0.75, 0.3, 0.5)
+	var knife_slash: bool = _with_paw and not _style in MELEE_STYLES
+	var mdur: float = minf(KNIFE_TIME, p.stats.melee_cd * 0.9) if knife_slash else clampf(p.stats.fire_interval * 0.75, 0.3, 0.5)
+	_update_knife(p, mdur if knife_slash else 0.0)
 	if p.melee_t < mdur:
 		var mf: float = p.melee_t / mdur
 		var sw := sin(mf * PI)
@@ -1013,10 +1029,11 @@ func update(delta: float, p) -> void:
 				pos.x -= sgn * 0.14 * sw + 0.08 * sw
 				pos.z -= 0.14 * sw
 			_:
-				rot.x -= 0.45 * sw
-				rot.y += 0.95 * sw
-				pos.z -= 0.2 * sw
-				pos.x -= 0.1 * sw
+				# The gun drops out of the way while the other paw slashes.
+				var away := smoothstep(0.0, 0.25, mf) * (1.0 - smoothstep(0.6, 1.0, mf))
+				rot.x -= 0.55 * away
+				rot.z -= 0.35 * away
+				pos += Vector3(0.08, -0.16, 0.06) * away
 	# Medieval mode: blocking raises a shield in front of you.
 	if p.game.mode == "medieval" and _with_paw:
 		if _shield == null or not is_instance_valid(_shield):
@@ -1061,6 +1078,79 @@ func update(delta: float, p) -> void:
 	if _flash.visible:
 		var fs: float = (0.035 + p.muzzle_flash * 0.08) * clampf(p.stats.recoil_kick, 0.8, 1.8)
 		_flash.scale = Vector3(fs, fs, fs * 1.8)
+
+
+## The melee knife: a plush paw holding a short blade, animated through
+## KNIFE_KEYS over `dur` seconds after a melee starts (dur 0 = hidden). It
+## lives under the camera (not this gun node) so the gun can drop away.
+func _update_knife(p, dur: float) -> void:
+	var active: bool = dur > 0.0 and p.melee_t < dur and p.alive
+	if not active:
+		if _knife != null:
+			_knife.visible = false
+		return
+	if _knife == null:
+		_build_knife()
+	_knife.visible = true
+	var f: float = clampf(p.melee_t / dur, 0.0, 1.0)
+	var i := 0
+	while i < KNIFE_KEYS.size() - 2 and f > KNIFE_KEYS[i + 1][0]:
+		i += 1
+	var a: Array = KNIFE_KEYS[i]
+	var b: Array = KNIFE_KEYS[i + 1]
+	var u: float = clampf((f - a[0]) / (b[0] - a[0]), 0.0, 1.0)
+	match i:
+		0: u = 1.0 - pow(1.0 - u, 2.0)      # wind-up: quick, then settles
+		1: u = u * u * u                    # the strike accelerates
+		2: u = 1.0 - pow(1.0 - u, 3.0)      # overshoot eases out
+		_: u = u * u * (3.0 - 2.0 * u)      # recovery
+	_knife.position = (a[1] as Vector3).lerp(b[1], u)
+	_knife.rotation = (a[2] as Vector3).lerp(b[2], u)
+
+
+func _build_knife() -> void:
+	_knife = Node3D.new()
+	_knife.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	get_parent().add_child(_knife)
+	var plush := _mat(_color.lerp(Color(1, 0.97, 0.9), 0.25), 0.95)
+	plush.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	plush.rim_enabled = true
+	plush.rim = 0.15
+	var paw := MeshInstance3D.new()
+	paw.mesh = _sphere
+	paw.material_override = plush
+	paw.scale = Vector3(0.05, 0.046, 0.055)
+	var arm := MeshInstance3D.new()
+	arm.mesh = _sphere
+	arm.material_override = plush
+	arm.scale = Vector3(0.042, 0.042, 0.17)
+	arm.position = Vector3(0.015, -0.045, 0.17)
+	for mi in [paw, arm]:
+		mi.layers = _layer
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_knife.add_child(mi)
+	# Blade along the model's +Y; grip 15 % up the model sits in the paw,
+	# the blade pointing forward and a little up.
+	var path := "medieval/Knife"
+	var bb: AABB = Models.bounds(path)
+	var k := 0.44 / bb.size.y
+	var grip := Vector3(bb.get_center().x, bb.position.y + bb.size.y * 0.15, bb.get_center().z)
+	var hold := Basis(Vector3.RIGHT, -1.25)
+	for part in Models.parts(path):
+		var mi := MeshInstance3D.new()
+		mi.mesh = part[0]
+		mi.transform = Transform3D(hold * Basis.from_scale(Vector3.ONE * k), -(hold * (grip * k))) * part[1]
+		mi.layers = _layer
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		_knife.add_child(mi)
+		Models.toy_node(mi)
+
+
+func _exit_tree() -> void:
+	if _knife != null and is_instance_valid(_knife):
+		_knife.queue_free()
 
 
 ## Rotate the cylinder one chamber per shot (shot_t drops back to 0 on a shot).
