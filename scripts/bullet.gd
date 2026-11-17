@@ -244,7 +244,7 @@ func _physics_process(delta: float) -> void:
 		if prop.has_method("hurt"):
 			prop.hurt(damage, shooter)
 		prop.knock(vel.normalized() * clampf(damage * 0.35, 2.0, 40.0), hit.position)
-		if prop.is_glass or flame or (pierce > 0 and not prop.has_method("swing_open")):
+		if prop.is_glass or flame or (pierce > 0 and not prop.is_in_group("doors")):
 			_ignore.append(prop.get_rid())
 			global_position = hit.position
 			return

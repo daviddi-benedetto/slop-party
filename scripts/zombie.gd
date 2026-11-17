@@ -92,7 +92,7 @@ func setup(kind_name: String, wave: int) -> void:
 
 func _ready() -> void:
 	collision_layer = 2
-	collision_mask = 1 | 2 | 8      # world, bodies, doors (they open for us)
+	collision_mask = 1 | 2 | 4      # world, bodies, loose props (doors swing out of the way)
 	add_to_group("door_users")
 	floor_max_angle = deg_to_rad(50.0)
 	floor_snap_length = 0.3

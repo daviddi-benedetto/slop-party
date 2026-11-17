@@ -876,7 +876,7 @@ func explode(pos: Vector3, radius: float, damage: float, shooter, direct_victim)
 				prop.hurt(damage * (1.0 - away.length() / (radius * 1.6)), shooter)
 				if prop.is_queued_for_deletion():
 					continue
-			prop.knock((away.normalized() + Vector3(0, 0.6, 0)) * (1.0 - away.length() / (radius * 1.6)) * 14.0 * minf(prop.mass, 15.0), pos)
+			prop.knock((away.normalized() + Vector3(0, 0.6, 0)) * (1.0 - away.length() / (radius * 1.6)) * 260.0, pos)
 	for p in damageables():
 		if not p.alive or p == direct_victim:
 			continue
@@ -1027,14 +1027,6 @@ func pet_near(p):
 	for pet in pets:
 		if is_instance_valid(pet) and pet.global_position.distance_to(p.global_position) < 1.9:
 			return pet
-	return null
-
-
-## A door within arm's reach of `p` (door.gd), or null.
-func door_near(p):
-	for d in get_tree().get_nodes_in_group("doors"):
-		if not d.is_queued_for_deletion() and d.centre().distance_to(p.global_position + Vector3(0, 1.0, 0)) < 2.1:
-			return d
 	return null
 
 

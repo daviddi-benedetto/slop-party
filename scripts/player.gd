@@ -39,7 +39,8 @@ const EYE_HEIGHT := 1.6
 const GRAVITY := 22.0
 const WORLD_MASK := 1
 const PLAYER_MASK := 2
-const DOOR_MASK := 8            # doors (door.gd): block bodies, not the nav graph
+const DOOR_MASK := 8            # doors (door.gd): bullets and melee hit them; bodies push through
+const PROP_MASK := 4            # loose props (prop.gd): solid, shoved by walking into them
 const BLOCK_TIME := 0.38
 ## [name shown to the taunter, speech bubble, seconds]
 const TAUNTS := [["WAVE", "HEY!", 1.9], ["DANCE", "WOO!", 2.6], ["NOPE", "NOPE!", 1.8], ["FLEX", "TOO EASY!", 2.0]]
@@ -219,7 +220,7 @@ func viewmodel_layer_bit() -> int:
 func _ready() -> void:
 	collision_layer = 0
 	add_to_group("door_users")
-	collision_mask = WORLD_MASK | PLAYER_MASK | DOOR_MASK
+	collision_mask = WORLD_MASK | PLAYER_MASK | PROP_MASK
 	floor_max_angle = deg_to_rad(50.0)
 	floor_snap_length = 0.3
 
@@ -792,15 +793,10 @@ func _physics_process(delta: float) -> void:
 				return
 		elif not is_bot:
 			var pet = game.pet_near(self)
-			var door = game.door_near(self) if pet == null else null
 			if pet != null:
 				pickup_prompt = "PET THE " + pet.label
 				if brain.interact:
 					pet.pet(self)
-			elif door != null:
-				pickup_prompt = door.prompt()
-				if brain.interact:
-					door.interact(self)
 	near_pickup = null
 
 	# --- block ---
@@ -998,8 +994,8 @@ func _physics_process(delta: float) -> void:
 
 	var hspeed := Vector2(velocity.x, velocity.z).length()
 	# Barge through loose props and glass (they never block us).
-	if hspeed > 1.5 and Engine.get_physics_frames() % 3 == index % 3:
-		Prop.kick_near(get_world_3d().direct_space_state, global_position + Vector3(0, 0.7, 0), 0.75, velocity)
+	if hspeed > 1.0 and Engine.get_physics_frames() % 3 == index % 3:
+		Prop.kick_near(get_world_3d().direct_space_state, global_position + Vector3(0, 0.7, 0), 0.85, velocity)
 	var strafe: float = (Basis(Vector3.UP, yaw).inverse() * velocity).x / stats.move_speed
 	character.animate(delta, hspeed / stats.move_speed, is_on_floor(), velocity.y, pitch, recoil, clampf(strafe, -1.0, 1.0))
 	if is_on_floor():
@@ -1309,7 +1305,7 @@ func _melee_strike() -> void:
 			c2.hurt(dmg, self)
 			hits += 1
 		if c2.has_method("knock"):
-			c2.knock((fwd + Vector3(0, 0.3, 0)) * minf(dmg * 0.4, 30.0), eye + fwd)
+			c2.knock((fwd + Vector3(0, 0.3, 0)) * dmg * 1.5, eye + fwd)
 			hits += 1
 	# Crumbling walls (world layer) take melee damage too.
 	var wq := PhysicsRayQueryParameters3D.create(eye, eye + fwd * reach, WORLD_MASK)

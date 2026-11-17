@@ -41,11 +41,14 @@ arenas with readable colour and atmosphere at every time of day.
 - **Taunts:** four per player on the D-pad (keys 1–4): Wave, Dance, Nope and
   Flex. Your camera pulls out so you can watch yourself; everyone else sees
   the emote and a speech bubble.
-- **A world you can break:** doors open and close (Y / E; bots and zombies
-  open them themselves) and splinter when shot; chairs, crates, TVs and
-  barrels break apart; red fuel barrels and gas cans explode; ruined wall
-  stubs and the castle's bricked-up breach crumble brick by brick under
-  fire.
+- **A physical world you can break:** doors have no button, you just walk
+  through and they swing out of your way and fall shut behind you (and
+  splinter when shot). Furniture and clutter are solid objects with weight
+  that follows their size: you shove a chair aside, a bottle skitters
+  away, a fridge barely moves, and nothing heavy gets launched across the
+  map. Chairs, crates, TVs and barrels break apart; red fuel barrels and gas
+  cans explode; ruined wall stubs and the castle's bricked-up breach
+  crumble brick by brick under fire.
 - **Characters hold what they carry:** both hands reach the weapon (arm IK
   on top of the walk, run, jump and crouch animations).
 - **A lived-in world:** furnished houses, loose physics props you can kick
@@ -137,7 +140,7 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 | Dash | RB | Alt or V |
 | Block | LB | Q |
 | Reload | X | R |
-| Pick up weapon / open or close a door / get in or out of a vehicle | Y | E |
+| Pick up weapon / get in or out of a vehicle | Y | E |
 | Open parachute (Frontline drops and high falls) | A | Space |
 | Wall run | Jump at a wall and keep moving forward | same |
 | Mantle | Move forward into a ledge in the air | same |

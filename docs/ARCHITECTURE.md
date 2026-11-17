@@ -353,12 +353,23 @@ collision off (the vehicle takes the hits).
 - Everything breakable is in group "props" and answers `knock(impulse, at)`
   and `hurt(amount, who)`; bullets, melee and `game.explode` call them.
 - **Doors** (`map._door`, automatically in both ground-floor doorways of
-  `_building`): AnimatableBody3D on collision layer 8. Characters and
-  vehicles collide with 8; the nav graph does not, and the door opens for
-  anything in group "door_users" that is a bot / zombie or moving fast.
-  Humans use interact (`game.door_near`). 110 hp, then planks.
-- **Props** have `hp` (from their mass); `EXPLOSIVE` models call
-  `game.explode_later`. Fuel barrels and gas cans are in `map.CLUTTER`.
+  `_building`) have no button. `door.gd` is a damped spring on the hinge
+  angle: bodies in group "door_users" standing in the doorway push the leaf
+  away from their side (latched in `_side` so it does not flip as they pass
+  through), harder the faster they move; with nobody there it swings back
+  and settles. Characters do not collide with the leaf (layer 8 is only in
+  the bullet / melee masks), so nothing ever has to be opened and the nav
+  graph is unaffected. `knock()` kicks the hinge, `hurt()` breaks it
+  (110 hp).
+- **Props** are solid: layer 4 is in the player and zombie collision masks,
+  and prop masks include bodies. Mass = `DENSITY` (70 kg/m3) x bounding
+  box volume, hp from mass. Every shove is a fixed impulse (walking into it
+  ~8 kg x speed, bullets damage x 0.35, blasts up to 260 N s) capped at
+  `MAX_SPEED_GAIN`, so light things fly and heavy things shift.
+  `EXPLOSIVE` models call `game.explode_later`. `map._scatter_props` places
+  clutter side by side (never overlapping) and awake, so it settles. The
+  nav graph still ignores props: a bot blocked by furniture shoves it or
+  uses its unstick hop.
 - **Crumbling walls** (`map._weak_wall`, and `map._ruins()` scatters stubs
   on open ground of every outdoor map): StaticBody3D on layer 1 (so bots
   path around them), drawn as a MultiMesh of bricks, losing bricks below

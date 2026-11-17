@@ -993,10 +993,11 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 
 
 ## A loose physics prop (prop.gd) standing at `pos`.
-func _prop(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, weight := 4.0, mirror := true) -> void:
+func _prop(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, weight := 4.0, mirror := true, awake := false) -> void:
 	for k in (2 if mirror else 1):
 		var p = Prop.new()
 		p.setup(path, scl, weight)
+		p.awake = awake
 		p.position = pos if k == 0 else Vector3(-pos.x, pos.y, -pos.z)
 		p.rotation.y = yaw + (PI if k == 1 else 0.0)
 		add_child(p)
@@ -1157,8 +1158,14 @@ func _scatter_props() -> void:
 			continue
 		var c: Array = CLUTTER[randi() % CLUTTER.size()]
 		var n := 1 + (randi() % 3 if float(c[2]) < 6.0 else 0)
+		# Side by side with room between them (never inside one another), dropped
+		# from a hand's height so physics settles them.
+		var bs: Vector3 = Models.bounds(c[0]).size * float(c[1])
+		var gap := maxf(bs.x, bs.z) * 1.45 + 0.1
+		var a0 := randf() * TAU
 		for i in n:
-			_prop(c[0], p + Vector3(randf_range(-0.6, 0.6), 0.05 + i * 0.02, randf_range(-0.6, 0.6)), randf() * TAU, c[1], c[2], false)
+			var off := Vector3.ZERO if n == 1 else Vector3(cos(a0 + i * TAU / n), 0, sin(a0 + i * TAU / n)) * gap * 0.6
+			_prop(c[0], p + off + Vector3(0, 0.12, 0), randf() * TAU, c[1], c[2], false, true)
 		placed += 1
 
 

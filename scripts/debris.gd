@@ -32,7 +32,7 @@ static func burst(parent: Node, xf: Transform3D, area: Vector3, chunk: Vector3, 
 	for i in count:
 		var body := RigidBody3D.new()
 		body.collision_layer = 0
-		body.collision_mask = 1
+		body.collision_mask = 1 | 4
 		body.mass = 2.0
 		body.angular_damp = 1.0
 		var mi := MeshInstance3D.new()
