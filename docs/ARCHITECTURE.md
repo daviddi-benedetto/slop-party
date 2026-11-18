@@ -673,7 +673,8 @@ across the UI.
   over the arena, `UPDATE_ONCE`, interior on indoor maps.
 - **Air** (`map._ambient_life`): one GPUParticles3D box over the arena with
   specks that suit the theme (pollen, embers, fireflies, neon dust, indoor
-  dust motes); skipped on Low scenery.
+  dust motes); skipped on Low scenery. Reverse distance fade (visible
+  within 5 m, gone by 14 m): far specks flickered against the soft focus.
 - **Neon flicker** (`map._flicker`): with a neon theme (`neon_scale` > 1.2)
   about a quarter of `_glow` lights buzz and stutter in `_process`.
 - **Water** (`_mats.water`): a seamless noise normal map whose UV offset
@@ -699,11 +700,14 @@ across the UI.
 - **Doors** are off (`map.DOORS`): doorways stay open; door.gd remains.
 - **Keep-clear placement** (`map._keep_clear`, `_defer`, `_place_deferred`):
   `_fixed` and `_prop` are queued during the build; doorways (`_door`, even
-  with doors off), stairs (`_stairs`, plus landings) and the floor in front
+  with doors off, and every wall opening that reaches the floor in
+  `_wall_x` / `_wall_z`), stairs (`_stairs`, plus landings) and the floor in front
   of building windows register keep-clear rects; at the end of build()
   anything standing in one is dropped (mirrored copies together), and
   collider-less things standing on dropped furniture go too. `--clutter`
-  prints the counts. Outdoor `_prop`s become fixed scenery (small ones
+  prints the counts. Outdoor `_prop`s (except up to `MAX_LIVE_BOOMS` = 12
+  Prop.EXPLOSIVE fuel cans / barrels per map, which stay real props so they
+  still blow up; more would cost frame time, so the rest are scenery) become fixed scenery (small ones
   without a collider); `_scatter_props` is no longer called. Props are
   heavy (DENSITY 220, min 8 kg) and players use `platform_floor_layers = 1`
   so a moving prop never carries or flings them.

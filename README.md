@@ -125,8 +125,10 @@ PLAY** lists every button and **MODES** explains each mode.
   have no loose clutter; outdoor dressing stays put, and the small stuff
   does not block you. A few heavy things indoors barely move when you push
   them, and walking over anything never flings you into the air. Glass
-  shatters, fuel barrels explode and ruined walls crumble.
-- **Scenery:** dense wind-blown grass and flowers over rolling mounds, a
+  shatters, fuel barrels and red gas cans explode (indoors and out) and
+  ruined walls crumble. Doorways, stairs and windows are always clear.
+- **Scenery:** dense wind-blown cartoon grass (fat, round-tipped blades)
+  and flowers on clumpy turf with bare patches, over rolling mounds, a
   horizon of hills and mountains on every map, warm lamps indoors, sun rays.
 - **Surfaces with depth:** brick, stone, cobbles, tiles, planks, siding,
   shingles, metal panels and corrugated sheet have grooves you can see into

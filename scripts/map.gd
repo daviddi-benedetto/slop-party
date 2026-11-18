@@ -64,6 +64,7 @@ const Surface = preload("res://scripts/surface.gd")
 signal nav_built
 
 const DOORS := false              # hang doors in doorways (off: open doorways everywhere)
+const MAX_LIVE_BOOMS := 12         # outdoor fuel cans / barrels kept as live, explodable props per map
 const WIN_W := 1.6                # building windows: width, sill and top height
 const WIN_LO := 0.6
 const WIN_HI := 2.6
@@ -412,6 +413,7 @@ var _time := 0.0
 var _beacon: StandardMaterial3D   # skyline warning lights (blink together)
 var _rotors: Array = []           # wind turbine rotors (spin in _process)
 var _blimp: Node3D                # a blimp circling the arena far out
+var _live_booms := 0              # outdoor fuel cans / barrels left as live (explodable) props
 var _keep: Array = []             # [Rect2 (XZ), y0, y1]: doorways, stairs, windows kept clear of furniture
 var _deferred: Array = []         # furniture / props waiting for the keep-clear check at the end of build()
 var _dropped := 0
@@ -881,7 +883,8 @@ func _ambient_life() -> void:
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	mat.albedo_color = Color(col.r * (1.0 + glow), col.g * (1.0 + glow), col.b * (1.0 + glow), col.a)
+	glow *= 0.5
+	mat.albedo_color = Color(col.r * (1.0 + glow), col.g * (1.0 + glow), col.b * (1.0 + glow), col.a * 0.8)
 	if glow > 0.0:
 		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	var g := Gradient.new()
@@ -898,8 +901,13 @@ func _ambient_life() -> void:
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE * size
 	quad.material = mat
+	# Only specks near you show: far ones fade out (they flickered against the
+	# soft-focus background and read as flashing).
+	mat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA
+	mat.distance_fade_min_distance = 14.0
+	mat.distance_fade_max_distance = 5.0
 	var p := GPUParticles3D.new()
-	p.amount = clampi(int(half_x * half_z * 0.12), 120, 600)
+	p.amount = clampi(int(half_x * half_z * 0.05), 60, 260)
 	p.lifetime = 9.0
 	p.preprocess = 9.0
 	p.process_material = pm
@@ -1115,7 +1123,7 @@ func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float
 	if depth_ok and Surface.DEPTH.has(kind) and Settings.v("parallax"):
 		# Parallax occlusion surfaces (surface.gd): grooves with real depth.
 		var tx: Array = _tex(kind)
-		var sm := Surface.make(toy.lerp(Color.WHITE, 0.06), _soft(kind, tx[0]) if tx[2] == null else tx[0], tx[1], tx[3], tx[2],
+		var sm := Surface.make(toy.lerp(Color.WHITE, 0.06), _soft(kind, tx[0]) if tx[2] == null and kind != "lawn" else tx[0], tx[1], tx[3], tx[2],
 			uv_scale, Surface.DEPTH[kind], maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6)
 		sm.set_shader_parameter("weather", 0.6 if indoor else 1.0)
 		if not indoor:
@@ -1357,8 +1365,12 @@ static func _tex(kind: String) -> Array:
 					val = 0.82 + 0.12 * float((px / 64) % 2) + n * 0.08
 					hgt = 0.5 + 0.3 * rng.randf()
 				"lawn":
-					val = 0.72 + 0.28 * n + rng.randf_range(-0.06, 0.06)
-					hgt = n
+					# Clumpy turf with patches of bare soil, so the ground under
+					# the grass reads as ground, not a flat green sheet.
+					var clump: float = noise.call(u, v, 16)
+					var soil: float = smoothstep(0.42, 0.3, n)
+					val = (0.62 + 0.22 * n + 0.2 * clump + rng.randf_range(-0.05, 0.05)) * (1.0 - 0.35 * soil)
+					hgt = clampf(0.3 + 0.55 * clump - 0.25 * soil, 0.0, 1.0)
 				"soft":
 					val = 0.7 + 0.3 * n
 					hgt = n
@@ -1481,7 +1493,13 @@ func _prop(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, weight := 4.0, mi
 	# Clutter outdoors is scenery, not physics: it stays where it is (and the
 	# small stuff does not even block you). Indoors a few loose things remain,
 	# heavy enough that a shove barely moves them.
-	if not indoor and not _under_roof(pos):
+	# Fuel cans and barrels stay live so they can be shot and blow up, but
+	# only a handful per map: each live prop is a separate body and draw call,
+	# and dozens of them cost Frontline several milliseconds a frame.
+	var boom: bool = path in Prop.EXPLOSIVE and _live_booms < MAX_LIVE_BOOMS
+	if boom:
+		_live_booms += 2 if mirror else 1
+	if not indoor and not _under_roof(pos) and not boom:
 		var bs: Vector3 = Models.bounds(path).size * scl
 		_fixed(path, pos, yaw, scl, mirror, "box" if maxf(bs.x, bs.z) > 0.7 and bs.y > 0.5 else "none")
 		return
@@ -1752,7 +1770,7 @@ func _place_deferred() -> void:
 			continue
 		(d[0] as Callable).call()
 	if "--audit" in OS.get_cmdline_user_args() or "--clutter" in OS.get_cmdline_user_args():
-		print("[clutter] %s: %d placed, %d left out (doorways, stairs, windows)" % [MAPS[map_index].name, _deferred.size() - _dropped, _dropped])
+		print("[clutter] %s: %d placed, %d left out (doorways, stairs, windows), %d live explosives" % [MAPS[map_index].name, _deferred.size() - _dropped, _dropped, _live_booms])
 	_deferred.clear()
 
 
@@ -2020,6 +2038,10 @@ func _wall_segments(a: float, b: float, h: float, openings: Array) -> Array:
 
 ## A wall running along X at depth z, from x0 to x1.
 func _wall_x(z: float, x0: float, x1: float, y0: float, h: float, mat: String, openings := [], mirror := true, t := 0.3) -> void:
+	for o in openings:
+		if float(o[2]) < 0.3 and float(o[3]) > 1.8:
+			# A doorway: keep 1.3 m either side clear of furniture.
+			_keep_clear(Rect2(float(o[0]) - float(o[1]) * 0.5 - 0.3, z - 1.3, float(o[1]) + 0.6, 2.6), y0 - 0.5, y0 + 2.5, mirror)
 	for s in _wall_segments(x0, x1, h, openings):
 		var length: float = s[1] - s[0]
 		var hh: float = s[3] - s[2]
@@ -2029,6 +2051,9 @@ func _wall_x(z: float, x0: float, x1: float, y0: float, h: float, mat: String, o
 
 ## A wall running along Z at x, from z0 to z1.
 func _wall_z(x: float, z0: float, z1: float, y0: float, h: float, mat: String, openings := [], mirror := true, t := 0.3) -> void:
+	for o in openings:
+		if float(o[2]) < 0.3 and float(o[3]) > 1.8:
+			_keep_clear(Rect2(x - 1.3, float(o[0]) - float(o[1]) * 0.5 - 0.3, 2.6, float(o[1]) + 0.6), y0 - 0.5, y0 + 2.5, mirror)
 	for s in _wall_segments(z0, z1, h, openings):
 		var length: float = s[1] - s[0]
 		var hh: float = s[3] - s[2]
@@ -3005,12 +3030,13 @@ static func _foliage_tex(kind: String, base: Color, tip: Color) -> ImageTexture:
 	img.fill(Color(tip.r, tip.g, tip.b, 0.0))
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash(kind)
-	var blades := 26 if kind == "grass" else (12 if kind.begins_with("flower") else 0)
+	# Grass: a few fat, soft, round-tipped blades (cartoony), not many sharp ones.
+	var blades := 11 if kind == "grass" else (12 if kind.begins_with("flower") else 0)
 	for i in blades:
-		var x0 := rng.randf_range(n * 0.3, n * 0.7)
-		var length := rng.randf_range(0.5, 1.0) * n * (0.95 if kind == "grass" else 0.6)
-		var bend := rng.randf_range(-0.5, 0.5) * n * 0.7
-		var w0 := rng.randf_range(2.6, 4.6)
+		var x0 := rng.randf_range(n * 0.28, n * 0.72)
+		var length := rng.randf_range(0.45, 0.85) * n * (0.95 if kind == "grass" else 0.6)
+		var bend := rng.randf_range(-0.3, 0.3) * n * 0.5
+		var w0 := rng.randf_range(6.0, 9.0) if kind == "grass" else rng.randf_range(2.6, 4.6)
 		var shade := rng.randf_range(0.82, 1.15)
 		_paint_blade(img, x0, length, bend, w0, base * shade, tip * shade)
 	if kind == "fern":
@@ -3049,7 +3075,8 @@ static func _paint_blade(img: Image, x0: float, length: float, bend: float, w0: 
 		var t := float(s) / maxf(steps, 1)
 		var cx := x0 + bend * t * t
 		var y := n - 1 - s
-		var half := maxf(0.5, w0 * (1.0 - t * 0.92))
+		# Tapers gently, then rounds off at the tip.
+		var half := maxf(0.5, w0 * (1.0 - t * 0.45) * sqrt(maxf(0.0, 1.0 - pow(maxf(0.0, (t - 0.75) / 0.25), 2.0))))
 		var col := base.lerp(tip, t)
 		for dx in range(-int(ceil(half)), int(ceil(half)) + 1):
 			var px := int(round(cx)) + dx
