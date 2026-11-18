@@ -55,6 +55,7 @@ const Glass = preload("res://scripts/glass.gd")
 const ZombieMap = preload("res://scripts/map_zombie.gd")
 const CastleMap = preload("res://scripts/map_castle.gd")
 const CityMap = preload("res://scripts/map_city.gd")
+const RaceMap = preload("res://scripts/map_race.gd")
 const Arch = preload("res://scripts/arch.gd")
 const Door = preload("res://scripts/door.gd")
 const Rubble = preload("res://scripts/rubble.gd")
@@ -121,11 +122,14 @@ const MAPS := [
 	{"name": "CASTLE", "size": "LARGE", "clutter": "castle", "theme": "castle", "half": Vector2(46, 34), "wall": 1.8, "nav_step": 2.0, "nav_top": 16.0},
 	# Frontline and free-for-all: a medieval city of towers (map_city.gd).
 	{"name": "HIGHTOWN", "size": "HUGE", "clutter": "front", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 41.0},
+	# Racing mode only: the circuit (map_race.gd).
+	{"name": "RACEWAY", "size": "HUGE", "clutter": "front", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 5.0, "nav_top": 8.0},
 ]
 const FRONTLINE := 6             # index of the Frontline map; the lobby lists maps below it
 const ZOMBIE := 7                # large Zombies-only indoor/outdoor map
 const CASTLE := 8                # Medieval mode's home; also in the lobby's map list
 const HIGHTOWN := 9              # medieval tower city (Frontline or free-for-all)
+const RACEWAY := 10              # Racing mode's circuit
 const ARENAS := [0, 1, 2, 3, 4, 5, 8, 6, 9]   # maps the lobby offers (Rounds, Gun Game); 6, 9 = huge free-for-alls
 const FRONT_MAPS := [6, 9]       # maps Frontline mode can be played on
 const TIMES := ["day", "sunset", "night"]
@@ -383,6 +387,8 @@ var flags: Array = []             # Frontline: capture point positions (A, B, C)
 var bases: Array = []             # Frontline: team 0 / team 1 base centres
 var vehicle_spots: Array = []     # Frontline: [type, Transform3D, team]
 var ffa_vehicle_spots: Array = [] # Rounds on this map: [type, Transform3D] (unarmed)
+var race_path: Array = []         # Racing: the circuit's centre line, every 3 m (map_race.gd)
+var race_width := 14.0
 var nav_links: Array = []         # [bottom, top] stair flights too steep for the nav grid's step (map_city.gd)
 
 var spawn_points: Array = []      # Array of Vector3
@@ -483,6 +489,7 @@ func build(index := 0, theme_key := "classic") -> void:
 		7: ZombieMap.build(self)
 		8: CastleMap.build(self)
 		9: CityMap.build(self)
+		10: RaceMap.build(self)
 		_: _layout_yard()
 	if _audit:
 		_audit_report()
@@ -541,6 +548,8 @@ func music_key() -> String:
 		return "frontline"
 	if map_index == HIGHTOWN:
 		return "castle"
+	if map_index == RACEWAY:
+		return "frontline"
 	if map_index == ZOMBIE:
 		return "zombies"
 	return "castle" if map_index == CASTLE else "map%d" % map_index

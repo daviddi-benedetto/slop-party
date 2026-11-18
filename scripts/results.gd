@@ -58,6 +58,8 @@ func _ready() -> void:
 ## The fun titles: each goes to the best player for it, preferring players
 ## who have not won one yet, and only when it means something.
 func _pick_awards() -> Array:
+	if not rows.is_empty() and not (rows[0].get("stats", []) as Array).is_empty():
+		return []                 # a mode with its own columns (Racing): no KO awards
 	var defs := [
 		["knife", "UP CLOSE", "%d melee KOs", "skull", 1, true],
 		["boxes", "BOX ADDICT", "opened %d mystery boxes", "star", 2, true],
@@ -161,9 +163,12 @@ func _draw() -> void:
 		UiKit.text(self, Vector2(r.position.x, r.position.y + 42 * s), place, 26 * s, UiKit.GOLD if i == 0 else UiKit.CREAM, HORIZONTAL_ALIGNMENT_RIGHT, cw - 18 * s, 700, 0.14)
 		var t0 := 0.9 + i * 0.1
 		var stats := [["KOs", _count(row.kills, t0)], ["DEATHS", _count(row.deaths, t0)], ["CARDS", _count(row.cards, t0)]]
+		if not (row.get("stats", []) as Array).is_empty():
+			stats = row.stats              # a mode's own columns (Racing: place, best lap, time)
 		for j in 3:
 			var sx := r.position.x + cw * (j + 0.5) / 3.0
-			UiKit.num(self, Vector2(sx - 60 * s, r.position.y + 106 * s), stats[j][1], 44 * s, UiKit.GOLD if j == 0 else Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, 120 * s, 0.14)
+			var vtxt: String = str(stats[j][1])
+			UiKit.num(self, Vector2(sx - 60 * s, r.position.y + 106 * s), vtxt, (44.0 if vtxt.length() <= 4 else 26.0) * s, UiKit.GOLD if j == 0 else Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, 120 * s, 0.14)
 			UiKit.text(self, Vector2(sx - 60 * s, r.position.y + 132 * s), stats[j][0], 16 * s, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, 120 * s, 600, 0.0)
 
 	# Awards down the right side, one after another.

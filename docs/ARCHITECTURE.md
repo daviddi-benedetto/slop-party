@@ -506,6 +506,40 @@ collision off (the vehicle takes the hits).
   rebuilt, so bots keep walking around a fallen wall.
 - `debris.gd` chunks collide with the world only and cap at 140 alive.
 
+### Racing (`racing.gd`, `map_race.gd`, vehicle "racer")
+
+- Mode "racing" forces `Map.RACEWAY` (10). `map_race.gd` resamples a closed
+  Catmull-Rom loop through `CTRL` every 3 m into `map.race_path` (index 0 =
+  start line), then lays the asphalt (overlapping thin slabs; world-space
+  textures hide the overlaps), kerbs where `_bend` is high, striped barriers
+  `RUNOFF` beyond each edge (panels that would fold over the road in a tight
+  bend are dropped, `_near_road`), the start gantry, grid boxes
+  (`grid_slot`), a grandstand, tyre stacks and trees. The road strip is in
+  `no_grass` so grass stays off it.
+- `racing.gd`: `prepare` fills the grid to 6 with CPU racers; `start` puts
+  everyone in a "racer" (`disarm()`ed, `racing = true`: no getting out, no
+  ram damage, 1e6 hp) on the grid. Per tick: progress = the furthest path
+  sample within 12 ahead and 1.3 W of the car (crossing index 0 counts a
+  lap), off-asphalt top speed x0.55 (`vehicle.top_scale`), resets after 4 s
+  without progress, upside down, off the map or on interact. Places go into
+  `kills` (game.ranked() asks `rules.ranked()`); `result_stats(p)` gives the
+  results table its PLACE / BEST LAP / TIME columns (results.gd uses a row's
+  `stats` when present, and skips the KO awards). Ends when every human has
+  finished, or 30 s after the winner. Clock zero = the green light (`t0`).
+- CPU drivers (`RaceBrain`, extends bot_brain.gd): aim at a path point
+  3 + speed/7 samples ahead, steer by the heading error, lift for sharp
+  bends, top speed x0.86-0.99 by skill.
+- Lobby: LAPS chip (`RACE_LAPS` 2/3/5/8/12) is `kill_target`.
+
+### Vehicle views
+
+The melee button (R3 / F) toggles `player.fp_drive`; `game._vehicle_camera`
+then puts the camera at `vehicle.SEATS[type]` (still free to look around).
+On unarmed ground vehicles (rides, race cars) the view also swings round
+behind the car by itself (`p.yaw` eases to the vehicle's heading), quickly
+in first person; armed vehicles keep the free camera because it aims.
+`--fp` starts player 1 in first person.
+
 ### Gun Game and Medieval (`gungame.gd`, `medieval.gd`, `map_castle.gd`)
 
 - Both are free-for-alls built on the rules hooks. Optional hooks added for

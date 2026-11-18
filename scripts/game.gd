@@ -62,13 +62,14 @@ const Pickup = preload("res://scripts/pickup.gd")
 const Cards = preload("res://scripts/cards.gd")
 const Zombies = preload("res://scripts/zombies.gd")
 const Frontline = preload("res://scripts/frontline.gd")
+const Racing = preload("res://scripts/racing.gd")
 const Pet = preload("res://scripts/pet.gd")
 
 const GunGame = preload("res://scripts/gungame.gd")
 const Medieval = preload("res://scripts/medieval.gd")
 
-const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
-const MODE_NAMES := {"rounds": "ROUNDS", "zombies": "ZOMBIES", "frontline": "FRONTLINE", "gungame": "GUN GAME", "medieval": "MEDIEVAL"}
+const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval", "racing"]
+const MODE_NAMES := {"rounds": "ROUNDS", "zombies": "ZOMBIES", "frontline": "FRONTLINE", "gungame": "GUN GAME", "medieval": "MEDIEVAL", "racing": "RACING"}
 
 var config := {}
 var world: Node3D
@@ -152,6 +153,8 @@ func _ready() -> void:
 		map_i = map_i if map_i in Map.FRONT_MAPS else Map.FRONTLINE
 	elif mode == "medieval":
 		map_i = Map.CASTLE
+	elif mode == "racing":
+		map_i = Map.RACEWAY
 	elif not map_i in Map.ARENAS:
 		map_i = 0
 	if mode == "zombies":
@@ -162,6 +165,8 @@ func _ready() -> void:
 		rules = GunGame.new()
 	elif mode == "medieval":
 		rules = Medieval.new()
+	elif mode == "racing":
+		rules = Racing.new()
 	map.build(map_i, str(config.get("theme", config.get("time", "random"))))
 	_look = map.look
 	UiKit.use_theme(_look)
@@ -603,6 +608,21 @@ func _update_cameras(delta: float) -> void:
 func _vehicle_camera(v: Dictionary, p, delta: float) -> void:
 	var veh = p.vehicle
 	var cam: Camera3D = v.camera
+	var vyaw: float = veh.get_global_transform_interpolated().basis.get_euler().y
+	# Unarmed ground vehicles (rides, race cars): the view swings round behind
+	# the car on its own; with a gun the camera is also your aim, so it stays.
+	if not veh.armed and veh.type != "heli":
+		var follow := 6.0 if p.fp_drive else (2.2 if absf(veh._speed) > 3.0 else 0.4)
+		p.yaw = lerp_angle(p.yaw, vyaw, clampf(delta * follow, 0.0, 1.0))
+	if p.fp_drive:
+		# First person from the seat; you can still look around.
+		var seat: Vector3 = veh.get_global_transform_interpolated() * veh.SEATS.get(veh.type, Vector3(0, 1.6, 0))
+		var fp_pitch: float = p.pitch * 0.85
+		var sh2: float = p.shake * p.shake * 0.05 * Settings.v("shake")
+		cam.global_transform = Transform3D(Basis.from_euler(Vector3(fp_pitch + sin(time * 61.0) * sh2, p.yaw, 0.0)), seat)
+		var zoom2: float = 0.55 if p.brain.aim and veh.can_zoom else 1.0
+		cam.fov = lerpf(cam.fov, rad_to_deg(2.0 * atan(tan(deg_to_rad(v.fov + 4.0) * 0.5) * zoom2)), clampf(delta * 10.0, 0.0, 1.0))
+		return
 	var pivot: Vector3 = veh.get_global_transform_interpolated().origin + Vector3(0, veh.cam_height, 0)
 	var pitch: float = p.pitch * 0.85 - 0.12
 	var basis := Basis.from_euler(Vector3(pitch, p.yaw, 0.0))
@@ -883,7 +903,8 @@ func _show_results() -> void:
 		if p.is_bot and p.index >= 6:
 			continue
 		rows.append({"name": p.pname, "color": p.color, "kind": p.kind, "hat": p.hat, "face": p.face, "back": p.back, "kills": p.kills, "deaths": p.deaths, "cards": p.cards.size(), "team": p.team,
-			"knife": p.knife_kills, "boxes": p.boxes_opened, "damage": roundi(p.damage_dealt), "streak": p.best_streak})
+			"knife": p.knife_kills, "boxes": p.boxes_opened, "damage": roundi(p.damage_dealt), "streak": p.best_streak,
+			"stats": rules.result_stats(p) if rules != null and rules.has_method("result_stats") else []})
 	var title := ""
 	if rules != null:
 		title = rules.results_title()
@@ -1102,6 +1123,8 @@ func explode_later(pos: Vector3, radius: float, damage: float, shooter) -> void:
 
 
 func ranked() -> Array:
+	if rules != null and rules.has_method("ranked"):
+		return rules.ranked()
 	var r: Array = players.duplicate()
 	r.sort_custom(func(a, b): return a.kills > b.kills if a.kills != b.kills else a.deaths < b.deaths)
 	return r

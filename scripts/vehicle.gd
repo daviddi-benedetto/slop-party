@@ -4,6 +4,12 @@ extends CharacterBody3D
 ## rocket salvos). One seat each. "bike" is a light, fast motorbike with no
 ## weapon (Rounds on Frontline).
 ##
+## "racer" is the Racing mode's car (racing.gd): fast, grippy, no weapon,
+## cannot be wrecked, and you cannot get out (interact resets it instead).
+##
+## Views: the melee button (R3 / F) switches the driver between the chase
+## camera and first person from the seat (SEATS; game._vehicle_camera).
+##
 ## armed = false (Rounds on the Frontline map: game.gd _spawn_ffa_vehicles)
 ## builds them without guns or rocket pods, never fires and has half the
 ## armour; rams still hurt a little (10-35, by speed) and knock you flying.
@@ -42,7 +48,12 @@ const SPECS := {
 		"cam_h": 3.0, "cam_d": 13.0, "enter": 3.0},
 	"bike": {"label": "BIKE", "hp": 260.0, "speed": 30.0, "accel": 22.0, "turn": 2.6, "size": Vector3(0.8, 1.1, 2.1),
 		"cam_h": 2.0, "cam_d": 6.0, "enter": 2.0},
+	"racer": {"label": "RACE CAR", "hp": 1000000.0, "speed": 42.0, "accel": 26.0, "turn": 2.5, "size": Vector3(1.8, 0.8, 3.9),
+		"cam_h": 1.9, "cam_d": 7.0, "enter": 2.4},
 }
+## First-person eye point (vehicle space; the vehicle faces -Z).
+const SEATS := {"buggy": Vector3(-0.4, 1.6, -0.65), "tank": Vector3(0, 2.75, 0.5), "heli": Vector3(0, 2.0, -1.15),
+	"bike": Vector3(0, 1.7, 0.35), "racer": Vector3(0, 1.3, 0.0)}
 
 var game
 var type := "buggy"
@@ -68,6 +79,8 @@ var rockets := 4
 var throttle := 0.0
 var last_attacker = null
 var armed := true                # false: no guns, soft rams (RAM_MAX), half armour (Rounds)
+var racing := false              # Racing mode: no getting out, no ram damage
+var top_scale := 1.0             # top speed multiplier (racing.gd: off the track, CPU skill)
 var _rammed := {}                # instance id -> msec of the last ram (one hit per bump)
 const RAM_MAX := 35.0            # unarmed ride: most a ram can do
 
@@ -129,6 +142,7 @@ func _ready() -> void:
 		"tank": _build_tank()
 		"heli": _build_heli()
 		"bike": _build_bike()
+		"racer": _build_racer()
 		_: _build_buggy()
 	_merge_tree(_visual)
 	_mg_stats = _weapon_stats(10.0, 0.0, 160.0, 0.0, 0.03)
@@ -218,7 +232,10 @@ func eject(p) -> void:
 ## Called from the driver's player._physics_process (after its brain update).
 func control(p, _delta: float) -> void:
 	p.global_position = global_position + Vector3(0, 0.6, 0)
-	if p.brain.interact:
+	if p.brain.melee:
+		p.fp_drive = not p.fp_drive
+		Sfx.play("tick", -8.0, 1.2 if p.fp_drive else 0.9)
+	if p.brain.interact and not racing:
 		eject(p)
 
 
@@ -256,14 +273,16 @@ func _physics_process(delta: float) -> void:
 func _drive(delta: float, b) -> void:
 	var move: Vector2 = b.move if b != null else Vector2.ZERO
 	throttle = move.y
-	var top: float = _spec.speed
+	var top: float = _spec.speed * top_scale
 	var want: float = move.y * top * (0.5 if move.y < 0.0 else 1.0)
 	_speed = move_toward(_speed, want, _spec.accel * delta * (1.6 if signf(want) != signf(_speed) else 1.0))
 	if absf(move.y) < 0.05:
 		_speed = move_toward(_speed, 0.0, _spec.accel * 0.6 * delta)
 	var steer: float = -move.x * _spec.turn
-	if type == "buggy" or type == "bike":
+	if type == "buggy" or type == "bike" or type == "racer":
 		steer *= clampf(absf(_speed) / 6.0, 0.0, 1.0) * signf(_speed if absf(_speed) > 0.1 else 1.0)
+		if type == "racer":
+			steer *= lerpf(1.0, 0.7, clampf(absf(_speed) / _spec.speed, 0.0, 1.0))   # steadier flat out
 	rotate_y(steer * delta)
 	var fwd := -global_transform.basis.z
 	var v := fwd * _speed
@@ -281,7 +300,7 @@ func _drive(delta: float, b) -> void:
 			var c := get_slide_collision(i)
 			var other = c.get_collider()
 			if other != null and other.has_method("take_damage") and other != self and absf(_speed) > 7.0:
-				if game.is_enemy(driver, other) and other.alive and _ram_ready(other):
+				if not racing and game.is_enemy(driver, other) and other.alive and _ram_ready(other):
 					if armed:
 						other.take_damage(absf(_speed) * (3.0 if type == "buggy" else 6.0), driver)
 						if "velocity" in other and not other.has_method("seat_count"):
@@ -312,7 +331,7 @@ func _drive(delta: float, b) -> void:
 		_visual.rotation.z = lerpf(_visual.rotation.z, atan2(local.x, local.y) + lean, clampf(delta * 8.0, 0.0, 1.0))
 	for w in _wheels:
 		w.rotation.x -= _speed * delta / 0.42 * float(w.get_meta("dir", 1.0))
-	if type == "buggy" and _wheels.size() >= 2:
+	if (type == "buggy" or type == "racer") and _wheels.size() >= 2:
 		for i in 2:
 			_wheels[i].get_parent().rotation.y = move.x * -0.45
 	elif type == "bike" and _fork != null:
@@ -855,3 +874,43 @@ func _glass_mat() -> StandardMaterial3D:
 	g.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	g.roughness = 0.05
 	return g
+
+
+## A toy Formula car in the driver's colour: low tub, nose and front wing,
+## side pods, a big rear wing on struts, fat tyres (the front pair steers),
+## a driver's helmet in the cockpit and a white racing number panel.
+func _build_racer() -> void:
+	var paint := _mat(color, 0.3, 0.5)
+	var dark := _mat(Color(0.08, 0.08, 0.1), 0.5, 0.4)
+	var white := _mat(Color(0.95, 0.95, 0.95), 0.4, 0.1)
+	var metal := _mat(Color(0.7, 0.72, 0.76), 0.25, 0.9)
+	var tyre := _mat(Color(0.05, 0.05, 0.05), 0.95, 0.0)
+	var helmet := _mat(color.lerp(Color.WHITE, 0.55), 0.25, 0.3)
+	# Tub, nose, side pods.
+	_bx(_visual, Vector3(0.9, 0.42, 3.0), paint, Vector3(0, 0.5, 0.1))
+	_bx(_visual, Vector3(0.6, 0.28, 1.4), paint, Vector3(0, 0.44, -1.9), Vector3(0.12, 0, 0))
+	for sx in [-0.72, 0.72]:
+		_bx(_visual, Vector3(0.55, 0.36, 1.5), paint, Vector3(sx, 0.42, 0.35))
+		_bx(_visual, Vector3(0.5, 0.06, 1.3), dark, Vector3(sx, 0.62, 0.4))
+	_bx(_visual, Vector3(0.92, 0.08, 1.0), white, Vector3(0, 0.73, -0.75))       # number panel
+	_bx(_visual, Vector3(0.2, 0.1, 2.6), white, Vector3(0, 0.75, -0.2))         # stripe
+	# Cockpit and the driver's helmet.
+	_bx(_visual, Vector3(0.62, 0.1, 0.9), dark, Vector3(0, 0.74, 0.3))
+	var ball := SphereMesh.new()
+	ball.radius = 0.24
+	ball.height = 0.48
+	_part(_visual, ball, helmet, Vector3(0, 0.98, 0.35))
+	_bx(_visual, Vector3(0.4, 0.1, 0.06), dark, Vector3(0, 1.0, 0.13))          # visor
+	_bx(_visual, Vector3(0.3, 0.45, 0.55), paint, Vector3(0, 0.95, 0.95), Vector3(-0.2, 0, 0))   # air box
+	# Front wing and rear wing.
+	_bx(_visual, Vector3(2.0, 0.06, 0.45), paint, Vector3(0, 0.2, -2.55))
+	for sx in [-0.98, 0.98]:
+		_bx(_visual, Vector3(0.05, 0.25, 0.5), dark, Vector3(sx, 0.3, -2.55))
+		_bx(_visual, Vector3(0.05, 0.55, 0.6), dark, Vector3(sx * 0.8, 1.05, 1.85))
+	_bx(_visual, Vector3(1.75, 0.08, 0.55), paint, Vector3(0, 1.35, 1.9), Vector3(-0.15, 0, 0))
+	_bx(_visual, Vector3(1.75, 0.06, 0.3), dark, Vector3(0, 1.2, 2.05), Vector3(-0.25, 0, 0))
+	_cy(_visual, 0.05, 0.6, metal, Vector3(0, 0.95, 1.85))
+	# Wheels: fronts steer (pushed to the front of _wheels).
+	for sx in [-0.95, 0.95]:
+		_wheel(Vector3(sx, 0.42, -1.45), 0.42, 0.42, tyre, metal, true)
+		_wheel(Vector3(sx, 0.46, 1.35), 0.46, 0.5, tyre, metal)

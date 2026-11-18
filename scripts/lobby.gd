@@ -45,8 +45,9 @@ const KILL_TARGETS := [5, 10, 15, 20, 30]
 const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK"]
 const KEYS := ["kind", "color", "hat", "back"]
 const SENS_STEPS := 10          # LOOK: this player's own look speed, 1-10
-const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
-const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE", "GUN GAME", "MEDIEVAL"]
+const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval", "racing"]
+const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE", "GUN GAME", "MEDIEVAL", "RACING"]
+const RACE_LAPS := [2, 3, 5, 8, 12]   # ~15 s a lap at full speed
 const TICKETS := [50, 100, 150, 200, 300]
 
 var seats: Array = []        # [{device, kind, color, hat, face, row}] in join order
@@ -340,6 +341,8 @@ func _shared(what: String, dir: int) -> void:
 				_say("Zombies is played in the Quarantine zone")
 			elif mode == "medieval":
 				_say("Medieval is fought in the Castle")
+			elif mode == "racing":
+				_say("Racing is on the Raceway")
 			else:
 				map_i = posmod(map_i + dir, Map.ARENAS.size())
 				Sfx.play("tick", -6.0, 1.2)
@@ -529,7 +532,7 @@ func _start() -> void:
 		parts.append({"device": seats[i].device if human else -2, "bot": not human, "view": human,
 			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back,
 			"pnum": i + 1})
-	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
+	var target: int = TICKETS[target_i] if mode == "frontline" else (RACE_LAPS[target_i] if mode == "racing" else KILL_TARGETS[target_i])
 	start.emit({"participants": parts, "kill_target": target, "map": Map.FRONT_MAPS[front_i] if mode == "frontline" else Map.ARENAS[map_i], "theme": _look_now.get("key", "classic"), "mode": mode,
 		"teams": "versus" if versus else "coop"})
 
@@ -589,7 +592,7 @@ func _draw() -> void:
 	var by := h - 140 * s
 	var pad: bool = not Input.get_connected_joypads().is_empty()
 	var mode: String = MODES[mode_i]
-	var map_info: Dictionary = Map.MAPS[{"frontline": Map.FRONT_MAPS[front_i], "zombies": Map.ZOMBIE, "medieval": Map.CASTLE}.get(mode, Map.ARENAS[map_i])]
+	var map_info: Dictionary = Map.MAPS[{"frontline": Map.FRONT_MAPS[front_i], "zombies": Map.ZOMBIE, "medieval": Map.CASTLE, "racing": Map.RACEWAY}.get(mode, Map.ARENAS[map_i])]
 	var bot_chip := ["Y" if pad else "B", "BOTS", str(bots)]
 	var goal_chip := ["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i]]
 	if mode == "frontline":
@@ -600,6 +603,9 @@ func _draw() -> void:
 		goal_chip = ["X" if pad else "K", "WAVES", "ENDLESS"]
 	elif mode == "gungame":
 		goal_chip = ["X" if pad else "K", "LADDER", "ALL WEAPONS"]
+	elif mode == "racing":
+		bot_chip = ["Y" if pad else "B", "GRID", "6 CARS"]
+		goal_chip = ["X" if pad else "K", "LAPS", "%d" % RACE_LAPS[target_i]]
 	var chips := [
 		["RT" if pad else "G", "MODE", MODE_LABELS[mode_i]],
 		bot_chip,

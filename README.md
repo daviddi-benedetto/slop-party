@@ -18,6 +18,10 @@ game modes:
   the CPU), conquest flags A/B/C, tickets, parachute drops, and vehicles –
   buggies, tanks and helicopters. Two maps: **Frontline** and **Hightown**
   (pick with the MAP chip, RB / M).
+- **Racing** – toy Formula cars on the **Raceway**, a circuit with kerbs,
+  crash barriers, a grandstand and a chequered start under a gantry. Pick
+  the laps (2–12, X / K); CPU racers fill the grid to six. Y / E puts your
+  car back on the track if you spin off. Race in third or first person.
 - **Gun Game** – free-for-all where every KO hands you the next weapon on a
   ladder of all 31 (guns, then magic, then medieval arms, ending on the
   Sword). Being finished off with a melee knife knocks you one rung down. First to
@@ -281,6 +285,7 @@ pair it before starting the game, then restart. If it's listed as
 | Melee (knife slash, or swing a melee weapon) | Right-stick click | F or middle mouse |
 | Reload | X | R |
 | Open a mystery box / get in or out of a vehicle | Y | E |
+| In a vehicle: first / third person | Right-stick click | F |
 | Taunt (Wave / Dance / Nope / Flex) | D-pad up / right / down / left | 1 / 2 / 3 / 4 |
 | Wall run / mantle | Jump at a wall and keep moving / move into a ledge in the air | same |
 | Pick a card | D-pad / stick left-right, A to confirm | A / D, Space to confirm |

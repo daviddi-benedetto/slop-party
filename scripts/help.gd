@@ -48,6 +48,7 @@ const MODES := [
 	["FRONTLINE", "Team war on a huge map: capture flags A, B and C to drain the other team's tickets. Parachute in, and drive buggies, tanks and helicopters."],
 	["GUN GAME", "Every knockout hands you the next weapon on a ladder of all 31. Get knifed and you drop a rung. First to score with the last weapon wins."],
 	["MEDIEVAL", "A free-for-all in the Castle with swords, axes, spears, bows, knives and powder bombs. Your block is a shield."],
+	["RACING", "Race cars on the Raceway: first over the line after the last lap wins. CPU racers fill the grid. Y / E puts your car back on the track; R3 / F switches to first person."],
 ]
 
 const TIPS := [

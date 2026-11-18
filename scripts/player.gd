@@ -151,6 +151,7 @@ var _jet_t := 0.0
 var pickup_prompt := ""           # what the HUD offers to pick up
 var prompt_key := ""              # button shown with the prompt ("" = interact)
 var vehicle = null                # vehicle.gd we are driving / flying (or null)
+var fp_drive := false             # in a vehicle: first-person view from the seat (melee button toggles)
 var picking := false              # choosing a card while alive (zombies intermission)
 var skydive := false              # dropped from the sky (Frontline spawn)
 var chute_open := false

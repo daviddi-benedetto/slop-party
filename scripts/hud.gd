@@ -489,7 +489,14 @@ func _draw_vehicle(w: float, h: float) -> void:
 	var frac: float = clampf(v.health / v.max_health, 0.0, 1.0)
 	var bar := Rect2(r.position.x + 16 * s, r.position.y + 30 * s, bw - 32 * s, 10 * s)
 	UiKit.panel(self, bar, Color(0, 0, 0, 0.5), 5 * s)
-	UiKit.panel(self, Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), Color(1.0, 0.35, 0.3).lerp(Color(0.4, 0.95, 0.5), frac), 5 * s)
+	if v.racing:
+		# Race car: a speedometer instead of armour.
+		var sp: float = absf(v._speed)
+		frac = clampf(sp / v._spec.speed, 0.0, 1.0)
+		UiKit.panel(self, Rect2(bar.position, Vector2(maxf(bar.size.y, bar.size.x * frac), bar.size.y)), Color(0.4, 0.8, 1.0).lerp(Color(1.0, 0.45, 0.3), frac), 5 * s)
+		_t(Vector2(r.position.x, r.position.y + 22 * s), "%d KM/H" % int(sp * 3.6), 15, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT, bw - 16 * s)
+	else:
+		UiKit.panel(self, Rect2(bar.position, Vector2(bar.size.x * frac, bar.size.y)), Color(1.0, 0.35, 0.3).lerp(Color(0.4, 0.95, 0.5), frac), 5 * s)
 	var pad: bool = player.brain.device >= 0
 	var lines: Array = []
 	match v.type:
@@ -502,7 +509,8 @@ func _draw_vehicle(w: float, h: float) -> void:
 			lines = [["RT" if pad else "LMB", "MACHINE GUN"], ["LT" if pad else "RMB", "ZOOM"]]
 	if not v.armed:
 		lines = [["A" if pad else "SPACE", "UP"], ["B" if pad else "C", "DOWN"]] if v.type == "heli" else []
-	lines.append(["Y" if pad else "E", "GET OUT"])
+	lines.append(["R3" if pad else "F", "1ST PERSON" if not player.fp_drive else "3RD PERSON"])
+	lines.append(["Y" if pad else "E", "RESET CAR" if v.racing else "GET OUT"])
 	var y := h - 26 * s
 	var x := w - 16 * s
 	for i in range(lines.size() - 1, -1, -1):
