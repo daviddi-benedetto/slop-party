@@ -1610,8 +1610,8 @@ func _torch(pos: Vector3, mirror := true) -> void:
 ## when shot or blown up. Seeded, kept away from spawns, pads, holes and
 ## whatever the layout already built.
 func _ruins() -> void:
-	if indoor:
-		return
+	if indoor or not race_path.is_empty():
+		return                    # (not on the race circuit: they landed on the road)
 	var want := clampi(int(half_x * half_z / 260.0), 3, 9)
 	var boxes: Array = []
 	for cs in _body.get_children():

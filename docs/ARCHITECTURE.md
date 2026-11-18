@@ -509,11 +509,15 @@ collision off (the vehicle takes the hits).
 ### Racing (`racing.gd`, `map_race.gd`, vehicle "racer")
 
 - Mode "racing" forces `Map.RACEWAY` (10). `map_race.gd` resamples a closed
-  Catmull-Rom loop through `CTRL` every 3 m into `map.race_path` (index 0 =
-  start line), then lays the asphalt (overlapping thin slabs; world-space
-  textures hide the overlaps), kerbs where `_bend` is high, striped barriers
-  `RUNOFF` beyond each edge (panels that would fold over the road in a tight
-  bend are dropped, `_near_road`), the start gantry, grid boxes
+  Catmull-Rom loop through `CTRL` every 3 m, rounds it off (`_smooth`, 40
+  passes, so the tightest bend stays wider than the road's half-width;
+  `--check-spawns` prints it) and resamples again into `map.race_path`
+  (index 0 = start line). Asphalt, kerbs and barriers are continuous strips
+  built sample to sample with the per-sample normals (`_flat_quad`,
+  `_wall_panel` with one convex collider per mitred panel), so there are no
+  gaps on the outside of bends; kerb pieces that would flip inside a tight
+  bend and barrier panels that would fold over the road are left out
+  (`_near_road`). `_ruins()` is skipped on the circuit. Then the start gantry, grid boxes
   (`grid_slot`), a grandstand, tyre stacks and trees. The road strip is in
   `no_grass` so grass stays off it.
 - `racing.gd`: `prepare` fills the grid to 6 with CPU racers; `start` puts

@@ -16,12 +16,12 @@ const STEP := 3.0               # path sample spacing (m)
 const RUNOFF := 3.0             # verge between road edge and barrier
 const CTRL := [Vector3(-60, 0, -50), Vector3(10, 0, -56), Vector3(60, 0, -50), Vector3(84, 0, -28), Vector3(80, 0, 5),
 	Vector3(56, 0, 16), Vector3(36, 0, 4), Vector3(14, 0, 16), Vector3(26, 0, 40), Vector3(0, 0, 56), Vector3(-50, 0, 56),
-	Vector3(-82, 0, 36), Vector3(-84, 0, 0), Vector3(-62, 0, -18), Vector3(-80, 0, -36)]
+	Vector3(-82, 0, 36), Vector3(-86, 0, 2), Vector3(-66, 0, -22), Vector3(-86, 0, -40)]
 const START := Vector3(-22, 0, -53)
 
 
 static func build(m) -> void:
-	var path := _resample(_spline(CTRL), STEP)
+	var path := _resample(_smooth(_resample(_spline(CTRL), STEP), 40), STEP)
 	# Start / finish on the long back straight.
 	var best := 0
 	for i in path.size():
@@ -29,33 +29,67 @@ static func build(m) -> void:
 			best = i
 	var p0: Array = path.slice(best) + path.slice(0, best)
 	m.race_path = p0
+	if "--check-spawns" in OS.get_cmdline_user_args():
+		var tight := 1e9
+		for k in p0.size():
+			var ang: float = _bend(p0, k) * 2.0
+			if ang > 0.001:
+				tight = minf(tight, 2.0 * STEP / ang)
+		print("[raceway] tightest bend radius %.1f m (road half-width %.1f)" % [tight, W * 0.5])
 	m.race_width = W
 	var n := p0.size()
+	# Everything that follows the curve is one continuous strip, sample to
+	# sample (separate straight blocks left wedge-shaped gaps on the outside
+	# of every bend).
+	var road := SurfaceTool.new()
+	road.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var kerb_red := SurfaceTool.new()
+	kerb_red.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var kerb_white := SurfaceTool.new()
+	kerb_white.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var bar_red := SurfaceTool.new()
+	bar_red.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var bar_white := SurfaceTool.new()
+	bar_white.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for st in [bar_red, bar_white]:
+		st.set_smooth_group(-1)
+	var off := W * 0.5 + RUNOFF
 	for i in n:
+		var j := (i + 1) % n
 		var a: Vector3 = p0[i]
-		var b: Vector3 = p0[(i + 1) % n]
-		var d := b - a
-		var yaw := atan2(-d.z, d.x)
-		var mid := (a + b) * 0.5
-		var nrm := _normal(p0, i)
-		m._visual(mid + Vector3(0, 0.03, 0), Vector3(d.length() + 0.6, 0.06, W), "road", yaw)
+		var b: Vector3 = p0[j]
+		var na := _normal(p0, i)
+		var nb := _normal(p0, j)
 		m.no_grass.append(Rect2(a.x - W * 0.5 - 1.5, a.z - W * 0.5 - 1.5, W + 3.0, W + 3.0))   # no grass on the asphalt
-		# Kerbs where it bends.
-		var bend := _bend(p0, i)
-		if bend > 0.035:
-			var kmat := "car_red" if i % 2 == 0 else "trim"
+		# Asphalt.
+		_flat_quad(road, a + na * W * 0.5, a - na * W * 0.5, b - nb * W * 0.5, b + nb * W * 0.5, 0.04)
+		# Kerbs where it bends (red / white every sample).
+		if _bend(p0, i) > 0.035 or _bend(p0, j) > 0.035:
+			var ks: SurfaceTool = kerb_red if i % 2 == 0 else kerb_white
 			for sgn in [1.0, -1.0]:
-				m._visual(mid + nrm * sgn * (W * 0.5 + 0.55) + Vector3(0, 0.06, 0), Vector3(d.length() + 0.1, 0.12, 1.1), kmat, yaw)
-		# Barriers both sides (collide), striped every two panels.
+				var i0: float = W * 0.5 * sgn
+				var i1: float = (W * 0.5 + 1.1) * sgn
+				# Skip a piece that would flip over on the inside of a tight bend.
+				if (b + nb * i0 - (a + na * i0)).dot(b - a) <= 0.0:
+					continue
+				_flat_quad(ks, a + na * i1, a + na * i0, b + nb * i0, b + nb * i1, 0.07)
+		# Barriers both sides: a continuous wall with a convex collider per
+		# panel; panels that would fold back over the road in a tight bend
+		# are left out.
 		for sgn in [1.0, -1.0]:
-			var off := W * 0.5 + RUNOFF
-			var ea: Vector3 = a + _normal(p0, i) * sgn * off
-			var eb: Vector3 = b + _normal(p0, (i + 1) % n) * sgn * off
-			var ed := eb - ea
-			if ed.length() < 0.05 or _near_road(p0, (ea + eb) * 0.5, off - 1.0):
-				continue            # inside a tight bend the offset folds back over the road
-			m._box((ea + eb) * 0.5 + Vector3(0, 0.55, 0), Vector3(ed.length() + 0.35, 1.1, 0.5),
-				"car_red" if (i / 2) % 2 == 0 else "trim", false, atan2(-ed.z, ed.x))
+			var ea: Vector3 = a + na * sgn * off
+			var eb: Vector3 = b + nb * sgn * off
+			if ea.distance_to(eb) < 0.05 or _near_road(p0, (ea + eb) * 0.5, off - 1.0) or _near_road(p0, ea, off - 1.0) or _near_road(p0, eb, off - 1.0):
+				continue
+			var bs: SurfaceTool = bar_red if (i / 2) % 2 == 0 else bar_white
+			_wall_panel(m, bs, ea, eb, na * sgn, nb * sgn, 0.5, 1.1)
+	m._add(road.commit(), m._mats["road"], Transform3D(), false, 0, "track")
+	m._add(kerb_red.commit(), m._mats["car_red"], Transform3D(), false, 0, "track")
+	m._add(kerb_white.commit(), m._mats["trim"], Transform3D(), false, 0, "track")
+	bar_red.generate_normals()
+	bar_white.generate_normals()
+	m._add(bar_red.commit(), m._mats["car_red"], Transform3D(), true, 0, "track")
+	m._add(bar_white.commit(), m._mats["trim"], Transform3D(), true, 0, "track")
 	_start_line(m, p0)
 	_town(m, p0)
 	_scenery(m, p0)
@@ -64,6 +98,43 @@ static func build(m) -> void:
 		var g := grid_slot(p0, slot)
 		m.spawn_points.append(g[0] + Vector3(0, 0.3, 0))
 		m._visual(g[0] + Vector3(0, 0.05, 0) + Basis(Vector3.UP, g[1]) * Vector3(0, 0, -2.2), Vector3(2.6, 0.04, 0.25), "trim", g[1])
+
+
+## A flat quad at height y (corners in order round the edge), facing up.
+static func _flat_quad(st: SurfaceTool, c0: Vector3, c1: Vector3, c2: Vector3, c3: Vector3, y: float) -> void:
+	var q := [Vector3(c0.x, y, c0.z), Vector3(c1.x, y, c1.z), Vector3(c2.x, y, c2.z), Vector3(c3.x, y, c3.z)]
+	# Wind so the face points up whichever way round the corners came.
+	var up: bool = (q[1] - q[0]).cross(q[2] - q[0]).y > 0.0
+	var tris := [0, 2, 1, 0, 3, 2] if up else [0, 1, 2, 0, 2, 3]
+	for k in tris:
+		st.set_normal(Vector3.UP)
+		st.add_vertex(q[k])
+
+
+## One barrier panel from ea to eb (outward normals na / nb), thickness t,
+## height h: top and both faces, plus a matching convex collider. Ends are
+## mitred by the per-sample normals, so neighbouring panels meet exactly.
+static func _wall_panel(m, st: SurfaceTool, ea: Vector3, eb: Vector3, na: Vector3, nb: Vector3, t: float, h: float) -> void:
+	var ai := ea - na * t * 0.5
+	var ao := ea + na * t * 0.5
+	var bi := eb - nb * t * 0.5
+	var bo := eb + nb * t * 0.5
+	var up := Vector3(0, h, 0)
+	var pts := [ai, ao, bi, bo, ai + up, ao + up, bi + up, bo + up]
+	# Faces as quads [a, b, c, d]; winding fixed below so each faces outwards.
+	var centre := (ea + eb) * 0.5 + up * 0.5
+	for f in [[0, 2, 6, 4], [1, 5, 7, 3], [4, 6, 7, 5]]:
+		var q: Array = f.map(func(k): return pts[k])
+		var nrm: Vector3 = (q[1] - q[0]).cross(q[2] - q[0])
+		var mid: Vector3 = (q[0] + q[1] + q[2] + q[3]) * 0.25
+		var order := [0, 1, 2, 0, 2, 3] if nrm.dot(mid - centre) < 0.0 else [0, 2, 1, 0, 3, 2]
+		for k in order:
+			st.add_vertex(q[k])
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = PackedVector3Array(pts)
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	m._body.add_child(cs)
 
 
 ## Grid slot `i` behind the line: [position, yaw] (two columns, staggered).
@@ -116,6 +187,22 @@ static func _spline(ctrl: Array) -> Array:
 	return out
 
 
+## Round off kinks: each pass pulls every point a little towards the middle
+## of its neighbours (the loop closes on itself), so no bend ends up tighter
+## than the road is wide.
+static func _smooth(pts: Array, passes: int) -> Array:
+	var cur := pts.duplicate()
+	var n := cur.size()
+	for k in passes:
+		var nxt: Array = []
+		for i in n:
+			var p: Vector3 = cur[i]
+			var avg: Vector3 = ((cur[posmod(i - 1, n)] as Vector3) + (cur[(i + 1) % n] as Vector3)) * 0.5
+			nxt.append(p.lerp(avg, 0.5))
+		cur = nxt
+	return cur
+
+
 static func _resample(dense: Array, step: float) -> Array:
 	var out: Array = [dense[0]]
 	var acc := 0.0
@@ -159,11 +246,11 @@ static func _start_line(m, path: Array) -> void:
 	label.modulate = Color(1.0, 0.92, 0.6)
 	label.outline_modulate = Color(0.25, 0.05, 0.05)
 	label.position = p + Vector3(0, 6.4, 0) - t * 0.35
-	label.rotation.y = atan2(-t.x, -t.z) + PI
+	label.rotation.y = atan2(-t.x, -t.z)        # faces the cars coming up to the line
 	m.add_child(label)
 	var label2: Label3D = label.duplicate()
 	label2.position = p + Vector3(0, 6.4, 0) + t * 0.35
-	label2.rotation.y = atan2(-t.x, -t.z)
+	label2.rotation.y = atan2(t.x, t.z)
 	m.add_child(label2)
 
 
