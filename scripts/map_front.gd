@@ -1,6 +1,7 @@
 extends RefCounted
-## Layout 6: FRONTLINE (200 x 140 m), the Battlefield-style map used only by
-## the Frontline mode. Built with the map.gd toolkit (see map.gd: _building,
+## Layout 6: FRONTLINE (200 x 140 m), the Battlefield-style map of the
+## Frontline mode, also offered for Rounds / Gun Game (free-for-all: the
+## spread-out spawns below; frontline.gd spawns teams at m.bases instead). Built with the map.gd toolkit (see map.gd: _building,
 ## _wall_x, _stairs, _wedge, _slab, _hole, _surface, mirror = point symmetry).
 ##
 ## Geometry is written for the +X half (team 1, orange) and mirrored onto the
@@ -19,6 +20,10 @@ extends RefCounted
 const Places = preload("res://scripts/map_places.gd")
 
 const TEAM_MAT := ["team0", "team1"]
+## +X half; each is mirrored. Roads, the flag yards, the farms and the town edge.
+const FFA_SPAWNS := [Vector3(24, 0.1, 1.5), Vector3(52, 0.1, -1.5), Vector3(37.5, 0.1, -36), Vector3(37.5, 0.1, 36),
+	Vector3(62, 0.1, -24.5), Vector3(46, 0.1, 23.5), Vector3(10, 0.1, -30), Vector3(12, 0.1, 30), Vector3(60, 0.1, -10),
+	Vector3(60, 0.1, 10), Vector3(28, 0.1, -9), Vector3(24, 0.1, 18)]
 
 
 static func frontline(m) -> void:
@@ -54,6 +59,9 @@ static func frontline(m) -> void:
 	m.bases = [Vector3(-90, 0, 0), Vector3(90, 0, 0)]
 	m._lawn(Rect2(-68, -48, 136, 96), false)
 	m._spawns([Vector3(88, 0.1, 6), Vector3(88, 0.1, -6), Vector3(94, 0.1, 0), Vector3(84, 0.1, 18)])
+	# Free-for-all spawns spread over the battlefield (Rounds / Gun Game; the
+	# Frontline mode ignores spawn_points). Checked clear with --check-spawns.
+	m._spawns(FFA_SPAWNS)
 	m._pickups([["weapon", Vector3(0, 13.6, 21)], ["health", Vector3(52, 0, -31)], ["weapon", Vector3(66, 3.4, -49)],
 		["health", Vector3(20, 0, 6.5)], ["weapon", Vector3(37, 2.5, -50.5)], ["health", Vector3(70, -1.7, 20)]])
 

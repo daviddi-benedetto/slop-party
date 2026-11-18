@@ -998,6 +998,11 @@ func respawn_later(p, delay: float) -> void:
 ## Everyone on a different spawn point (the free-for-all modes).
 func spawn_all_default() -> void:
 	var spots: Array = map.spawn_points.duplicate()
+	if Map.MAPS[map.map_index].size == "HUGE":
+		# Frontline in free-for-all: start on the battlefield, not at the bases.
+		var mid: Array = spots.filter(func(sp): return absf(sp.x) < 75.0)
+		if mid.size() >= players.size():
+			spots = mid
 	spots.shuffle()
 	for i in players.size():
 		var pos: Vector3 = spots[i % spots.size()]
@@ -1012,14 +1017,20 @@ func respawn(p) -> void:
 
 
 ## Spawn as far from living enemies as possible (random among the best three).
+## On a huge map (Frontline in free-for-all) "as far as possible" is the other
+## end of the world, so there it aims for a spot 30-45 m from the nearest enemy.
 func respawn_default(p) -> void:
+	var huge: bool = Map.MAPS[map.map_index].size == "HUGE"
 	var scored: Array = []
 	for spot in map.spawn_points:
 		var nearest := 1e9
 		for o in players:
 			if o != p and o.alive:
 				nearest = minf(nearest, o.global_position.distance_to(spot))
-		scored.append([nearest, spot])
+		var score := nearest
+		if huge:
+			score = -absf(clampf(nearest, 0.0, 200.0) - 38.0) if nearest > 18.0 else -1000.0 + nearest
+		scored.append([score, spot])
 	scored.sort_custom(func(a, b): return a[0] > b[0])
 	var pos: Vector3 = scored[randi() % mini(3, scored.size())][1]
 	p.spawn(pos, _yaw_to_centre(pos))

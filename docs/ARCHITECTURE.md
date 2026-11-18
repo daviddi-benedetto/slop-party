@@ -514,7 +514,14 @@ collision off (the vehicle takes the hits).
   spawns for rules to reuse.
 - Gun Game: rung = `kills`; `weapons.ladder()` is the order.
 - Medieval forces `Map.CASTLE` (index 8, also in `Map.ARENAS`, the lobby's
-  map list). `weapons.era(id)` / `pool(eras)` group the arsenal.
+  map list). `Map.FRONTLINE` (6) is in `Map.ARENAS` too (last, so saved
+  lobby indices stay valid): Rounds / Gun Game on it use
+  `map_front.FFA_SPAWNS` (spread over the battlefield; Frontline mode spawns
+  at `m.bases` and ignores `spawn_points`). On a HUGE map
+  `spawn_all_default` skips the base spawns (|x| >= 75) and
+  `respawn_default` aims for 30-45 m from the nearest enemy instead of as
+  far as possible. `--check-spawns` prints spawn points that are blocked
+  or have no floor. `weapons.era(id)` / `pool(eras)` group the arsenal.
 
 ### Game modes and teams (`game.gd`, `zombies.gd`, `frontline.gd`)
 

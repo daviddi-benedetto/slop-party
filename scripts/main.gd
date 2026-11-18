@@ -20,6 +20,7 @@ extends Node
 ##   --shot-time=<sec>     when to take it (default 6)
 ##   --pause-at=<sec>      open the pause menu after that many seconds
 ##   --options-demo        open the Options screen in the lobby after 1 second
+##   --check-spawns        print spawn points that are blocked (after the build)
 ##   --click=x,y@sec[;...] fake mouse moves + left clicks (x, y as 0-1 of the
 ##                         window; "r" after sec = right click) to test menus
 ##   --options-page=N      ...on its Nth page (0 = DISPLAY)
@@ -138,6 +139,28 @@ func _ready() -> void:
 			lobby._options.open()
 			for i in int(_args.get("options-page", "0")):
 				lobby._options._turn(1))
+	if _args.has("check-spawns"):
+		get_tree().create_timer(10.0, true, false, true).timeout.connect(func():
+			if game == null:
+				print("[spawns] no match running")
+				return
+			var space: PhysicsDirectSpaceState3D = game.map.get_world_3d().direct_space_state
+			var cap := CapsuleShape3D.new()
+			cap.radius = 0.45
+			cap.height = 1.7
+			var q := PhysicsShapeQueryParameters3D.new()
+			q.shape = cap
+			q.collision_mask = 1 | 4
+			var bad := 0
+			for sp in game.map.spawn_points:
+				q.transform = Transform3D(Basis(), sp + Vector3(0, 1.0, 0))
+				var hits := space.intersect_shape(q, 4)
+				var down := PhysicsRayQueryParameters3D.create(sp + Vector3(0, 0.5, 0), sp + Vector3(0, -3.0, 0), 1)
+				var floor_hit := space.intersect_ray(down)
+				if not hits.is_empty() or floor_hit.is_empty():
+					bad += 1
+					print("[spawns] BLOCKED %s %s" % [sp, "no floor" if floor_hit.is_empty() else str(hits[0].collider)])
+			print("[spawns] %d points, %d blocked" % [game.map.spawn_points.size(), bad]))
 	if _args.has("click"):
 		for c in str(_args["click"]).split(";"):
 			var xy_t := c.split("@")

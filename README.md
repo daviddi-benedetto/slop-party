@@ -118,7 +118,10 @@ PLAY** lists every button and **MODES** explains each mode.
   keep, a market, a siege camp; also Medieval mode's home).
 - **Quarantine** (Zombies): a hospital campus with a clinic, triage tents, a
   warehouse, a motel, a tunnel and a morgue cellar.
-- **Frontline:** a town with towers, warehouses, bunkers and trenches.
+- **Frontline:** a town with towers, warehouses, bunkers and trenches. Its
+  own mode's home, and also on the lobby's map list for **Rounds** and
+  **Gun Game**: a huge free-for-all with spawns spread over the town, roads,
+  farms and flag yards (no vehicles outside Frontline mode).
 - **Easy to move around:** doorways are open (no doors), windows are big
   enough to jump through (break the glass and go), and nothing is placed in
   a doorway, on or at the foot of stairs, or in front of a window. Streets

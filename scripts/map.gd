@@ -122,7 +122,7 @@ const MAPS := [
 const FRONTLINE := 6             # index of the Frontline map; the lobby lists maps below it
 const ZOMBIE := 7                # large Zombies-only indoor/outdoor map
 const CASTLE := 8                # Medieval mode's home; also in the lobby's map list
-const ARENAS := [0, 1, 2, 3, 4, 5, 8]   # maps the lobby offers (Rounds, Gun Game)
+const ARENAS := [0, 1, 2, 3, 4, 5, 8, 6]   # maps the lobby offers (Rounds, Gun Game); 6 = Frontline, free-for-all
 const TIMES := ["day", "sunset", "night"]
 
 const DAY := {
