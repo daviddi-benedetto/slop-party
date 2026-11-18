@@ -5,8 +5,8 @@ extends CharacterBody3D
 ## weapon (Rounds on Frontline).
 ##
 ## armed = false (Rounds on the Frontline map: game.gd _spawn_ffa_vehicles)
-## builds them without guns or rocket pods, never fires, does no ram damage
-## and has half the armour: transport only, the fighting stays on foot.
+## builds them without guns or rocket pods, never fires and has half the
+## armour; rams still hurt a little (10-35, by speed) and knock you flying.
 ##
 ## Getting in: player.gd shows "GET IN ..." near a free vehicle (game.vehicle_near)
 ## and calls enter(). The player is hidden and stops colliding; game.gd
@@ -67,7 +67,9 @@ var alt_cd := 0.0
 var rockets := 4
 var throttle := 0.0
 var last_attacker = null
-var armed := true                # false: no guns, no ram damage, half armour (Rounds)
+var armed := true                # false: no guns, soft rams (RAM_MAX), half armour (Rounds)
+var _rammed := {}                # instance id -> msec of the last ram (one hit per bump)
+const RAM_MAX := 35.0            # unarmed ride: most a ram can do
 
 var _spec: Dictionary
 var _speed := 0.0
@@ -279,10 +281,22 @@ func _drive(delta: float, b) -> void:
 			var c := get_slide_collision(i)
 			var other = c.get_collider()
 			if other != null and other.has_method("take_damage") and other != self and absf(_speed) > 7.0:
-				if armed and game.is_enemy(driver, other) and other.alive:
-					other.take_damage(absf(_speed) * (3.0 if type == "buggy" else 6.0), driver)
-					if "velocity" in other and not other.has_method("seat_count"):
-						other.velocity += before.normalized() * 10.0 + Vector3(0, 5.0, 0)
+				if game.is_enemy(driver, other) and other.alive and _ram_ready(other):
+					if armed:
+						other.take_damage(absf(_speed) * (3.0 if type == "buggy" else 6.0), driver)
+						if "velocity" in other and not other.has_method("seat_count"):
+							other.velocity += before.normalized() * 10.0 + Vector3(0, 5.0, 0)
+					else:
+						# Unarmed ride (Rounds): a fun bump, not a weapon. 10 at
+						# a crawl up to 35 flat out (three hits to KO), and a
+						# good shove up and away. The ride loses some speed.
+						var dmg := clampf(10.0 + (absf(_speed) - 7.0) * 1.6, 10.0, RAM_MAX)
+						other.take_damage(dmg, driver)
+						if "velocity" in other and not other.has_method("seat_count"):
+							var push := before.normalized() * (8.0 + absf(_speed) * 0.25)
+							other.velocity += Vector3(push.x, 0, push.z) + Vector3(0, 6.5, 0)
+						_speed *= 0.75
+						Sfx.play_at("hurt", c.get_position(), -2.0, 0.7)
 					Fx.sparks(game.world, c.get_position(), Color(1, 0.8, 0.5), 10, 6.0)
 			elif c.get_normal().y < 0.5:
 				_speed *= 0.6
@@ -303,6 +317,16 @@ func _drive(delta: float, b) -> void:
 			_wheels[i].get_parent().rotation.y = move.x * -0.45
 	elif type == "bike" and _fork != null:
 		_fork.rotation.y = move.x * -0.35
+
+
+## One ram per victim per 0.7 s (the contact lasts several physics frames).
+func _ram_ready(other) -> bool:
+	var id: int = other.get_instance_id()
+	var now := Time.get_ticks_msec()
+	if now - int(_rammed.get(id, -100000)) < 700:
+		return false
+	_rammed[id] = now
+	return true
 
 
 func _fly(delta: float, b) -> void:

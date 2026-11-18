@@ -525,7 +525,11 @@ collision off (the vehicle takes the hits).
 - Rounds rides: `map_front.FFA_VEHICLES` -> `m.ffa_vehicle_spots`;
   `game._spawn_ffa_vehicles()` (Rounds only, rules == null) adds them with
   `vehicle.disarm()` (`armed = false`: no gun / pods built, no
-  `_aim_and_fire`, no ram damage, half armour; HUD lists only the moves).
+  `_aim_and_fire`, soft rams: 10 + (speed - 7) x 1.6, at most `RAM_MAX` 35,
+  plus a shove of 8 + speed/4 m/s and 6.5 up, the ride loses a quarter of
+  its speed; half armour; HUD lists only the moves). All rams (armed too)
+  hit a given victim at most once per 0.7 s (`_ram_ready`). `--ram-at=sec
+  --ram-speed=m/s` (with `--drive`) launches the ride at player 2.
   `vehicle._destroy` calls `game.ffa_vehicle_destroyed` (back in 20 s) when
   there are no rules. `vehicle.gd` "bike" (`_build_bike`, `_fork` steers,
   leans into turns) is only used here. `--drive=type` works in Rounds too. `weapons.era(id)` / `pool(eras)` group the arsenal.

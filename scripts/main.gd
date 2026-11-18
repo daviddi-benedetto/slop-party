@@ -20,6 +20,7 @@ extends Node
 ##   --shot-time=<sec>     when to take it (default 6)
 ##   --pause-at=<sec>      open the pause menu after that many seconds
 ##   --options-demo        open the Options screen in the lobby after 1 second
+##   --ram-at=sec [--ram-speed=m/s]  with --drive: launch the ride at player 2
 ##   --check-spawns        print spawn points that are blocked (after the build)
 ##   --click=x,y@sec[;...] fake mouse moves + left clicks (x, y as 0-1 of the
 ##                         window; "r" after sec = right click) to test menus
@@ -190,6 +191,29 @@ func _ready() -> void:
 					mb.pressed = down
 					Input.parse_input_event(mb)
 				print("[click] ", pos, " right" if right else ""))
+	if _args.has("ram-at"):
+		# Dev (with --drive): put player 2 a few metres in front of player 1's
+		# ride, launch it at them, report the damage and how far they flew.
+		get_tree().create_timer(float(_args["ram-at"]), true, false, true).timeout.connect(func():
+			if game == null or game.players.size() < 2 or game.players[0].vehicle == null:
+				print("[ram] no ride")
+				return
+			var v = game.players[0].vehicle
+			var victim = game.players[1]
+			var fwd: Vector3 = -v.global_transform.basis.z
+			victim.spawn(v.global_position + fwd * 4.5 + Vector3(0, 0.2, 0), victim.yaw)
+			victim.spawn_protect = 0.0
+			var hp0: float = victim.health
+			var p0: Vector3 = victim.global_position
+			var v0: Vector3 = v.global_position
+			print("[ram] ride at %s, victim at %s (alive %s, frozen %s)" % [v0, p0, victim.alive, game.frozen])
+			var spd := float(_args.get("ram-speed", "24"))
+			var hold := func(): v._speed = spd       # hold the throttle for the test
+			get_tree().physics_frame.connect(hold)
+			get_tree().create_timer(0.6).timeout.connect(func(): get_tree().physics_frame.disconnect(hold))
+			get_tree().create_timer(1.2).timeout.connect(func():
+				print("[ram] ride moved %.1f m" % v.global_position.distance_to(v0))
+				print("[ram] %s at %s m/s: victim health %d -> %d, moved %.1f m, peak? alive %s" % [v.type, _args.get("ram-speed", "24"), hp0, victim.health, victim.global_position.distance_to(p0), victim.alive])))
 	if _args.has("melee-at"):
 		# Dev: player 1 swings their melee at that time (knife screenshots).
 		get_tree().create_timer(float(_args["melee-at"]), true, false, true).timeout.connect(func():
