@@ -237,8 +237,10 @@ func _ready() -> void:
 		if mode == "rounds":
 			_spawn_ffa_vehicles()
 	map.nav_built.connect(_spawn_pets)
-	map.build_nav()
 	var pads: bool = rules == null or not rules.has_method("weapon_pads") or rules.weapon_pads()
+	if pads:
+		map.nav_built.connect(_scatter_boxes)
+	map.build_nav()
 	for spot in map.pickup_spots:
 		if spot[0] == "weapon" and not pads:
 			continue
@@ -1195,6 +1197,71 @@ func bot_goal(p):
 
 
 ## A few dogs and cats wander every map (pet.gd); more on bigger maps.
+## Extra mystery boxes on top of the map's own pads, so nobody is ever far
+## from a new weapon: spread by farthest-point sampling over the bot nav
+## graph (ground and upper floors alike), away from spawns, other pickups,
+## doorways and stairs. Same spots every match on a map (no randomness).
+const EXTRA_BOXES := {"SMALL": 4, "MEDIUM": 6, "LARGE": 8, "HUGE": 18}
+
+func _scatter_boxes() -> void:
+	var want: int = EXTRA_BOXES.get(Map.MAPS[map.map_index].size, 6)
+	var taken: Array = []
+	for spot in map.pickup_spots:
+		taken.append(spot[1])
+	var avoid: Array = map.spawn_points.duplicate()
+	var space: PhysicsDirectSpaceState3D = map.get_world_3d().direct_space_state
+	var cand: Array = []
+	for id in map.nav.get_point_ids():
+		var p: Vector3 = map.nav.get_point_position(id)
+		if absf(p.x) > map.half_x - 3.0 or absf(p.z) > map.half_z - 3.0 or map._blocked(p, 1.3):
+			continue
+		var near_spawn := false
+		for s in avoid:
+			if (s as Vector3).distance_to(p) < 6.0:
+				near_spawn = true
+				break
+		if near_spawn:
+			continue
+		# Level, solid floor with room for the box (not a stair or a slope).
+		var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 0.6, 0), p + Vector3(0, -0.6, 0), 1)
+		var hit: Dictionary = space.intersect_ray(q)
+		if hit.is_empty() or hit.normal.y < 0.97 or absf(hit.position.y - p.y) > 0.2:
+			continue
+		var room := PhysicsShapeQueryParameters3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(1.6, 1.6, 1.6)
+		room.shape = box
+		room.transform = Transform3D(Basis(), hit.position + Vector3(0, 1.0, 0))
+		room.collision_mask = 1 | 4
+		if not space.intersect_shape(room, 1).is_empty():
+			continue
+		cand.append(hit.position)
+	var placed := 0
+	while placed < want and not cand.is_empty():
+		var best := -1
+		var best_d := 0.0
+		for i in cand.size():
+			var c: Vector3 = cand[i]
+			var dmin := 1e9
+			for t in taken:
+				dmin = minf(dmin, c.distance_to(t))
+			if dmin > best_d:
+				best_d = dmin
+				best = i
+		if best < 0 or best_d < 8.0:
+			break
+		var pos: Vector3 = cand[best]
+		cand.remove_at(best)
+		taken.append(pos)
+		var pk = Pickup.new()
+		pk.kind = "weapon"
+		pk.game = self
+		pk.position = pos
+		world.add_child(pk)
+		placed += 1
+	print("[boxes] %d extra mystery boxes (%d pads in total)" % [placed, placed + map.pickup_spots.filter(func(s): return s[0] == "weapon").size()])
+
+
 func _spawn_pets() -> void:
 	if "--pets-demo" in OS.get_cmdline_user_args():
 		# Dev flag: one of each kind lined up in front of player 1.

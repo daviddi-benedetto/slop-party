@@ -55,7 +55,9 @@ PLAY** lists every button and **MODES** explains each mode.
   Ripper, Sticky, Longshot, Frostbite and the akimbo Twins), 4 magic weapons
   (Fire Hands, Frost Hands, Storm Staff, Arcane Staff) and 7 medieval ones.
   Get them from weapon cards or from **mystery boxes**: open one (Y / E),
-  watch the weapons spin up out of it, and the last one is yours.
+  the lid flips back, weapons spin up out of it, and the last one flies to
+  you. Boxes are everywhere (7 on the smallest map, 26 on Hightown) and
+  reopen 10 s after use, so you're never stuck with a weapon you don't like.
 - **77 powerup cards** in three rarities (common, rare, epic): scopes and a
   red-dot sight, a jetpack, block perks that turn your block into a weapon
   (Blink Guard, Frost Guard, Radiant Guard...), eight melee upgrades, and

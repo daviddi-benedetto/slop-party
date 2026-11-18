@@ -150,7 +150,7 @@ parse error in one script.
 | `scripts/plush.gd` | The seven animals as signed-distance shapes with painted patches, and the surface-nets mesher that turns them into smooth bodies (`tools/make_plush.gd` bakes them to `assets/models/plush/`). |
 | `scripts/weapons.gd` | The weapon list: name, look, and the base stat profile each one applies. |
 | `scripts/viewmodel.gd` | Gun model per weapon style (receiver, barrel, magazine, stock, sights; merged into one mesh per material), first-person sway/recoil/reload/pump/cylinder animation and world-space muzzle position; also used as the pickup prop and, scaled up, as the third-person gun (`character.gd::set_weapon`). |
-| `scripts/pickup.gd` | Mystery boxes (kind "weapon": interact opens the lid, `_roll_step` shows three decoys then the prize, which goes to the opener after `OPEN_TIME`; the box turns so the lid swings away; shut for 16 s after) and health pads. |
+| `scripts/pickup.gd` | Mystery boxes (kind "weapon": interact opens the lid, `_roll_step` shows three decoys then the prize, which goes to the opener after `OPEN_TIME`; the box turns so the lid swings away; shut for `RESPAWN` 10 s after) and health pads. |
 | `scripts/sky.gd` | Sky shader (gradient, sun halo, painted clouds) shared by the arena and the stage. |
 | `scripts/stats.gd` | Per-player stats, rebuilt from defaults + weapon + cards. |
 | `scripts/cards.gd` | The card deck (stat cards and weapon cards) and the weighted draw. |
@@ -774,7 +774,12 @@ across the UI.
   scope and red dot have no mount; a glowing ring pair and an additive beam
   hold them up; `_attach` bobs only when not aiming (ADS alignment).
 - **Mystery boxes** (pickup.gd `_float`): the box floats `FLOAT_Y` above
-  the ring and bobs.
+  the ring and bobs (physics interpolation off on `_float`: it is animated
+  per frame). Opening (`_process`): the lid swings back `LID_OPEN` (+X
+  rotation, with overshoot) on its hinge, weapons (`GUN_SCALE` 1.25) rise
+  from inside the box spinning, the prize pops; then `_closing`: the prize
+  flies to the opener's chest and shrinks, the lid swings shut with a small
+  bounce and a thunk. The "?" marks pop back in when it refills.
 - **Body language** (`character.animate`): player.gd sets `turn_rate`,
   `wall_side`, `sliding`, `hurt`, `low_health`, `happy` every frame;
   `hit_flash(from)` snaps the rig away from the hit. Eyes scale from their
@@ -1164,8 +1169,14 @@ fresh mag in `on_kill`.
 
 ### Pickups (`pickup.gd`)
 
-`map.gd` lists `pickup_spots`; `game.gd` creates a `Pickup` at each. Weapon
-pads hold a random non-default weapon and re-roll 16 s after being taken;
+`map.gd` lists `pickup_spots`; `game.gd` creates a `Pickup` at each, then
+`_scatter_boxes()` (once the nav graph exists, unless the rules turn pads
+off) adds `EXTRA_BOXES` more mystery boxes by size (SMALL 4, MEDIUM 6,
+LARGE 8, HUGE 18): farthest-point sampling over nav nodes on level floor
+with room for the box, at least 8 m from other boxes and 6 m from spawns,
+outside keep-clear zones. Deterministic, so a map's boxes are the same
+every match. Weapon pads hold a random non-default weapon and re-roll 10 s
+after being taken;
 health pads restore 50 and return after 12 s. Bots only collect them by
 walking over them.
 

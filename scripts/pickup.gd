@@ -8,7 +8,10 @@ extends Area3D
 ##                box tells every player standing at it
 ##                (`player.near_pickup = self`); the player shows the prompt
 ##                and calls take(). Bots open one while they still hold the
-##                starting Blaster. Closed for 16 s after use.
+##                starting Blaster. Closed for 10 s after use.
+##                The show: the lid flips back on its hinge, weapons rise out
+##                of the box spinning, the prize pops, then flies to the
+##                opener and the lid swings shut with a thunk (_closing).
 ## kind "health": restores 50 health automatically if you are hurt. Returns
 ##                after 12 s.
 ##
@@ -40,6 +43,14 @@ var _opener = null               # who opened it
 var _roll: Array = []            # weapon models shown in turn while it rolls
 var _roll_i := -1
 var _roll_next := 0.0
+var _closing := -1.0             # seconds into the close-up (prize flies off, lid shuts)
+var _fly_to := Vector3.ZERO      # where the prize flies (the opener's chest)
+var _fly_from := Vector3.ZERO
+var _pop := 1.0                  # 0 -> 1: the "?" marks pop back in when it refills
+const LID_OPEN := 1.95           # radians the lid swings back
+const CLOSE_TIME := 0.65
+const RESPAWN := 10.0
+const GUN_SCALE := 1.25
 
 
 func _ready() -> void:
@@ -108,6 +119,9 @@ func _build_box() -> void:
 	var box := BoxMesh.new()
 	# The box floats above its light ring and bobs gently (_process).
 	_float = Node3D.new()
+	# Animated per rendered frame, so no physics-tick interpolation (it made
+	# the bob and the lid stutter).
+	_float.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_float.position.y = FLOAT_Y
 	add_child(_float)
 	_mesh(_float, box, body, Vector3(0, 0.45, 0)).scale = Vector3(1.0, 0.7, 0.7)
@@ -157,11 +171,15 @@ func _fill() -> void:
 	if kind == "weapon":
 		_roll.clear()
 		_opening = -1.0
+		_closing = -1.0
 		_opener = null
+		_pop = 0.0
 		if _lid != null:
 			_lid.rotation.x = 0.0
 		for q in _marks:
 			q.visible = true
+		_holder.scale = Vector3.ONE
+		_holder.position = Vector3(0, 1.0, 0)
 	else:
 		# First-aid kit model from the Toon Shooter kit.
 		var kit: Node3D = Models.scene("toon/Collectable/Health").instantiate()
@@ -207,7 +225,7 @@ func take(player) -> void:
 		_holder.add_child(model)
 		model.build(Color(1.0, 0.75, 0.25), 1, id, false)
 		model.position = Vector3(0, 0.05, 0.1)
-		model.scale = Vector3.ONE * 2.0
+		model.scale = Vector3.ONE * GUN_SCALE
 		model.visible = false
 		_roll.append(model)
 	for q in _marks:
@@ -222,17 +240,46 @@ func _process(delta: float) -> void:
 		_holder.rotation.y = _t * 1.6
 		_holder.position.y = 1.0 + sin(_t * 2.2) * 0.1
 		return
+	_pop = minf(1.0, _pop + delta * 3.0)
+	var pop := _back_out(_pop)
 	for q in _marks:
-		q.scale = Vector3.ONE * (1.0 + sin(_t * 3.0) * 0.08)
+		q.scale = Vector3.ONE * pop * (1.0 + sin(_t * 3.0) * 0.08)
+	var bob := sin(_t * 1.8) * 0.07
 	if _float != null:
-		_float.position.y = FLOAT_Y + sin(_t * 1.8) * 0.07
-	if _opening < 0.0:
-		return
-	# Lid flips open; the weapons rise out spinning, swapping ever slower.
-	var o := _opening
-	_lid.rotation.x = -1.9 * (1.0 - pow(1.0 - clampf(o / 0.3, 0.0, 1.0), 3.0))
-	_holder.position.y = FLOAT_Y + lerpf(0.55, 1.35, 1.0 - pow(1.0 - clampf(o / 0.6, 0.0, 1.0), 2.0))
-	_holder.rotation.y = _t * (9.0 - 7.0 * clampf(o / OPEN_TIME, 0.0, 1.0))
+		_float.position.y = FLOAT_Y + bob
+	if _opening >= 0.0:
+		# The lid swings back on its hinge; the weapons rise out of the box,
+		# spinning and swapping ever slower; the prize pops when it lands.
+		var o := _opening
+		_lid.rotation.x = LID_OPEN * _back_out(clampf(o / 0.35, 0.0, 1.0))
+		_holder.position = Vector3(0, FLOAT_Y + bob + lerpf(0.45, 1.45, 1.0 - pow(1.0 - clampf(o / 0.7, 0.0, 1.0), 2.0)), 0)
+		_holder.rotation.y = _t * (9.0 - 7.5 * clampf(o / OPEN_TIME, 0.0, 1.0))
+		var p := clampf((o - 1.05) / 0.3, 0.0, 1.0)
+		_holder.scale = Vector3.ONE * (1.0 + 0.3 * sin(p * PI))
+	elif _closing >= 0.0:
+		# The prize flies to the opener and shrinks away; the lid swings shut.
+		_closing += delta
+		var c := _closing
+		var f := clampf(c / 0.28, 0.0, 1.0)
+		_holder.position = _fly_from.lerp(to_local(_fly_to), f * f)
+		_holder.scale = Vector3.ONE * maxf(0.0, 1.0 - f)
+		_holder.visible = f < 1.0
+		var g := clampf((c - 0.15) / 0.4, 0.0, 1.0)
+		_lid.rotation.x = LID_OPEN * pow(1.0 - g, 2.0) + (sin(g * PI * 3.0) * 0.08 * (1.0 - g) if g > 0.6 else 0.0)
+		if c >= CLOSE_TIME:
+			_closing = -1.0
+			_lid.rotation.x = 0.0
+			_holder.visible = false
+			_holder.scale = Vector3.ONE
+			Sfx.play_at("wood", global_position, -8.0, 0.7)
+	elif _lid != null:
+		_lid.rotation.x = 0.0
+
+
+## Ease with a little overshoot (0 -> 1).
+static func _back_out(x: float) -> float:
+	var c := 1.7
+	return 1.0 + (c + 1.0) * pow(x - 1.0, 3.0) + c * pow(x - 1.0, 2.0)
 
 
 func _physics_process(delta: float) -> void:
@@ -284,19 +331,23 @@ func _roll_step(delta: float) -> void:
 	if _opening >= OPEN_TIME:
 		var who = _opener
 		_opening = -1.0
-		if who != null and is_instance_valid(who) and who.alive:
+		var ok: bool = who != null and is_instance_valid(who) and who.alive
+		if ok:
 			who.pick_weapon(weapon_id)
 			Sfx.play_at("join", global_position, -6.0)
-		_taken(16.0)
+		# The close-up runs in _process: the prize flies off, the lid shuts.
+		_fly_from = _holder.position
+		_fly_to = who.global_position + Vector3(0, 1.1, 0) if ok else global_position + Vector3(0, 4.0, 0)
+		_closing = 0.0
+		_taken(RESPAWN, true)
 
 
-func _taken(respawn: float) -> void:
+func _taken(respawn: float, closing := false) -> void:
 	_active = false
 	_timer = respawn
-	_holder.visible = false
+	if not closing:
+		_holder.visible = false
 	_light.visible = false
-	if _lid != null:
-		_lid.rotation.x = 0.0          # shut until it is ready again
 	_ring_mat.emission_energy_multiplier = 0.25
 	Fx.sparks(game.world, global_position + Vector3(0, 1.0, 0), _tint.lerp(Color.WHITE, 0.4), 16, 6.0, Vector3.UP)
 	Fx.ring(game.world, global_position + Vector3(0, 0.2, 0), Color(_tint, 0.9), 0.4, 1.8, 0.35)
