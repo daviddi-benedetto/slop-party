@@ -21,7 +21,16 @@ game modes:
 - **Racing** – toy Formula cars on the **Raceway**, a circuit with kerbs,
   crash barriers, a grandstand and a chequered start under a gantry. Pick
   the laps (2–12, X / K); CPU racers fill the grid to six. Y / E puts your
-  car back on the track if you spin off. Race in third or first person.
+  car back on the track if you spin off. Race in third or first person (your
+  animal's paws on the steering wheel).
+  Party-kart extras: drive through the **gift boxes** for an item (RT /
+  click to use): **Turbo**, **Triple Turbo**, **Bonk Bomb** (rolls down the
+  track and spins out the first car it reaches), **Goo** (dropped behind
+  you) and **Bubble Shield** (blocks one hit). Two **perks** last the whole
+  race: **Sticky Tyres** (sharper steering) and **Big Tank** (longer
+  turbos). Cars further back get better items. **Boost pads** on the
+  straights; **coins** add top speed (up to 10, you drop 2 when spun out).
+  A little village fills the infield.
 - **Gun Game** – free-for-all where every KO hands you the next weapon on a
   ladder of all 31 (guns, then magic, then medieval arms, ending on the
   Sword). Being finished off with a melee knife knocks you one rung down. First to

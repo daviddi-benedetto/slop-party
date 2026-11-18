@@ -530,6 +530,23 @@ collision off (the vehicle takes the hits).
   3 + speed/7 samples ahead, steer by the heading error, lift for sharp
   bends, top speed x0.86-0.99 by skill.
 - Lobby: LAPS chip (`RACE_LAPS` 2/3/5/8/12) is `kill_target`.
+- Party-kart toys (`_lay_track_toys`, `_items_tick`, `_toys_tick`): gift box
+  rows at 12/40/68/90 % of the lap (3 s respawn), boost pads on straights
+  (`_straight_near`), coin lines (8 s respawn, `vehicle.coin_bonus` 1.5 %
+  each, max 10). Items held in `st.item` / `uses`, fired on the fire edge
+  (CPU: `_bot_wait`): turbo (`vehicle.boost`, x1.45 top speed, 3x accel),
+  bonk bomb (rides the path at 52 m/s, drifts to the line, spins out the
+  first other car within 2.4 m), goo (spins out whoever drives through;
+  the dropper is immune for 0.5 s), bubble shield (`vehicle.shield`,
+  `spin_out()` returns false and pops it). Perks `grip` (vehicle.grip 1.3)
+  and `tank` (turbos x1.5) apply on pickup. `_give_item` rolls from a
+  better bag the further back you are. Spin-out (`vehicle.spin_t`) costs 2
+  coins.
+- Raceway decor: `map_race._town` scatters scaled village houses (inn,
+  mill, smithy, bell tower...) wherever they fit clear of the road.
+- Race car cockpit: `_steer_wheel` turns with the stick; `add_driver_hands`
+  puts the driver's plush paws (fp_arm.gd, scaled 1.25) on it, with the
+  column tilt undone so the forearms run back below eye level.
 
 ### Vehicle views
 

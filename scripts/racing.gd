@@ -15,6 +15,15 @@ extends Node
 ## crosses the line; places for the rest come from their progress.
 ## CPU drivers: RaceBrain below steers towards a point a little way down
 ## the path (further at speed) and lifts off for sharp bends.
+##
+## Party-kart extras (all ours): rows of GIFT BOXES across the road give an
+## item (fire / RT uses it): TURBO, TRIPLE TURBO, BONK BOMB (rolls ahead along
+## the track and spins out the first car it reaches), GOO (dropped behind,
+## spins out whoever drives through), BUBBLE SHIELD (blocks one hit). Two
+## PERKS apply at once and last the race: STICKY TYRES (+30 % steering) and
+## BIG TANK (turbos last half as long again). Cars further back roll better
+## items. BOOST PADS on the straights give a short turbo; COINS add 1.5 %
+## top speed each (up to 10; a spin-out drops 2).
 
 const Vehicle = preload("res://scripts/vehicle.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
@@ -34,6 +43,16 @@ var st := {}                     # player -> {idx, lap, moved_t, lap_t, best, fi
 var finished: Array = []         # players in finishing order
 var first_finish := -1.0
 var t0 := -1.0                   # game.time at the green light (race clock zero)
+var boxes: Array = []            # [Node3D, position, cooldown]
+var pads: Array = []             # [position, forward]
+var coins_on_track: Array = []   # [Node3D, position, cooldown]
+var bombs: Array = []            # {node, along, lat, owner, life}
+var goos: Array = []             # {node, pos, owner, life, armed}
+var _deco_t := 0.0
+
+const ITEM_NAMES := {"turbo": "TURBO", "turbo3": "TRIPLE TURBO", "bomb": "BONK BOMB", "goo": "GOO", "shield": "BUBBLE SHIELD"}
+const ITEM_COLORS := {"turbo": Color(1.0, 0.55, 0.15), "turbo3": Color(1.0, 0.35, 0.1), "bomb": Color(0.95, 0.3, 0.6), "goo": Color(0.45, 0.9, 0.3), "shield": Color(0.45, 0.8, 1.0)}
+const PERK_NAMES := {"grip": "STICKY TYRES", "tank": "BIG TANK"}
 
 
 ## The CPU driver.
@@ -104,7 +123,9 @@ func start() -> void:
 		v.enter(p)
 		cars[p] = v
 		var k: int = posmod(-int(round((9.0 + (i / 2) * 8.0 + (i % 2) * 3.5) / RaceMap.STEP)), n)
-		st[p] = {"idx": k, "lap": 0, "moved_t": 0.0, "lap_t": 0.0, "best": -1.0, "finish": -1.0}
+		st[p] = {"idx": k, "lap": 0, "moved_t": 0.0, "lap_t": 0.0, "best": -1.0, "finish": -1.0,
+			"item": "", "uses": 0, "fire_prev": false, "coins": 0, "perks": [], "hold": 0.0, "pad_t": 0.0}
+		v.add_driver_hands(p.kind, p.color)
 		if p.is_bot:
 			var b := RaceBrain.new()
 			b.race = self
@@ -113,6 +134,7 @@ func start() -> void:
 			p.brain = b
 	banner = "%d LAP%s - GO!" % [laps, "" if laps == 1 else "S"]
 	banner_t = -3.6
+	_lay_track_toys()
 
 
 func cards_on_death() -> bool:
@@ -170,12 +192,16 @@ func _physics_process(delta: float) -> void:
 		# Off the asphalt: slower.
 		var d := _dist_to_path(v.global_position, int(s.idx))
 		v.top_scale = 0.55 if d > RaceMap.W * 0.5 + 1.2 else 1.0
+		if racing:
+			_items_tick(p, v, s, delta)
 		if not racing:
 			s.moved_t = game.time
 			continue
 		var flipped: bool = v.global_transform.basis.y.y < 0.3
 		if p.brain.interact or game.time - s.moved_t > 4.0 or flipped or v.global_position.y < -2.0:
 			_reset(p)
+	if racing:
+		_toys_tick(delta)
 	_ranks()
 	if first_finish >= 0.0:
 		var humans_done := true
@@ -297,6 +323,10 @@ func strip_sig() -> Array:
 	var sig: Array = [int(game.time * 10.0)]
 	for p in order:
 		sig.append(st[p].lap)
+		sig.append(st[p].item)
+		sig.append(st[p].uses)
+		sig.append(st[p].coins)
+		sig.append(st[p].perks.size())
 	return sig
 
 
@@ -318,6 +348,25 @@ func draw_strip(hud, ci: Control, s: float) -> void:
 	hud._t(Vector2(r.position.x, r.position.y + 31 * s), _clock(maxf(0.0, t)), 18, Color(1, 1, 1, 0.85), HORIZONTAL_ALIGNMENT_RIGHT, bw - 16 * s, 700, ci)
 	if sd.best > 0.0:
 		hud._t(Vector2(0, r.end.y + 14 * s), "BEST LAP %s" % _clock(sd.best), 10, Color(1, 1, 1, 0.7), HORIZONTAL_ALIGNMENT_CENTER, w, 700, ci)
+	# Item slot (top right): what you hold, how many, fire to use.
+	var ir := Rect2(w - 150 * s, 8 * s, 140 * s, 64 * s)
+	UiKit.card(ci, ir, UiKit.PANEL, 18 * s, s)
+	if sd.item != "":
+		var col: Color = ITEM_COLORS[sd.item]
+		ci.draw_circle(ir.position + Vector2(30 * s, 32 * s), 20 * s, col)
+		ci.draw_circle(ir.position + Vector2(30 * s, 32 * s), 13 * s, col.lerp(Color.WHITE, 0.5))
+		var label: String = ITEM_NAMES[sd.item] + (" x%d" % sd.uses if sd.uses > 1 else "")
+		hud._t(Vector2(ir.position.x + 56 * s, ir.position.y + 30 * s), label, 12, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, ir.size.x - 60 * s, 700, ci)
+		var pad: bool = p.brain.device >= 0
+		hud._t(Vector2(ir.position.x + 56 * s, ir.position.y + 50 * s), ("RT" if pad else "CLICK") + " TO USE", 9, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_LEFT, -1, 700, ci)
+	else:
+		hud._t(Vector2(ir.position.x, ir.position.y + 38 * s), "NO ITEM", 11, Color(1, 1, 1, 0.35), HORIZONTAL_ALIGNMENT_CENTER, ir.size.x, 700, ci)
+	# Coins and perks under it.
+	var cy := ir.end.y + 18 * s
+	ci.draw_circle(Vector2(ir.position.x + 14 * s, cy - 5 * s), 8 * s, Color(1.0, 0.8, 0.2))
+	hud._t(Vector2(ir.position.x + 28 * s, cy), "%d / 10" % sd.coins, 12, Color(1.0, 0.85, 0.35), HORIZONTAL_ALIGNMENT_LEFT, -1, 700, ci)
+	for i in sd.perks.size():
+		hud._t(Vector2(ir.position.x, cy + (i + 1) * 16 * s), PERK_NAMES[sd.perks[i]], 10, Color(0.7, 1.0, 0.7), HORIZONTAL_ALIGNMENT_LEFT, -1, 700, ci)
 
 
 ## Places over the other cars.
@@ -363,3 +412,359 @@ static func _clock(t: float) -> String:
 	if t < 0.0:
 		return "-"
 	return "%d:%04.1f" % [int(t) / 60, fmod(t, 60.0)]
+
+
+# --------------------------------------------------------------------------
+# Party-kart toys: gift boxes, boost pads, coins, bombs, goo
+# --------------------------------------------------------------------------
+
+func _frac_idx(f: float) -> int:
+	return int(f * n) % n
+
+
+## Sample index near `i` where the track runs straight (for pads).
+func _straight_near(i: int) -> int:
+	for k in 14:
+		var j := (i + k) % n
+		if RaceMap._bend(path, j) < 0.02 and RaceMap._bend(path, (j + 3) % n) < 0.02:
+			return j
+	return i
+
+
+func _lay_track_toys() -> void:
+	# Gift box rows across the road.
+	for f in [0.12, 0.4, 0.68, 0.9]:
+		var i := _frac_idx(f)
+		var nrm := RaceMap._normal(path, i)
+		for lat in [-4.8, -1.6, 1.6, 4.8]:
+			var pos: Vector3 = path[i] + nrm * lat + Vector3(0, 1.0, 0)
+			var node := _gift_node(boxes.size())
+			node.position = pos
+			game.world.add_child(node)
+			boxes.append([node, pos, 0.0])
+	# Boost pads on straights.
+	for f in [0.03, 0.27, 0.55, 0.8]:
+		var i := _straight_near(_frac_idx(f))
+		var fwd: Vector3 = (path[(i + 1) % n] - path[i]).normalized()
+		var lat_side := 3.0 if pads.size() % 2 == 0 else -3.0
+		var pos: Vector3 = path[i] + RaceMap._normal(path, i) * lat_side
+		pads.append([pos, fwd])
+		game.world.add_child(_pad_node(pos, fwd))
+	# Coin lines.
+	for f in [0.2, 0.33, 0.5, 0.62, 0.77, 0.95]:
+		var i := _frac_idx(f)
+		var lat := 3.5 if coins_on_track.size() % 2 == 0 else -3.5
+		for c in 5:
+			var j := (i + c) % n
+			var pos: Vector3 = path[j] + RaceMap._normal(path, j) * lat + Vector3(0, 0.9, 0)
+			var node := _coin_node()
+			node.position = pos
+			game.world.add_child(node)
+			coins_on_track.append([node, pos, 0.0])
+
+
+## Pickups, items and pads for one car.
+func _items_tick(p, v, s: Dictionary, delta: float) -> void:
+	var pos: Vector3 = v.global_position
+	s.pad_t = maxf(0.0, s.pad_t - delta)
+	for b in boxes:
+		if b[2] <= 0.0 and _flat(b[1], pos) < 2.3:
+			b[2] = 3.0
+			b[0].visible = false
+			Fx.sparks(game.world, b[1], Color(1.0, 0.8, 0.4), 16, 6.0)
+			if s.item == "":
+				_give_item(p, v, s)
+	for c in coins_on_track:
+		if c[2] <= 0.0 and _flat(c[1], pos) < 1.9:
+			c[2] = 8.0
+			c[0].visible = false
+			if s.coins < 10:
+				s.coins += 1
+				v.coin_bonus = s.coins * 0.015
+			Sfx.play_at("tick", c[1], -6.0, 1.6)
+	for pd in pads:
+		if s.pad_t <= 0.0:
+			var rel: Vector3 = pos - pd[0]
+			var along: float = rel.dot(pd[1])
+			var side: float = rel.dot(Vector3(-pd[1].z, 0, pd[1].x))
+			if absf(along) < 2.4 and absf(side) < 2.2:
+				s.pad_t = 1.0
+				v.boost(1.1 * (1.5 if "tank" in s.perks else 1.0))
+	# Use the item: fire (edge).
+	var fire: bool = p.brain.fire
+	var pressed: bool = fire and not s.fire_prev
+	s.fire_prev = fire
+	if p.is_bot and s.item != "":
+		s.hold += delta
+		pressed = s.hold > _bot_wait(p, v, s)
+	if pressed and s.item != "":
+		_use_item(p, v, s)
+
+
+## When a CPU racer fires its item.
+func _bot_wait(p, v, s: Dictionary) -> float:
+	match s.item:
+		"turbo", "turbo3":
+			return 0.6 if RaceMap._bend(path, (int(s.idx) + 5) % n) < 0.03 else 99.0
+		"bomb":
+			return 0.8 if _car_ahead(p, 45.0) != null else 6.0
+		"shield":
+			return 0.4
+		_:
+			return 1.5
+
+
+func _give_item(p, v, s: Dictionary) -> void:
+	# Further back = better luck (more turbos and bombs, no goo).
+	var place: int = maxi(1, order.find(p) + 1)
+	var back: float = float(place - 1) / maxf(1.0, order.size() - 1)
+	var bag: Array = ["goo", "goo", "shield", "bomb", "turbo", "grip", "tank"]
+	if back > 0.3:
+		bag = ["turbo", "bomb", "bomb", "shield", "turbo3", "grip", "tank"]
+	if back > 0.7:
+		bag = ["turbo3", "turbo3", "bomb", "turbo", "shield", "tank", "grip"]
+	var pick: String = bag[randi() % bag.size()]
+	if pick in PERK_NAMES:
+		if pick in s.perks:
+			pick = "turbo"
+		else:
+			s.perks.append(pick)
+			if pick == "grip":
+				v.grip = 1.3
+			p.say("PERK: %s!" % PERK_NAMES[pick])
+			Sfx.play_at("card", v.global_position, -4.0, 1.2)
+			return
+	s.item = pick
+	s.uses = 3 if pick == "turbo3" else 1
+	s.hold = 0.0
+	Sfx.play_at("join", v.global_position, -6.0, 1.3)
+
+
+func _use_item(p, v, s: Dictionary) -> void:
+	var tank := 1.5 if "tank" in s.perks else 1.0
+	match s.item:
+		"turbo", "turbo3":
+			v.boost(1.6 * tank)
+		"bomb":
+			var nrm := RaceMap._normal(path, int(s.idx))
+			var lat: float = (v.global_position - path[int(s.idx)]).dot(nrm)
+			var node := _bomb_node()
+			game.world.add_child(node)
+			bombs.append({"node": node, "along": float((int(s.idx) + 2) % n), "lat": lat, "owner": p, "life": 7.0})
+			Sfx.play_at("shot_bomb", v.global_position, -2.0, 1.2)
+		"goo":
+			var back: Vector3 = v.global_transform * Vector3(0, 0.05, 3.6)
+			back.y = 0.06
+			var node := _goo_node()
+			node.position = back
+			game.world.add_child(node)
+			goos.append({"node": node, "pos": back, "owner": p, "life": 30.0, "armed": 0.5})
+			Sfx.play_at("pop", back, -4.0, 0.7)
+		"shield":
+			v.shield(8.0)
+	s.uses -= 1
+	s.hold = 0.0
+	if s.uses <= 0:
+		s.item = ""
+
+
+func _car_ahead(p, within: float):
+	var mine: float = _score(p)
+	var best = null
+	var best_gap := 1e9
+	for o in st:
+		if o == p:
+			continue
+		var gap: float = _score(o) - mine
+		if gap > 0.0 and gap * RaceMap.STEP < within and gap < best_gap:
+			best_gap = gap
+			best = o
+	return best
+
+
+## Spin a car out (bomb / goo); it drops two coins unless shielded.
+func _hit(p) -> void:
+	var v = cars.get(p)
+	if v == null:
+		return
+	if v.spin_out():
+		var s: Dictionary = st[p]
+		s.coins = maxi(0, int(s.coins) - 2)
+		v.coin_bonus = s.coins * 0.015
+		p.say("SPUN OUT!")
+
+
+## Moving / timed toys (once per tick, all cars).
+func _toys_tick(delta: float) -> void:
+	for b in boxes:
+		if b[2] > 0.0:
+			b[2] -= delta
+			if b[2] <= 0.0:
+				b[0].visible = true
+				b[0].scale = Vector3.ONE * 0.2
+				create_tween().tween_property(b[0], "scale", Vector3.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	for c in coins_on_track:
+		if c[2] > 0.0:
+			c[2] -= delta
+			if c[2] <= 0.0:
+				c[0].visible = true
+	# Bombs roll along the track, a little above it.
+	for b in bombs.duplicate():
+		b.life -= delta
+		b.along = fmod(b.along + 52.0 * delta / RaceMap.STEP, float(n))
+		var i := int(b.along)
+		var f: float = b.along - i
+		var a: Vector3 = path[i]
+		var c: Vector3 = path[(i + 1) % n]
+		var pos: Vector3 = a.lerp(c, f) + RaceMap._normal(path, i) * b.lat * 0.9 + Vector3(0, 0.55, 0)
+		b.lat *= 1.0 - delta * 0.8       # drifts towards the racing line
+		b.node.position = pos
+		b.node.rotation.x -= delta * 14.0
+		var hit_car = null
+		for o in cars:
+			if o != b.owner and _flat(cars[o].global_position, pos) < 2.4:
+				hit_car = o
+				break
+		if hit_car != null or b.life <= 0.0:
+			if hit_car != null:
+				_hit(hit_car)
+			Fx.puff(game.world, pos, Color(1.0, 0.6, 0.8, 0.9), 14, 1.4)
+			Fx.sparks(game.world, pos, Color(1.0, 0.7, 0.3), 22, 8.0)
+			Sfx.play_at("boom", pos, -6.0, 1.4)
+			b.node.queue_free()
+			bombs.erase(b)
+	for g in goos.duplicate():
+		g.life -= delta
+		g.armed -= delta
+		var gone: bool = g.life <= 0.0
+		for o in cars:
+			if gone:
+				break
+			if (g.armed <= 0.0 or o != g.owner) and _flat(cars[o].global_position, g.pos) < 2.3:
+				_hit(o)
+				gone = true
+		if gone:
+			g.node.queue_free()
+			goos.erase(g)
+	# Spin and bob the pickups.
+	_deco_t += delta
+	for b in boxes:
+		b[0].rotation.y = _deco_t * 1.4
+		b[0].position.y = b[1].y + sin(_deco_t * 2.5 + b[1].x) * 0.15
+	for c in coins_on_track:
+		c[0].rotation.y = _deco_t * 4.0
+
+
+func _mat(col: Color, glow := 0.0) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = col
+	m.roughness = 0.45
+	m.rim_enabled = true
+	m.rim = 0.3
+	if glow > 0.0:
+		m.emission_enabled = true
+		m.emission = col
+		m.emission_energy_multiplier = glow
+	return m
+
+
+func _cube(parent: Node3D, size: Vector3, mat: Material, pos := Vector3.ZERO) -> MeshInstance3D:
+	var bm := BoxMesh.new()
+	bm.size = size
+	var mi := MeshInstance3D.new()
+	mi.mesh = bm
+	mi.material_override = mat
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
+
+## A wrapped party gift: pastel paper, a contrasting ribbon cross and a bow.
+func _gift_node(i: int) -> Node3D:
+	var root := Node3D.new()
+	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var papers := [Color(1.0, 0.45, 0.6), Color(0.4, 0.75, 1.0), Color(0.6, 0.9, 0.4), Color(1.0, 0.8, 0.3), Color(0.75, 0.55, 1.0)]
+	var paper: Color = papers[i % papers.size()]
+	var ribbon := Color(1, 1, 1) if i % 2 == 0 else Color(1.0, 0.85, 0.3)
+	_cube(root, Vector3(1.1, 1.1, 1.1), _mat(paper, 0.25))
+	var rm := _mat(ribbon, 0.4)
+	_cube(root, Vector3(1.14, 1.14, 0.2), rm)
+	_cube(root, Vector3(0.2, 1.14, 1.14), rm)
+	for k in 2:
+		var loop := _cube(root, Vector3(0.4, 0.25, 0.14), rm, Vector3(0, 0.68, 0))
+		loop.rotation = Vector3(0, k * PI * 0.5, 0.5 if k == 0 else -0.5)
+	return root
+
+
+func _coin_node() -> Node3D:
+	var root := Node3D.new()
+	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var cm := CylinderMesh.new()
+	cm.top_radius = 0.42
+	cm.bottom_radius = 0.42
+	cm.height = 0.1
+	var mi := MeshInstance3D.new()
+	mi.mesh = cm
+	mi.material_override = _mat(Color(1.0, 0.78, 0.2), 0.6)
+	mi.rotation.x = PI * 0.5
+	root.add_child(mi)
+	var star := Label3D.new()
+	star.text = "*"
+	star.font_size = 64
+	star.pixel_size = 0.008
+	star.modulate = Color(1, 1, 0.8)
+	star.position = Vector3(0, 0, 0.06)
+	root.add_child(star)
+	return root
+
+
+## A boost pad: glowing orange chevrons pointing down the track.
+func _pad_node(pos: Vector3, fwd: Vector3) -> Node3D:
+	var root := Node3D.new()
+	root.position = pos + Vector3(0, 0.075, 0)
+	root.rotation.y = atan2(-fwd.x, -fwd.z)
+	_cube(root, Vector3(4.2, 0.03, 4.6), _mat(Color(0.15, 0.1, 0.25)))
+	var glow := _mat(Color(1.0, 0.55, 0.15), 1.6)
+	for k in 3:
+		var z := 1.4 - k * 1.4
+		for sgn in [-1.0, 1.0]:
+			var bar := _cube(root, Vector3(1.6, 0.04, 0.32), glow, Vector3(sgn * 0.62, 0.02, z))
+			bar.rotation.y = sgn * 0.6
+	return root
+
+
+func _bomb_node() -> Node3D:
+	var root := Node3D.new()
+	root.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	var sm := SphereMesh.new()
+	sm.radius = 0.55
+	sm.height = 1.1
+	var mi := MeshInstance3D.new()
+	mi.mesh = sm
+	mi.material_override = _mat(Color(0.18, 0.12, 0.25))
+	root.add_child(mi)
+	_cube(root, Vector3(1.14, 0.18, 0.18), _mat(Color(0.95, 0.3, 0.6), 0.8))
+	_cube(root, Vector3(0.12, 0.3, 0.12), _mat(Color(1.0, 0.8, 0.3), 1.5), Vector3(0, 0.6, 0))
+	return root
+
+
+func _goo_node() -> Node3D:
+	var root := Node3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 1.6
+	cm.bottom_radius = 1.9
+	cm.height = 0.12
+	var mi := MeshInstance3D.new()
+	mi.mesh = cm
+	mi.material_override = _mat(Color(0.45, 0.9, 0.3), 0.3)
+	root.add_child(mi)
+	for k in 4:
+		var blob := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.35
+		sm.height = 0.4
+		blob.mesh = sm
+		blob.material_override = mi.material_override
+		blob.position = Vector3(cos(k * 1.7) * 0.9, 0.1, sin(k * 1.7) * 0.9)
+		root.add_child(blob)
+	return root

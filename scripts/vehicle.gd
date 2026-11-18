@@ -53,7 +53,7 @@ const SPECS := {
 }
 ## First-person eye point (vehicle space; the vehicle faces -Z).
 const SEATS := {"buggy": Vector3(-0.4, 1.6, -0.65), "tank": Vector3(0, 2.75, 0.5), "heli": Vector3(0, 2.0, -1.15),
-	"bike": Vector3(0, 1.7, 0.35), "racer": Vector3(0, 1.3, 0.0)}
+	"bike": Vector3(0, 1.7, 0.35), "racer": Vector3(0, 1.36, 0.12)}
 
 var game
 var type := "buggy"
@@ -81,6 +81,16 @@ var last_attacker = null
 var armed := true                # false: no guns, soft rams (RAM_MAX), half armour (Rounds)
 var racing := false              # Racing mode: no getting out, no ram damage
 var top_scale := 1.0             # top speed multiplier (racing.gd: off the track, CPU skill)
+# Racing items (racing.gd): a turbo, a spin-out, a bubble shield, coin and
+# perk bonuses.
+var boost_t := 0.0               # seconds of turbo left
+var spin_t := 0.0                # seconds of spin-out left (no control)
+var shield_t := 0.0              # seconds of bubble shield left (blocks one hit)
+var coin_bonus := 0.0            # extra top speed share from coins
+var grip := 1.0                  # steering multiplier (Sticky Tyres perk)
+var _steer_wheel: Node3D         # race car: the wheel (and the driver's paws) turn with the stick
+var _shield_mesh: MeshInstance3D
+var _fx_t := 0.0
 var _rammed := {}                # instance id -> msec of the last ram (one hit per bump)
 const RAM_MAX := 35.0            # unarmed ride: most a ram can do
 
@@ -273,12 +283,24 @@ func _physics_process(delta: float) -> void:
 func _drive(delta: float, b) -> void:
 	var move: Vector2 = b.move if b != null else Vector2.ZERO
 	throttle = move.y
-	var top: float = _spec.speed * top_scale
+	var top: float = _spec.speed * top_scale * (1.0 + coin_bonus)
+	if boost_t > 0.0:
+		boost_t -= delta
+		top *= 1.45
+		move.y = 1.0
+	if spin_t > 0.0:
+		# Spun out: no control, sliding to a stop while the car twirls.
+		spin_t -= delta
+		move = Vector2.ZERO
+		_speed = move_toward(_speed, 0.0, 45.0 * delta)
+		_visual.rotation.y += delta * 13.0
+		if spin_t <= 0.0:
+			_visual.rotation.y = 0.0
 	var want: float = move.y * top * (0.5 if move.y < 0.0 else 1.0)
-	_speed = move_toward(_speed, want, _spec.accel * delta * (1.6 if signf(want) != signf(_speed) else 1.0))
+	_speed = move_toward(_speed, want, _spec.accel * delta * (1.6 if signf(want) != signf(_speed) else 1.0) * (3.0 if boost_t > 0.0 else 1.0))
 	if absf(move.y) < 0.05:
 		_speed = move_toward(_speed, 0.0, _spec.accel * 0.6 * delta)
-	var steer: float = -move.x * _spec.turn
+	var steer: float = -move.x * _spec.turn * grip
 	if type == "buggy" or type == "bike" or type == "racer":
 		steer *= clampf(absf(_speed) / 6.0, 0.0, 1.0) * signf(_speed if absf(_speed) > 0.1 else 1.0)
 		if type == "racer":
@@ -336,6 +358,18 @@ func _drive(delta: float, b) -> void:
 			_wheels[i].get_parent().rotation.y = move.x * -0.45
 	elif type == "bike" and _fork != null:
 		_fork.rotation.y = move.x * -0.35
+	if _steer_wheel != null:
+		_steer_wheel.rotation.z = lerpf(_steer_wheel.rotation.z, move.x * -0.75, clampf(delta * 12.0, 0.0, 1.0))
+	# Racing effects: turbo flames, the bubble shield.
+	if racing:
+		shield_t = maxf(0.0, shield_t - delta)
+		if _shield_mesh != null:
+			_shield_mesh.visible = shield_t > 0.0
+		_fx_t -= delta
+		if boost_t > 0.0 and _fx_t <= 0.0:
+			_fx_t = 0.05
+			var back: Vector3 = global_transform * Vector3(0, 0.6, 2.3)
+			Fx.sparks(game.world, back, Color(1.0, 0.55, 0.15), 6, 4.0, global_transform.basis.z, 30.0, 0.25)
 
 
 ## One ram per victim per 0.7 s (the contact lasts several physics frames).
@@ -901,6 +935,22 @@ func _build_racer() -> void:
 	ball.height = 0.48
 	_part(_visual, ball, helmet, Vector3(0, 0.98, 0.35))
 	_bx(_visual, Vector3(0.4, 0.1, 0.06), dark, Vector3(0, 1.0, 0.13))          # visor
+	# Steering wheel in front of the driver (the paws are added per driver).
+	var column := Node3D.new()
+	column.position = Vector3(0, 1.02, -0.42)
+	column.rotation.x = -1.15                # tilted towards the driver
+	_visual.add_child(column)
+	_steer_wheel = Node3D.new()
+	column.add_child(_steer_wheel)
+	var rim := TorusMesh.new()
+	rim.inner_radius = 0.15
+	rim.outer_radius = 0.19
+	rim.rings = 20
+	rim.ring_segments = 8
+	var rim_mi := _part(_steer_wheel, rim, dark, Vector3.ZERO, Vector3(PI * 0.5, 0, 0))
+	rim_mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	_bx(_steer_wheel, Vector3(0.3, 0.04, 0.03), dark, Vector3.ZERO)
+	_bx(_steer_wheel, Vector3(0.1, 0.07, 0.035), paint, Vector3(0, 0, 0.005))
 	_bx(_visual, Vector3(0.3, 0.45, 0.55), paint, Vector3(0, 0.95, 0.95), Vector3(-0.2, 0, 0))   # air box
 	# Front wing and rear wing.
 	_bx(_visual, Vector3(2.0, 0.06, 0.45), paint, Vector3(0, 0.2, -2.55))
@@ -914,3 +964,62 @@ func _build_racer() -> void:
 	for sx in [-0.95, 0.95]:
 		_wheel(Vector3(sx, 0.42, -1.45), 0.42, 0.42, tyre, metal, true)
 		_wheel(Vector3(sx, 0.46, 1.35), 0.46, 0.5, tyre, metal)
+
+
+# --------------------------------------------------------------------------
+# Racing items (racing.gd)
+# --------------------------------------------------------------------------
+
+## A turbo for `sec` seconds.
+func boost(sec: float) -> void:
+	boost_t = maxf(boost_t, sec)
+	Sfx.play_at("pad", global_position, -2.0, 0.9)
+
+
+## Spin out (a bomb, goo). Returns false if the bubble shield took the hit.
+func spin_out() -> bool:
+	if shield_t > 0.0:
+		shield_t = 0.0
+		Sfx.play_at("block", global_position, -2.0, 1.2)
+		Fx.sparks(game.world, global_position + Vector3(0, 1, 0), Color(0.6, 0.9, 1.0), 20, 6.0)
+		return false
+	spin_t = 1.3
+	boost_t = 0.0
+	Sfx.play_at("hurt", global_position, 0.0, 0.7)
+	return true
+
+
+func shield(sec: float) -> void:
+	shield_t = sec
+	if _shield_mesh == null:
+		var sm := SphereMesh.new()
+		sm.radius = 2.4
+		sm.height = 3.0
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.5, 0.85, 1.0, 0.22)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = Color(0.4, 0.8, 1.0)
+		mat.emission_energy_multiplier = 0.6
+		mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_shield_mesh = MeshInstance3D.new()
+		_shield_mesh.mesh = sm
+		_shield_mesh.material_override = mat
+		_shield_mesh.position = Vector3(0, 0.8, 0)
+		_shield_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_shield_mesh)
+	Sfx.play_at("card", global_position, -4.0, 1.3)
+
+
+## The driver's plush paws on the wheel (race car; the animal you play).
+func add_driver_hands(kind: int, band: Color) -> void:
+	if _steer_wheel == null:
+		return
+	for side in [-1.0, 1.0]:
+		var paw: Node3D = preload("res://scripts/fp_arm.gd").build(kind, band, 1, side, "fist", 0.32)
+		paw.scale = Vector3.ONE * 1.25
+		paw.position = Vector3(side * 0.18, 0.0, 0.04)
+		# Undo the column's tilt so the forearms run back towards the
+		# driver's shoulders (below eye level), angled in a little.
+		paw.rotation = Vector3(1.15 - 0.25, -side * 0.25, 0.0)
+		_steer_wheel.add_child(paw)

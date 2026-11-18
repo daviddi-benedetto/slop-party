@@ -57,6 +57,7 @@ static func build(m) -> void:
 			m._box((ea + eb) * 0.5 + Vector3(0, 0.55, 0), Vector3(ed.length() + 0.35, 1.1, 0.5),
 				"car_red" if (i / 2) % 2 == 0 else "trim", false, atan2(-ed.z, ed.x))
 	_start_line(m, p0)
+	_town(m, p0)
 	_scenery(m, p0)
 	# Grid slots (also spawn points, should anything need one).
 	for slot in 6:
@@ -164,6 +165,48 @@ static func _start_line(m, path: Array) -> void:
 	label2.position = p + Vector3(0, 6.4, 0) + t * 0.35
 	label2.rotation.y = atan2(-t.x, -t.z)
 	m.add_child(label2)
+
+
+## A little village in the infield and around the outside: the cute
+## Quaternius village houses scaled up, plus medieval kit chimneys and
+## lanterns. Each is kept clear of the road and barriers by its own size.
+static func _town(m, path: Array) -> void:
+	var Models = load("res://scripts/models.gd")
+	var kinds := [["village/House_1", 4.2], ["village/House_2", 4.2], ["village/House_3", 4.2], ["village/House_4", 4.2],
+		["village/Inn", 3.6], ["village/Blacksmith", 3.8], ["village/Mill", 3.4], ["village/Stable", 3.8], ["village/Bell_Tower", 3.2],
+		["village/Sawmill", 3.6]]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 777
+	var placed: Array = []           # [Vector3, radius]
+	var clear := W * 0.5 + RUNOFF + 1.5
+	var count := 0
+	for gx in range(-92, 93, 11):
+		for gz in range(-62, 63, 11):
+			var q := Vector3(gx + rng.randf_range(-3, 3), 0, gz + rng.randf_range(-3, 3))
+			var k: Array = kinds[rng.randi() % kinds.size()]
+			var b: AABB = Models.bounds(k[0])
+			var r: float = maxf(b.size.x, b.size.z) * float(k[1]) * 0.5
+			if absf(q.x) + r > 96.0 or absf(q.z) + r > 66.0:
+				continue
+			if _near_road(path, q, clear + r):
+				continue
+			var ok := true
+			for pr in placed:
+				if (pr[0] as Vector3).distance_to(q) < pr[1] + r + 2.5:
+					ok = false
+					break
+			if not ok or rng.randf() < 0.25:
+				continue
+			# Face the nearest bit of road.
+			var near: Vector3 = path[0]
+			for p in path:
+				if (p as Vector3).distance_to(q) < near.distance_to(q):
+					near = p
+			var yaw := atan2(near.x - q.x, near.z - q.z)
+			m._model(k[0], q - Basis(Vector3.UP, yaw) * (Vector3(b.get_center().x, b.position.y, b.get_center().z) * float(k[1])), yaw, float(k[1]), false, "box")
+			placed.append([q, r])
+			count += 1
+	print("[raceway] %d village buildings" % count)
 
 
 static func _scenery(m, path: Array) -> void:
