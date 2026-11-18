@@ -228,6 +228,17 @@ In the lobby each player presses **A** on their own gamepad to take a seat
 (animal, colour, hat, back) and left/right changes it.
 Every match opens on a loading card with the mode, map, theme and a tip.
 
+**The mouse works in every menu:** click a lobby chip to change it
+(right-click goes back), click an empty plate to join as the keyboard player
+or the X to leave, click the arrows on your plate to customise, click FIGHT
+to start. In Options and the pause menu, hover and click; the wheel scrolls
+and right-click closes.
+
+**Controller not working?** The bottom-left corner of the lobby lists every
+controller the game can see. If yours isn't there, the game can't see it:
+pair it before starting the game, then restart. If it's listed as
+"unmapped", press any button to join.
+
 | Lobby | Gamepad | Keyboard |
 |---|---|---|
 | Join / leave | A / B | Space / Backspace |

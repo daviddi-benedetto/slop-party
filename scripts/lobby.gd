@@ -15,6 +15,15 @@ extends Control
 ## (looks.gd: the stage behind the lobby and its colours change with it),
 ## Back / O options, Start / Enter to begin.
 ##
+## The mouse works too: click a chip to step it (right-click steps back), an
+## empty plate to join as the keyboard player, a plate's category line or
+## its < > halves to customise, the X to leave, FIGHT to start.
+##
+## Controllers: every pad Godot sees is listed along the bottom (name, and
+## "unmapped" when SDL has no layout for it). An unmapped pad can join with
+## any button, and the list is printed to the log on start and on connect,
+## to help when a pad seems dead (macOS Bluetooth pads).
+##
 ## main.gd calls activate() to show it and deactivate() before a match (the
 ## stage shares the root World3D with the match, so it has to be freed).
 ## Emits start(config) with the dictionary game.gd expects.
@@ -60,12 +69,15 @@ var _t := 0.0
 var _armed := false          # ignore buttons still held from the previous screen
 var _options
 var _look_now := {}          # the theme the stage is showing (RANDOM resolved)
+var _hits: Array = []        # [Rect2, id] clickable areas from the last _draw (mouse)
+var _hover := ""
 
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	Input.joy_connection_changed.connect(_on_joy_changed)
+	_log_pads("start")
 	for i in MAX_PLAYERS:
 		_slot_sig.append("")
 		_slot_char.append(null)
@@ -163,9 +175,28 @@ func demo_fill(humans: int, cpu: int) -> void:
 
 func _on_joy_changed(device: int, connected: bool) -> void:
 	UiKit.reset_pads()
+	_log_pads("%s %d" % ["connected" if connected else "disconnected", device])
+	if connected and visible:
+		_say("Controller connected: %s" % Input.get_joy_name(device))
 	if not connected:
 		seats = seats.filter(func(s): return s.device != device)
 		_clamp_bots()
+
+
+## Print every controller Godot can see (goes to the log file too).
+func _log_pads(why: String) -> void:
+	var pads := Input.get_connected_joypads()
+	print("[pads] %s: %d connected" % [why, pads.size()])
+	for d in pads:
+		print("[pads]   %d: %s  known=%s  guid=%s" % [d, Input.get_joy_name(d), Input.is_joy_known(d), Input.get_joy_guid(d)])
+
+
+## Any button at all on this pad (for pads SDL has no layout for).
+func _any_button(d: int) -> bool:
+	for b in 21:
+		if Input.is_joy_button_pressed(d, b):
+			return true
+	return false
 
 
 func _clamp_bots() -> void:
@@ -234,7 +265,8 @@ func _process(delta: float) -> void:
 	for d in Input.get_connected_joypads():
 		var k := "j%d_" % d
 		var seat := _seat_of(d)
-		if _edge(k + "a", Input.is_joy_button_pressed(d, JOY_BUTTON_A)) and seat < 0:
+		var join_btn := Input.is_joy_button_pressed(d, JOY_BUTTON_A) if Input.is_joy_known(d) else _any_button(d)
+		if _edge(k + "a", join_btn) and seat < 0:
 			_join(d)
 		if _edge(k + "b", Input.is_joy_button_pressed(d, JOY_BUTTON_B)) and seat >= 0:
 			_leave(d)
@@ -260,42 +292,104 @@ func _process(delta: float) -> void:
 		_options.open()
 		return
 
-	var mode: String = MODES[mode_i]
 	if mode_step:
-		mode_i = (mode_i + 1) % MODES.size()
-		Sfx.play("tick", -6.0, 0.9)
+		_shared("mode", 1)
 	if bot_step:
-		if mode == "frontline":
-			versus = not versus
-		else:
-			var room := MAX_PLAYERS - seats.size()
-			bots = 0 if bots >= room else bots + 1
-		Sfx.play("tick", -8.0)
-	if target_step and mode != "zombies" and mode != "gungame":
-		target_i = (target_i + 1) % KILL_TARGETS.size()
-		Sfx.play("tick", -8.0)
+		_shared("bots", 1)
+	if target_step:
+		_shared("target", 1)
 	if time_step:
-		theme_i = (theme_i + 1) % Looks.options().size()
-		Settings.lobby["theme"] = theme_i
-		Sfx.play("tick", -6.0, 1.1)
-		_build_stage()
+		_shared("theme", 1)
 	if map_step:
-		if mode == "frontline":
-			_say("Frontline is fought on its own huge map")
-		elif mode == "zombies":
-			_say("Zombies is played in the Quarantine zone")
-		elif mode == "medieval":
-			_say("Medieval is fought in the Castle")
-		else:
-			map_i = (map_i + 1) % Map.ARENAS.size()
-			Sfx.play("tick", -6.0, 1.2)
+		_shared("map", 1)
 	if want_start:
-		if seats.is_empty():
-			_say("Someone has to join first!")
-		elif mode in ["rounds", "gungame", "medieval"] and seats.size() + bots < 2:
-			_say("Need 2 or more fighters - add a player or a bot")
-		else:
-			_start()
+		_try_start()
+	_sync_stage()
+
+
+## Step one of the shared settings (the chips along the bottom) by dir.
+func _shared(what: String, dir: int) -> void:
+	var mode: String = MODES[mode_i]
+	match what:
+		"mode":
+			mode_i = posmod(mode_i + dir, MODES.size())
+			Sfx.play("tick", -6.0, 0.9)
+		"bots":
+			if mode == "frontline":
+				versus = not versus
+			else:
+				var room := MAX_PLAYERS - seats.size()
+				bots = posmod(bots + dir, room + 1)
+			Sfx.play("tick", -8.0)
+		"target":
+			if mode != "zombies" and mode != "gungame":
+				target_i = posmod(target_i + dir, KILL_TARGETS.size())
+				Sfx.play("tick", -8.0)
+		"theme":
+			theme_i = posmod(theme_i + dir, Looks.options().size())
+			Settings.lobby["theme"] = theme_i
+			Sfx.play("tick", -6.0, 1.1)
+			_build_stage()
+		"map":
+			if mode == "frontline":
+				_say("Frontline is fought on its own huge map")
+			elif mode == "zombies":
+				_say("Zombies is played in the Quarantine zone")
+			elif mode == "medieval":
+				_say("Medieval is fought in the Castle")
+			else:
+				map_i = posmod(map_i + dir, Map.ARENAS.size())
+				Sfx.play("tick", -6.0, 1.2)
+		"options":
+			Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+			_options.open()
+
+
+func _try_start() -> void:
+	var mode: String = MODES[mode_i]
+	if seats.is_empty():
+		_say("Someone has to join first!")
+	elif mode in ["rounds", "gungame", "medieval"] and seats.size() + bots < 2:
+		_say("Need 2 or more fighters - add a player or a bot")
+	else:
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+		_start()
+
+
+func _input(event: InputEvent) -> void:
+	if not visible or _options.visible or not (event is InputEventMouse):
+		return
+	var id := ""
+	for i in range(_hits.size() - 1, -1, -1):
+		if (_hits[i][0] as Rect2).has_point(event.position):
+			id = _hits[i][1]
+			break
+	_hover = id
+	Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND if id != "" else Input.CURSOR_ARROW)
+	if not (event is InputEventMouseButton and event.pressed) or id == "":
+		return
+	if event.button_index != MOUSE_BUTTON_LEFT and event.button_index != MOUSE_BUTTON_RIGHT:
+		return
+	var dir := 1 if event.button_index == MOUSE_BUTTON_LEFT else -1
+	var parts := id.split(":")
+	match parts[0]:
+		"chip":
+			_shared(parts[1], dir)
+		"start":
+			_try_start()
+		"join":
+			if _seat_of(KEYBOARD) < 0:
+				_join(KEYBOARD)
+			else:
+				_say("Gamepad players press A on their own pad to join")
+		"leave":
+			var si := int(parts[1])
+			if si < seats.size():
+				_leave(seats[si].device)
+		"cat":
+			_edit(int(parts[1]), 0, dir)
+		"val":
+			_edit(int(parts[1]), int(parts[2]), 0)
 	_sync_stage()
 
 
@@ -445,6 +539,7 @@ func _draw() -> void:
 	var h := size.y
 	var s := h / 1080.0
 	var ui: Dictionary = _look_now.get("ui", Looks.LOOKS.classic.ui)
+	_hits.clear()
 	var panel: Color = ui.panel
 	var value: Color = ui.value
 	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, ui.vignette)
@@ -509,6 +604,7 @@ func _draw() -> void:
 		["LB" if pad else "T", "THEME", Looks.label(Looks.options()[theme_i])],
 		["BACK" if pad else "O", "OPTIONS", ""],
 	]
+	var chip_ids := ["mode", "bots", "target", "map", "theme", "options"]
 	# Each chip is as wide as its own button, label and value plus fixed
 	# gaps; if the row is wider than the screen, everything shrinks to fit.
 	var k := 1.0
@@ -521,10 +617,13 @@ func _draw() -> void:
 			continue
 		var cx := (w - total_w) * 0.5
 		var sk := s * k
-		for chip in chips:
+		for ci in chips.size():
+			var chip: Array = chips[ci]
 			var cw := _chip_w(chip, sk, pad)
 			var r := Rect2(cx, by, cw, 58 * sk)
-			UiKit.card(self, r, panel, 29 * sk, sk)
+			var cid: String = "chip:" + chip_ids[ci]
+			_hits.append([r, cid])
+			UiKit.card(self, r, panel.lerp(Color.WHITE, 0.18) if _hover == cid else panel, 29 * sk, sk)
 			var ox := r.position.x + 18 * sk
 			ox += UiKit.prompt(self, Vector2(ox, by + 41 * sk), chip[0], 26 * sk, not pad) + 12 * sk
 			UiKit.text(self, Vector2(ox, by + 40 * sk), chip[1], 24 * sk, UiKit.CREAM, HORIZONTAL_ALIGNMENT_LEFT, -1, 600, 0.0)
@@ -538,9 +637,24 @@ func _draw() -> void:
 	if ready:
 		# A quiet reminder, not a shout: small, gently breathing.
 		var label := "PRESS START TO FIGHT" if pad else "PRESS ENTER TO FIGHT"
-		UiKit.text(self, Vector2(0, sy + 6 * s), label, 24 * s, Color(value.lerp(Color.WHITE, 0.3), 0.55 + 0.2 * sin(_t * 2.0)), HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.12)
+		# Also a button for the mouse: it lights up under the pointer.
+		var lw := UiKit.text_width(label, 24 * s) + 48 * s
+		var lr := Rect2((w - lw) * 0.5, sy - 22 * s, lw, 40 * s)
+		_hits.append([lr, "start"])
+		if _hover == "start":
+			UiKit.card(self, lr, Color(value, 0.9), 20 * s, s)
+		UiKit.text(self, Vector2(0, sy + 6 * s), label, 24 * s, UiKit.INK if _hover == "start" else Color(value.lerp(Color.WHITE, 0.3), 0.55 + 0.2 * sin(_t * 2.0)), HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.12)
 	else:
 		UiKit.text(self, Vector2(0, sy), "WAITING FOR PLAYERS...", 36 * s, Color(1, 1, 1, 0.7 + 0.3 * sin(_t * 3.0)), HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.16)
+	# Every controller the game can see, bottom left (or a hint when none).
+	var pads := Input.get_connected_joypads()
+	var pad_line := "NO CONTROLLERS DETECTED - pair one, then restart the game if it does not show up here"
+	if not pads.is_empty():
+		var names: Array = []
+		for d in pads:
+			names.append("%d: %s%s" % [d + 1, Input.get_joy_name(d), "" if Input.is_joy_known(d) else " (unmapped: any button joins)"])
+		pad_line = "CONTROLLERS  " + "   ".join(names)
+	UiKit.text(self, Vector2(18 * s, h - 10 * s), pad_line, 15 * s, Color(1, 1, 1, 0.45), HORIZONTAL_ALIGNMENT_LEFT, -1, 600, 0.0)
 	if message_t > 0.0:
 		var mw := UiKit.text_width(message, 26 * s) + 50 * s
 		var bump := UiKit.back_out(clampf((3.0 - message_t) * 5.0, 0.0, 1.0))
@@ -577,8 +691,12 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 	var look := _look(i)
 	var col: Color = look.color if not look.is_empty() else Color(0.4, 0.45, 0.6)
 	# The plate sits to the right of the character, centred on its middle.
-	draw_set_transform(base + Vector2(78 * s, -ph * 0.5), 0.0, Vector2(0.85 + 0.15 * bump, 0.85 + 0.15 * bump))
+	var org := base + Vector2(78 * s, -ph * 0.5)
+	var sc := 0.85 + 0.15 * bump
+	draw_set_transform(org, 0.0, Vector2(sc, sc))
 	var r := Rect2(0, 0, pw, ph)
+	# Plate-local rect -> screen rect, for mouse hits.
+	var to_screen := func(lr: Rect2) -> Rect2: return Rect2(org + lr.position * sc, lr.size * sc)
 	if is_player:
 		var seat: Dictionary = seats[i]
 		UiKit.panel(self, r, _ui().panel, 22 * s, col, 3 * s, 5 * s)
@@ -595,18 +713,32 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 		UiKit.text(self, Vector2(14 * s - wob, 108 * s), "<", 28 * s, _ui().value)
 		UiKit.text(self, Vector2(0, 108 * s), ">", 28 * s, _ui().value, HORIZONTAL_ALIGNMENT_RIGHT, pw - 14 * s + wob)
 		UiKit.text(self, Vector2(0, 107 * s), val, _fit(val, 28 * s, pw - 76 * s), UiKit.CREAM, HORIZONTAL_ALIGNMENT_CENTER, pw)
+		# Mouse: category line, the two halves of the value line, a leave X.
+		var zones := [[Rect2(0, 34 * s, pw, 40 * s), "cat:%d" % i], [Rect2(0, 76 * s, pw * 0.5, 44 * s), "val:%d:-1" % i],
+			[Rect2(pw * 0.5, 76 * s, pw * 0.5, 44 * s), "val:%d:1" % i]]
+		for z in zones:
+			_hits.append([to_screen.call(z[0]), z[1]])
+			if _hover == z[1]:
+				UiKit.panel(self, (z[0] as Rect2).grow(-5 * s), Color(1, 1, 1, 0.1), 14 * s)
+		var xc := Vector2(pw - 18 * s, 18 * s)
+		var xa := 0.8 if _hover == "leave:%d" % i else 0.35
+		draw_line(xc + Vector2(-6, -6) * s, xc + Vector2(6, 6) * s, Color(1, 1, 1, xa), 3 * s, true)
+		draw_line(xc + Vector2(6, -6) * s, xc + Vector2(-6, 6) * s, Color(1, 1, 1, xa), 3 * s, true)
+		_hits.append([to_screen.call(Rect2(xc - Vector2(16, 16) * s, Vector2(32, 32) * s)), "leave:%d" % i])
 	elif is_bot:
 		UiKit.panel(self, r, _ui().panel, 22 * s, col.darkened(0.3), 3 * s, 5 * s)
 		UiKit.text(self, Vector2(0, 62 * s), "CPU", 34 * s, col.lerp(Color.WHITE, 0.3), HORIZONTAL_ALIGNMENT_CENTER, pw)
 		UiKit.text(self, Vector2(0, 98 * s), UiKit.KIND_NAMES[look.kind], 22 * s, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER, pw, 600, 0.0)
 	else:
 		var a := 0.6 + 0.3 * sin(_t * 3.0 + i)
-		UiKit.panel(self, r, Color(0.05, 0.06, 0.1, 0.6), 22 * s, Color(1, 1, 1, 0.25), 3 * s)
+		_hits.append([to_screen.call(r), "join:%d" % i])
+		var hov := _hover == "join:%d" % i
+		UiKit.panel(self, r, Color(0.05, 0.06, 0.1, 0.6).lerp(Color(1, 1, 1, 0.7), 0.25 if hov else 0.0), 22 * s, Color(1, 1, 1, 0.6 if hov else 0.25), 3 * s)
 		var jw := UiKit.text_width("JOIN", 28 * s) + 48 * s
 		var jx := (pw - jw) * 0.5
 		jx += UiKit.prompt(self, Vector2(jx, 62 * s), "A", 26 * s) + 12 * s
 		UiKit.text(self, Vector2(jx, 62 * s), "JOIN", 28 * s, Color(1, 1, 1, a))
-		UiKit.text(self, Vector2(0, 96 * s), "or SPACE on keyboard", 17 * s, Color(1, 1, 1, 0.55), HORIZONTAL_ALIGNMENT_CENTER, pw, 500, 0.0)
+		UiKit.text(self, Vector2(0, 96 * s), "or SPACE / click for keyboard", 17 * s, Color(1, 1, 1, 0.55), HORIZONTAL_ALIGNMENT_CENTER, pw, 500, 0.0)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	if is_player or is_bot:

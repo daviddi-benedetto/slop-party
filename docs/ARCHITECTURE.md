@@ -85,7 +85,10 @@ engine\Godot_v4.7.2-stable_win64_console.exe --path . -w --resolution 1920x1080 
 - `--cards=2x Scope,Jetpack` gives every player those cards; `--weapon=N` a weapon.
 - `tools/contact_sheet.gd` combines screenshots into a grid (see its header).
 - `--lobby-demo=H,B` shows the lobby with H fake humans and B bots seated.
-- `--pause-at=S` opens the pause menu after S seconds.
+- `--pause-at=S` opens the pause menu after S seconds (use S > 8: earlier,
+  the pause freezes the loading curtain).
+- `--click=x,y@sec[;...]` sends fake mouse moves + clicks (x, y as 0-1 of the
+  window, "r" after sec = right click) to test the menus.
 - `--options-demo` opens the Options screen in the lobby after one second
   (`--options-page=N` on its Nth page).
 - `--start-after=S` (with `--lobby-demo`) starts the match after S seconds,
@@ -584,6 +587,23 @@ poll devices the same way.
 
 Mouse motion is the one event-driven input: `game.gd::_input` accumulates
 `InputEventMouseMotion.relative` into the keyboard brain's `mouse_accum`.
+
+**Menus answer the mouse** (event-driven, `_input`): each menu's `_draw`
+records clickable rects (`_hits` in lobby.gd and settings_menu.gd,
+`_pause_hits` in game.gd; plate-local rects in the lobby go through the
+plate's draw transform) and `_input` hit-tests them. Hover selects (pause
+items, option rows) and shows the pointing-hand cursor; left click acts,
+right click steps back (lobby chips) or closes (options, pause); the wheel
+scrolls Options. Lobby chips and Start go through `_shared(what, dir)` /
+`_try_start()`, shared with the buttons. Results: any click after 2 s
+continues.
+
+**Controller diagnostics** (lobby.gd): the bottom-left line lists every pad
+Godot sees (`Input.get_joy_name`, "unmapped" when `is_joy_known` is false)
+or says none are detected; `_log_pads` prints them (with GUIDs) at start and
+on connect / disconnect, to the console and Godot's log file
+(macOS: `~/Library/Application Support/Godot/app_userdata/Slop Party/logs/`).
+An unmapped pad joins with any button (`_any_button`).
 
 Gamepad extras: aim assist (`game.gd::aim_friction` – stick sensitivity drops
 to 45% while the crosshair is over an enemy) and rumble when hit or on a KO.

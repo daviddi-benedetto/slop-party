@@ -34,6 +34,11 @@ const CONTROLS := [
 	["Mode / bots / target", "RT / Y / X", "G / B / K"],
 	["Map / theme / options", "RB / LB / Back", "M / T / O"],
 	["Start", "Start", "Enter"],
+	["MENUS WITH THE MOUSE"],
+	["Lobby: step a chip / your animal", "-", "Click (right-click: back)"],
+	["Join as keyboard player / leave", "-", "Click a JOIN plate / the X"],
+	["Options and pause menu", "-", "Hover + click, wheel scrolls"],
+	["Close a menu", "-", "Right-click"],
 ]
 
 ## [name, one-line description]

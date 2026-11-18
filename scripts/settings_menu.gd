@@ -6,6 +6,9 @@ extends Control
 ## pause menu. Any gamepad or the keyboard can drive it:
 ##   LB / RB or Q / E change page, up/down choose (or scroll a reference
 ##   page), left/right change, A/Enter also steps forward, B/Esc closes.
+## The mouse works too: hover picks a row, click a tab / row (left or right
+## half of a value steps it back or on, a slider jumps to where you click),
+## the wheel scrolls, right-click or the corner X closes.
 ##
 ## Runs with PROCESS_MODE_ALWAYS so it works while the tree is paused. The
 ## screen that opened it must ignore its own input while `visible` is true.
@@ -25,6 +28,8 @@ var _prev := {}
 var _t := 0.0
 var _bump := 0.0
 var _slide := 0.0           # page change animation (-1..1 -> 0)
+var _hits: Array = []       # [Rect2, id, extra] clickable areas from the last _draw
+var _hover := ""            # id under the mouse
 
 
 func _ready() -> void:
@@ -140,7 +145,83 @@ func _process(delta: float) -> void:
 	_scroll = lerpf(_scroll, target, clampf(delta * 14.0, 0.0, 1.0))
 
 
+func _input(event: InputEvent) -> void:
+	if not visible:
+		return
+	if event is InputEventMouseMotion:
+		var h: Array = _hit_at(event.position)
+		_hover = "" if h.is_empty() else String(h[1])
+		Input.set_default_cursor_shape(Input.CURSOR_ARROW if h.is_empty() else Input.CURSOR_POINTING_HAND)
+		if not h.is_empty() and String(h[1]).begins_with("row:"):
+			var i := int(String(h[1]).substr(4))
+			if i != _sel:
+				_sel = i
+				Sfx.play("tick", -12.0)
+		return
+	if not (event is InputEventMouseButton and event.pressed):
+		return
+	get_viewport().set_input_as_handled()
+	var rows := _rows()
+	match event.button_index:
+		MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN:
+			var d := 1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1
+			if rows.is_empty():
+				_info_scroll = maxf(0.0, _info_scroll + d * 2.0)
+			else:
+				_sel = clampi(_sel + d, 0, rows.size() - 1)
+		MOUSE_BUTTON_RIGHT:
+			_close()
+		MOUSE_BUTTON_LEFT:
+			var h: Array = _hit_at(event.position)
+			if h.is_empty():
+				return
+			var id := String(h[1])
+			if id == "close":
+				_close()
+			elif id.begins_with("tab:"):
+				var to := int(id.substr(4))
+				if to != _page:
+					_turn(to - _page)
+			elif id.begins_with("row:"):
+				_sel = int(id.substr(4))
+				var row: Dictionary = rows[_sel]
+				if row.has("action"):
+					if row.action == "reset":
+						Settings.reset()
+						_bump = 1.0
+						Sfx.play("card", -8.0)
+					else:
+						_close()
+					return
+				var val: Rect2 = h[2]
+				var x: float = event.position.x
+				var dir := 1
+				if row.has("slider") and x >= val.position.x and x <= val.end.x:
+					# A slider jumps to where you click.
+					var n: int = row.opts.size() - 1
+					var want := clampi(int(round((x - val.position.x) / val.size.x * n)), 0, n)
+					dir = want - int(Settings.idx[row.key])
+					while dir != 0:
+						Settings.step(row.key, signi(dir))
+						dir -= signi(dir)
+				else:
+					if x >= val.position.x and x < val.get_center().x:
+						dir = -1
+					Settings.step(row.key, dir)
+				_bump = 1.0
+				Sfx.play("tick", -6.0, 1.0 + 0.15 * dir)
+
+
+func _hit_at(p: Vector2) -> Array:
+	for i in range(_hits.size() - 1, -1, -1):
+		if (_hits[i][0] as Rect2).has_point(p):
+			return _hits[i]
+	return []
+
+
 func _close() -> void:
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	_hover = ""
 	visible = false
 	Sfx.play("tick", -6.0, 0.8)
 	closed.emit()
@@ -150,10 +231,18 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	var s := h / 1080.0
+	_hits.clear()
 	draw_rect(Rect2(0, 0, w, h), Color(0.1, 0.06, 0.2, 0.72))
 	var pw := minf(1180.0 * s, w - 40 * s)
 	var panel := Rect2((w - pw) * 0.5, 60 * s, pw, 960 * s)
 	UiKit.card(self, panel, Color(UiKit.PANEL, 0.97), 46 * s, s * 2.0)
+	# Close button (for the mouse) in the panel's corner.
+	var xc := Vector2(panel.end.x - 56 * s, panel.position.y + 56 * s)
+	var xr := Rect2(xc - Vector2(26, 26) * s, Vector2(52, 52) * s)
+	draw_circle(xc, 26 * s, Color(1, 1, 1, 0.22 if _hover == "close" else 0.1))
+	draw_line(xc + Vector2(-10, -10) * s, xc + Vector2(10, 10) * s, UiKit.CREAM, 4 * s, true)
+	draw_line(xc + Vector2(10, -10) * s, xc + Vector2(-10, 10) * s, UiKit.CREAM, 4 * s, true)
+	_hits.append([xr, "close", null])
 	UiKit.text(self, Vector2(panel.position.x, panel.position.y + 78 * s), "OPTIONS", 64 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_CENTER, pw, 700, 0.14)
 	_draw_tabs(panel, s)
 
@@ -193,10 +282,11 @@ func _draw_tabs(panel: Rect2, s: float) -> void:
 	for i in _pages.size():
 		var r := Rect2(x, y, widths[i] * k, 42 * s)
 		var on := i == _page
+		_hits.append([r, "tab:%d" % i, null])
 		if on:
 			UiKit.card(self, r, UiKit.GOLD, 21 * s, s)
 		else:
-			UiKit.panel(self, r, Color(1, 1, 1, 0.08), 21 * s)
+			UiKit.panel(self, r, Color(1, 1, 1, 0.16 if _hover == "tab:%d" % i else 0.08), 21 * s)
 		draw_string(UiKit.font(700), Vector2(r.position.x, r.position.y + 29 * s), _pages[i].title, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, int(px * k), UiKit.INK if on else Color(1, 1, 1, 0.75))
 		x += (widths[i] + 8 * s) * k
 	UiKit.prompt(self, Vector2(x + 6 * s, y + 31 * s), "RB" if pad else "E", 22 * s, not pad)
@@ -215,6 +305,11 @@ func _draw_rows(panel: Rect2, list_top: float, ox: float, s: float, fade_all: fl
 		var row: Dictionary = rows[i]
 		var r := Rect2(panel.position.x + 60 * s + ox, y + 4 * s, pw - 120 * s, row_h - 10 * s)
 		var sel := i == _sel
+		if fade > 0.5:
+			var vr := Rect2(r.end.x - 360 * s, r.position.y, 336 * s, r.size.y)
+			if row_has_slider(rows[i]):
+				vr = Rect2(r.end.x - 340 * s, r.position.y, 336 * s - 110 * s, r.size.y)
+			_hits.append([r, "row:%d" % i, vr])
 		if sel:
 			var g := 3.0 * s + sin(_t * 6.0) * 1.5 * s + _bump * 4.0 * s
 			UiKit.card(self, r.grow(g), UiKit.GOLD, 27 * s, s)
@@ -247,6 +342,10 @@ func _draw_rows(panel: Rect2, list_top: float, ox: float, s: float, fade_all: fl
 		var frac2 := float(VISIBLE_ROWS) / rows.size()
 		var pos := _scroll / maxf(1.0, rows.size() - VISIBLE_ROWS)
 		UiKit.panel(self, Rect2(track.position.x, track.position.y + (track.size.y * (1.0 - frac2)) * pos, track.size.x, track.size.y * frac2), UiKit.GOLD, 4 * s)
+
+
+func row_has_slider(row: Dictionary) -> bool:
+	return row.has("slider")
 
 
 ## HOW TO PLAY: three columns (action, gamepad, keyboard), scrollable.

@@ -112,6 +112,7 @@ var _pause_ui: Control
 var _pause_sel := 0
 var _pause_note := ""
 var _pause_opened := 0         # Time.get_ticks_msec() when the pause menu opened (pop-in)
+var _pause_hits: Array = []    # screen rects of the pause menu items (mouse)
 var _options
 var _fade        # wipe.gd: a theme-coloured curtain driven like a fade (color:a)
 var _results = null
@@ -310,6 +311,23 @@ func _on_joy_changed(device: int, connected: bool) -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and _kb_brain != null and not _paused:
 		_kb_brain.mouse_accum += event.relative
+	# The pause menu answers the mouse: hover picks, click chooses.
+	if _paused and not _options.visible and not match_over:
+		var at := -1
+		if event is InputEventMouse:
+			for i in _pause_hits.size():
+				if (_pause_hits[i] as Rect2).has_point(event.position):
+					at = i
+			Input.set_default_cursor_shape(Input.CURSOR_POINTING_HAND if at >= 0 else Input.CURSOR_ARROW)
+		if event is InputEventMouseMotion and at >= 0 and at != _pause_sel:
+			_pause_sel = at
+			Sfx.play("tick", -12.0)
+		elif event is InputEventMouseButton and event.pressed:
+			if event.button_index == MOUSE_BUTTON_LEFT and at >= 0:
+				_pause_sel = at
+				_pause_choose()
+			elif event.button_index == MOUSE_BUTTON_RIGHT:
+				_set_paused(false)
 
 
 func _edge(key: String, now: bool) -> bool:
@@ -650,10 +668,13 @@ func _draw_pause(menu: Control) -> void:
 	if _pause_note != "":
 		UiKit.text(menu, Vector2(r.position.x, r.position.y - 30 * s), _pause_note, 34 * s, Color(1.0, 0.55, 0.5), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.16)
 	var items := ["RESUME", "OPTIONS", "QUIT TO LOBBY"]
+	_pause_hits.clear()
+	var mscale := 0.85 + 0.15 * pop
 	for i in items.size():
 		var sel := i == _pause_sel
 		var ia := UiKit.back_out(clampf((rt - 0.08 - i * 0.05) / 0.3, 0.0, 1.0))
 		var ir := Rect2(r.position.x + 70 * s + (1.0 - ia) * 60 * s, r.position.y + 196 * s + i * 112 * s, r.size.x - 140 * s, 88 * s)
+		_pause_hits.append(Rect2(Vector2(w, h) * 0.5 + ir.position * mscale, ir.size * mscale))
 		if sel:
 			ir = ir.grow(6 * s + sin(rt * 6.0) * 2 * s)
 		var idle := UiKit.PANEL.lerp(Color(0.5, 0.5, 0.6), 0.25)
@@ -727,13 +748,18 @@ func _poll_pause() -> void:
 		_pause_sel = posmod(_pause_sel + (1 if down else -1), 3)
 		Sfx.play("tick", -8.0)
 	if accept:
-		if _pause_sel == 0:
-			_set_paused(false)
-		elif _pause_sel == 1:
-			_options.open()
-		else:
-			_set_paused(false)
-			_leave()
+		_pause_choose()
+
+
+func _pause_choose() -> void:
+	Input.set_default_cursor_shape(Input.CURSOR_ARROW)
+	if _pause_sel == 0:
+		_set_paused(false)
+	elif _pause_sel == 1:
+		_options.open()
+	else:
+		_set_paused(false)
+		_leave()
 
 
 # --------------------------------------------------------------------------

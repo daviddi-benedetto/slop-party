@@ -20,6 +20,8 @@ extends Node
 ##   --shot-time=<sec>     when to take it (default 6)
 ##   --pause-at=<sec>      open the pause menu after that many seconds
 ##   --options-demo        open the Options screen in the lobby after 1 second
+##   --click=x,y@sec[;...] fake mouse moves + left clicks (x, y as 0-1 of the
+##                         window; "r" after sec = right click) to test menus
 ##   --options-page=N      ...on its Nth page (0 = DISPLAY)
 ##   --melee-at=<sec>      player 1 swings their melee then
 ##   --box-at=<sec>        player 1 opens a mystery box then
@@ -136,6 +138,24 @@ func _ready() -> void:
 			lobby._options.open()
 			for i in int(_args.get("options-page", "0")):
 				lobby._options._turn(1))
+	if _args.has("click"):
+		for c in str(_args["click"]).split(";"):
+			var xy_t := c.split("@")
+			var xy := xy_t[0].split(",")
+			var right := xy_t[1].ends_with("r")
+			var at := Vector2(float(xy[0]), float(xy[1]))
+			get_tree().create_timer(float(xy_t[1].trim_suffix("r")), true, false, true).timeout.connect(func():
+				var pos: Vector2 = at * get_viewport().get_visible_rect().size
+				var mv := InputEventMouseMotion.new()
+				mv.position = pos
+				Input.parse_input_event(mv)
+				for down in [true, false]:
+					var mb := InputEventMouseButton.new()
+					mb.position = pos
+					mb.button_index = MOUSE_BUTTON_RIGHT if right else MOUSE_BUTTON_LEFT
+					mb.pressed = down
+					Input.parse_input_event(mb)
+				print("[click] ", pos, " right" if right else ""))
 	if _args.has("melee-at"):
 		# Dev: player 1 swings their melee at that time (knife screenshots).
 		get_tree().create_timer(float(_args["melee-at"]), true, false, true).timeout.connect(func():

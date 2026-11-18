@@ -15,6 +15,7 @@ const Stage = preload("res://scripts/stage.gd")
 const UiKit = preload("res://scripts/ui_kit.gd")
 const Fx = preload("res://scripts/fx.gd")
 
+var _clicked := false        # mouse click (continue)
 var rows: Array = []
 var look := {}               # the match's visual theme (looks.gd), set by game.gd
 var title := ""              # set by game.gd for team / co-op modes; default "<winner> WINS!"
@@ -94,6 +95,12 @@ func _count(value: int, start: float) -> String:
 	return str(roundi(value * k))
 
 
+## A click anywhere continues too (once the table is up).
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and _t > 2.0:
+		_clicked = true
+
+
 func _process(delta: float) -> void:
 	_t += delta
 	queue_redraw()
@@ -105,7 +112,7 @@ func _process(delta: float) -> void:
 		return
 	var go := _t > 25.0
 	if _t > 2.0:
-		go = go or Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_SPACE)
+		go = go or Input.is_physical_key_pressed(KEY_ENTER) or Input.is_physical_key_pressed(KEY_SPACE) or _clicked
 		for d in Input.get_connected_joypads():
 			if Input.is_joy_button_pressed(d, JOY_BUTTON_A) or Input.is_joy_button_pressed(d, JOY_BUTTON_START):
 				go = true
