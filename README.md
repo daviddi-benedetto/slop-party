@@ -121,7 +121,10 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Frontline:** a town with towers, warehouses, bunkers and trenches. Its
   own mode's home, and also on the lobby's map list for **Rounds** and
   **Gun Game**: a huge free-for-all with spawns spread over the town, roads,
-  farms and flag yards (no vehicles outside Frontline mode).
+  farms and flag yards. In Rounds there are **unarmed rides** for getting
+  around: 2 buggies, 4 motorbikes and 2 helicopters. They have no guns, no
+  ram damage and half the armour, so the fighting stays on foot. A
+  destroyed ride comes back after 20 s.
 - **Easy to move around:** doorways are open (no doors), windows are big
   enough to jump through (break the glass and go), and nothing is placed in
   a doorway, on or at the foot of stairs, or in front of a window. Streets

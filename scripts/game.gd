@@ -234,6 +234,8 @@ func _ready() -> void:
 		rules.start()
 	else:
 		spawn_all_default()
+		if mode == "rounds":
+			_spawn_ffa_vehicles()
 	map.nav_built.connect(_spawn_pets)
 	map.build_nav()
 	var pads: bool = rules == null or not rules.has_method("weapon_pads") or rules.weapon_pads()
@@ -1229,6 +1231,37 @@ func pet_near(p):
 		if is_instance_valid(pet) and pet.global_position.distance_to(p.global_position) < 1.9:
 			return pet
 	return null
+
+
+## Rounds on a map with ffa_vehicle_spots (Frontline): unarmed buggies,
+## bikes and helicopters for getting around; the fighting stays on foot.
+func _spawn_ffa_vehicles() -> void:
+	for spot in map.ffa_vehicle_spots:
+		_spawn_ffa_vehicle(spot[0], spot[1])
+	# Dev flag --drive=type: player 1 starts in the first ride of that type.
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--drive=") and not players.is_empty():
+			for v in vehicles:
+				if v.type == arg.substr(8):
+					players[0].spawn(v.global_position + Vector3(3, 0.5, 0), players[0].yaw)
+					v.enter(players[0])
+					break
+
+
+func _spawn_ffa_vehicle(type: String, xf: Transform3D) -> void:
+	var v = preload("res://scripts/vehicle.gd").new()
+	v.game = self
+	v.setup(type, xf, 0, Color(0.95, 0.78, 0.3) if type == "bike" else Color(0.55, 0.62, 0.7))
+	v.disarm()
+	world.add_child(v)
+	v.global_transform = xf
+
+
+## A destroyed unarmed ride comes back at its spot 20 s later.
+func ffa_vehicle_destroyed(type: String, home: Transform3D) -> void:
+	get_tree().create_timer(20.0, false).timeout.connect(func():
+		if not match_over:
+			_spawn_ffa_vehicle(type, home))
 
 
 ## The closest free vehicle within reach of `p`, or null.

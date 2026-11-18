@@ -160,7 +160,18 @@ func _ready() -> void:
 				if not hits.is_empty() or floor_hit.is_empty():
 					bad += 1
 					print("[spawns] BLOCKED %s %s" % [sp, "no floor" if floor_hit.is_empty() else str(hits[0].collider)])
-			print("[spawns] %d points, %d blocked" % [game.map.spawn_points.size(), bad]))
+			print("[spawns] %d points, %d blocked" % [game.map.spawn_points.size(), bad])
+			# Rides (Rounds on Frontline): a box the vehicle's size must be clear.
+			for vs in game.map.ffa_vehicle_spots:
+				var box := BoxShape3D.new()
+				box.size = preload("res://scripts/vehicle.gd").SPECS[vs[0]].size
+				var vq := PhysicsShapeQueryParameters3D.new()
+				vq.shape = box
+				vq.collision_mask = 1 | 4
+				var xf: Transform3D = vs[1]
+				vq.transform = Transform3D(xf.basis, xf.origin + Vector3(0, box.size.y * 0.5 + 0.45, 0))
+				var vh := space.intersect_shape(vq, 4)
+				print("[spawns] ride %s at %s %s" % [vs[0], xf.origin, "BLOCKED by " + str(vh[0].collider) if not vh.is_empty() else "clear"]))
 	if _args.has("click"):
 		for c in str(_args["click"]).split(";"):
 			var xy_t := c.split("@")

@@ -377,6 +377,7 @@ var nav_top := 14.0               # highest walkable surface the nav graph sampl
 var flags: Array = []             # Frontline: capture point positions (A, B, C)
 var bases: Array = []             # Frontline: team 0 / team 1 base centres
 var vehicle_spots: Array = []     # Frontline: [type, Transform3D, team]
+var ffa_vehicle_spots: Array = [] # Rounds on this map: [type, Transform3D] (unarmed)
 
 var spawn_points: Array = []      # Array of Vector3
 var pickup_spots: Array = []      # [["weapon" | "health", Vector3], ...] read by game.gd

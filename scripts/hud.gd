@@ -500,6 +500,8 @@ func _draw_vehicle(w: float, h: float) -> void:
 				["A" if pad else "SPACE", "UP"], ["B" if pad else "C", "DOWN"]]
 		_:
 			lines = [["RT" if pad else "LMB", "MACHINE GUN"], ["LT" if pad else "RMB", "ZOOM"]]
+	if not v.armed:
+		lines = [["A" if pad else "SPACE", "UP"], ["B" if pad else "C", "DOWN"]] if v.type == "heli" else []
 	lines.append(["Y" if pad else "E", "GET OUT"])
 	var y := h - 26 * s
 	var x := w - 16 * s
@@ -508,7 +510,8 @@ func _draw_vehicle(w: float, h: float) -> void:
 		var tw := UiKit.text_width(ln[1], 13 * s)
 		x -= tw
 		_t(Vector2(x, y), ln[1], 13, Color.WHITE)
-		x -= 46 * s
+		# Room for the button glyph: "SPACE" is much wider than "A".
+		x -= maxf(30.0 * s, UiKit.text_width(ln[0], 12 * s) + 12 * s) + 10 * s
 		UiKit.prompt(self, Vector2(x, y), ln[0], 15 * s, not pad, player.brain.device)
 		x -= 24 * s
 

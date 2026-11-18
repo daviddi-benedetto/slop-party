@@ -20,6 +20,9 @@ extends RefCounted
 const Places = preload("res://scripts/map_places.gd")
 
 const TEAM_MAT := ["team0", "team1"]
+## Rounds rides, +X half (mirrored): [type, position, yaw (0 faces -Z)].
+const FFA_VEHICLES := [["buggy", Vector3(37.5, 0.3, -18), 0.0], ["bike", Vector3(16, 0.3, -2.2), -PI * 0.5],
+	["bike", Vector3(37.5, 0.3, 24), PI], ["heli", Vector3(20, 0.3, -46), 0.0]]
 ## +X half; each is mirrored. Roads, the flag yards, the farms and the town edge.
 const FFA_SPAWNS := [Vector3(24, 0.1, 1.5), Vector3(52, 0.1, -1.5), Vector3(37.5, 0.1, -36), Vector3(37.5, 0.1, 36),
 	Vector3(62, 0.1, -24.5), Vector3(46, 0.1, 23.5), Vector3(10, 0.1, -30), Vector3(12, 0.1, 30), Vector3(60, 0.1, -10),
@@ -62,6 +65,12 @@ static func frontline(m) -> void:
 	# Free-for-all spawns spread over the battlefield (Rounds / Gun Game; the
 	# Frontline mode ignores spawn_points). Checked clear with --check-spawns.
 	m._spawns(FFA_SPAWNS)
+	# Unarmed rides for Rounds (each mirrored): buggies on the side roads,
+	# bikes on the main road, a helicopter in the fields.
+	for v in FFA_VEHICLES:
+		var yaw: float = v[2]
+		m.ffa_vehicle_spots.append([v[0], Transform3D(Basis(Vector3.UP, yaw), v[1])])
+		m.ffa_vehicle_spots.append([v[0], Transform3D(Basis(Vector3.UP, yaw + PI), Vector3(-v[1].x, v[1].y, -v[1].z))])
 	m._pickups([["weapon", Vector3(0, 13.6, 21)], ["health", Vector3(52, 0, -31)], ["weapon", Vector3(66, 3.4, -49)],
 		["health", Vector3(20, 0, 6.5)], ["weapon", Vector3(37, 2.5, -50.5)], ["health", Vector3(70, -1.7, 20)]])
 

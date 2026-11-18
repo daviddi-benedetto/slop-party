@@ -521,7 +521,14 @@ collision off (the vehicle takes the hits).
   `spawn_all_default` skips the base spawns (|x| >= 75) and
   `respawn_default` aims for 30-45 m from the nearest enemy instead of as
   far as possible. `--check-spawns` prints spawn points that are blocked
-  or have no floor. `weapons.era(id)` / `pool(eras)` group the arsenal.
+  or have no floor, and whether each Rounds ride spot is clear.
+- Rounds rides: `map_front.FFA_VEHICLES` -> `m.ffa_vehicle_spots`;
+  `game._spawn_ffa_vehicles()` (Rounds only, rules == null) adds them with
+  `vehicle.disarm()` (`armed = false`: no gun / pods built, no
+  `_aim_and_fire`, no ram damage, half armour; HUD lists only the moves).
+  `vehicle._destroy` calls `game.ffa_vehicle_destroyed` (back in 20 s) when
+  there are no rules. `vehicle.gd` "bike" (`_build_bike`, `_fork` steers,
+  leans into turns) is only used here. `--drive=type` works in Rounds too. `weapons.era(id)` / `pool(eras)` group the arsenal.
 
 ### Game modes and teams (`game.gd`, `zombies.gd`, `frontline.gd`)
 

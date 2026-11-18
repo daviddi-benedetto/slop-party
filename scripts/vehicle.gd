@@ -1,7 +1,12 @@
 extends CharacterBody3D
 ## Frontline vehicles: "buggy" (fast, mounted machine gun, rams), "tank"
 ## (slow, armoured, turret cannon + coaxial MG) and "heli" (flies, nose gun +
-## rocket salvos). One seat each.
+## rocket salvos). One seat each. "bike" is a light, fast motorbike with no
+## weapon (Rounds on Frontline).
+##
+## armed = false (Rounds on the Frontline map: game.gd _spawn_ffa_vehicles)
+## builds them without guns or rocket pods, never fires, does no ram damage
+## and has half the armour: transport only, the fighting stays on foot.
 ##
 ## Getting in: player.gd shows "GET IN ..." near a free vehicle (game.vehicle_near)
 ## and calls enter(). The player is hidden and stops colliding; game.gd
@@ -35,6 +40,8 @@ const SPECS := {
 		"cam_h": 3.6, "cam_d": 11.0, "enter": 3.2},
 	"heli": {"label": "HELICOPTER", "hp": 750.0, "speed": 26.0, "accel": 14.0, "turn": 2.0, "size": Vector3(2.4, 2.0, 4.6),
 		"cam_h": 3.0, "cam_d": 13.0, "enter": 3.0},
+	"bike": {"label": "BIKE", "hp": 260.0, "speed": 30.0, "accel": 22.0, "turn": 2.6, "size": Vector3(0.8, 1.1, 2.1),
+		"cam_h": 2.0, "cam_d": 6.0, "enter": 2.0},
 }
 
 var game
@@ -60,6 +67,7 @@ var alt_cd := 0.0
 var rockets := 4
 var throttle := 0.0
 var last_attacker = null
+var armed := true                # false: no guns, no ram damage, half armour (Rounds)
 
 var _spec: Dictionary
 var _speed := 0.0
@@ -67,6 +75,7 @@ var _turret: Node3D
 var _gun: Node3D
 var _muzzles: Array = []         # Node3D markers (main, alt)
 var _rotor: Node3D
+var _fork: Node3D                # bike: front fork + wheel (steers)
 var _wheels: Array = []
 var _visual: Node3D
 var _mats: Array = []
@@ -91,6 +100,14 @@ func setup(kind_name: String, xf: Transform3D, team_id: int, team_color: Color) 
 	can_zoom = type == "buggy"
 
 
+## Rounds on Frontline: no weapons and half the armour (call before adding).
+func disarm() -> void:
+	armed = false
+	can_zoom = false
+	max_health *= 0.5
+	health = max_health
+
+
 func _ready() -> void:
 	collision_layer = 2
 	collision_mask = 1 | 2
@@ -109,6 +126,7 @@ func _ready() -> void:
 	match type:
 		"tank": _build_tank()
 		"heli": _build_heli()
+		"bike": _build_bike()
 		_: _build_buggy()
 	_merge_tree(_visual)
 	_mg_stats = _weapon_stats(10.0, 0.0, 160.0, 0.0, 0.03)
@@ -221,7 +239,7 @@ func _physics_process(delta: float) -> void:
 		_: _drive(delta, b)
 	if velocity.length() > 2.0 and Engine.get_physics_frames() % 3 == 0:
 		Prop.kick_near(get_world_3d().direct_space_state, chest_position(), hit_radius() + 0.4, velocity, 2.0)
-	if b != null:
+	if b != null and armed:
 		_aim_and_fire(delta, b)
 	if global_position.y < -25.0:
 		take_damage(99999.0, null)
@@ -242,7 +260,7 @@ func _drive(delta: float, b) -> void:
 	if absf(move.y) < 0.05:
 		_speed = move_toward(_speed, 0.0, _spec.accel * 0.6 * delta)
 	var steer: float = -move.x * _spec.turn
-	if type == "buggy":
+	if type == "buggy" or type == "bike":
 		steer *= clampf(absf(_speed) / 6.0, 0.0, 1.0) * signf(_speed if absf(_speed) > 0.1 else 1.0)
 	rotate_y(steer * delta)
 	var fwd := -global_transform.basis.z
@@ -261,7 +279,7 @@ func _drive(delta: float, b) -> void:
 			var c := get_slide_collision(i)
 			var other = c.get_collider()
 			if other != null and other.has_method("take_damage") and other != self and absf(_speed) > 7.0:
-				if game.is_enemy(driver, other) and other.alive:
+				if armed and game.is_enemy(driver, other) and other.alive:
 					other.take_damage(absf(_speed) * (3.0 if type == "buggy" else 6.0), driver)
 					if "velocity" in other and not other.has_method("seat_count"):
 						other.velocity += before.normalized() * 10.0 + Vector3(0, 5.0, 0)
@@ -273,12 +291,18 @@ func _drive(delta: float, b) -> void:
 		var n := get_floor_normal()
 		var local := global_transform.basis.inverse() * n
 		_visual.rotation.x = lerpf(_visual.rotation.x, atan2(-local.z, local.y), clampf(delta * 8.0, 0.0, 1.0))
-		_visual.rotation.z = lerpf(_visual.rotation.z, atan2(local.x, local.y), clampf(delta * 8.0, 0.0, 1.0))
+		var lean := 0.0
+		if type == "bike":
+			# A bike leans into the turn.
+			lean = steer * clampf(absf(_speed) / _spec.speed, 0.0, 1.0) * 0.32
+		_visual.rotation.z = lerpf(_visual.rotation.z, atan2(local.x, local.y) + lean, clampf(delta * 8.0, 0.0, 1.0))
 	for w in _wheels:
 		w.rotation.x -= _speed * delta / 0.42 * float(w.get_meta("dir", 1.0))
 	if type == "buggy" and _wheels.size() >= 2:
 		for i in 2:
 			_wheels[i].get_parent().rotation.y = move.x * -0.45
+	elif type == "bike" and _fork != null:
+		_fork.rotation.y = move.x * -0.35
 
 
 func _fly(delta: float, b) -> void:
@@ -485,6 +509,8 @@ func _destroy() -> void:
 	_set_override(_visual, char_mat)
 	if game.rules != null and game.rules.has_method("vehicle_destroyed"):
 		game.rules.vehicle_destroyed(type, home, home_team)
+	elif not armed:
+		game.ffa_vehicle_destroyed(type, home)
 	var tw := create_tween()
 	tw.tween_interval(6.0)
 	tw.tween_property(self, "scale", Vector3(1, 0.01, 1), 0.6)
@@ -651,6 +677,8 @@ func _build_buggy() -> void:
 	_bx(_visual, Vector3(0.5, 0.03, 1.2), paint, Vector3(0, 1.5, -0.35))
 	_cy(_visual, 0.02, 1.6, metal, Vector3(0.75, 2.0, 0.4))
 	_bx(_visual, Vector3(0.03, 0.3, 0.55), paint, Vector3(0.75, 2.62, 0.68))
+	if not armed:
+		return
 	# Mounted machine gun on a pintle on the load bed.
 	_turret = Node3D.new()
 	_turret.position = Vector3(0, 1.75, 1.15)
@@ -727,8 +755,9 @@ func _build_heli() -> void:
 		_cy(_visual, 0.05, 0.6, metal, Vector3(sx, 0.4, -0.7), Vector3(0, 0, sx * 0.4))
 		_cy(_visual, 0.05, 0.6, metal, Vector3(sx, 0.4, 0.9), Vector3(0, 0, sx * 0.4))
 		# Stub wings with rocket pods.
-		_bx(_visual, Vector3(0.9, 0.1, 0.6), dark, Vector3(sx * 1.4, 1.3, 0.2))
-		_cy(_visual, 0.16, 0.9, dark, Vector3(sx * 1.75, 1.15, 0.1), Vector3(PI * 0.5, 0, 0))
+		if armed:
+			_bx(_visual, Vector3(0.9, 0.1, 0.6), dark, Vector3(sx * 1.4, 1.3, 0.2))
+			_cy(_visual, 0.16, 0.9, dark, Vector3(sx * 1.75, 1.15, 0.1), Vector3(PI * 0.5, 0, 0))
 	_bx(_visual, Vector3(0.5, 0.35, 1.2), dark, Vector3(0, 2.55, 0.3))
 	_cy(_visual, 0.08, 0.5, metal, Vector3(0, 2.85, 0.2))
 	_rotor = Node3D.new()
@@ -737,6 +766,8 @@ func _build_heli() -> void:
 	for a in 4:
 		var ang := a * PI * 0.5
 		_bx(_rotor, Vector3(0.28, 0.04, 4.6), dark, Basis(Vector3.UP, ang) * Vector3(0, 0, 2.3), Vector3(0, ang, 0))
+	if not armed:
+		return
 	# Nose gun turret.
 	_turret = Node3D.new()
 	_turret.position = Vector3(0, 0.75, -1.6)
@@ -748,3 +779,55 @@ func _build_heli() -> void:
 	_marker(_gun, Vector3(0, 0, -0.9))
 	for sx in [-1.75, 1.75]:
 		_marker(_visual, Vector3(sx, 1.15, -0.5))
+
+
+## A chunky toy motorbike: two fat wheels, a painted tank and fairing, a
+## seat, handlebars on a fork that steers, and an exhaust. Faces -Z.
+func _build_bike() -> void:
+	var paint := _mat(color, 0.35, 0.45)
+	var dark := _mat(Color(0.09, 0.09, 0.11), 0.6, 0.4)
+	var metal := _mat(Color(0.62, 0.64, 0.68), 0.25, 0.9)
+	var tyre := _mat(Color(0.06, 0.06, 0.06), 0.95, 0.0)
+	var seat := _mat(Color(0.16, 0.11, 0.09), 0.85, 0.0)
+	var r := 0.36
+	# Rear wheel (spins) and frame.
+	_wheel(Vector3(0, r, 0.72), r, 0.22, tyre, metal)
+	_bx(_visual, Vector3(0.22, 0.22, 1.2), dark, Vector3(0, 0.55, 0.05), Vector3(0.15, 0, 0))
+	_bx(_visual, Vector3(0.36, 0.34, 0.6), dark, Vector3(0, 0.5, 0.0))                      # engine block
+	_bx(_visual, Vector3(0.42, 0.26, 0.62), paint, Vector3(0, 0.86, -0.18), Vector3(0.12, 0, 0))   # tank
+	_bx(_visual, Vector3(0.32, 0.12, 0.62), seat, Vector3(0, 0.86, 0.38))                   # seat
+	_bx(_visual, Vector3(0.3, 0.08, 0.5), paint, Vector3(0, 0.74, 0.86), Vector3(-0.25, 0, 0))     # rear fender
+	_cy(_visual, 0.06, 0.8, metal, Vector3(0.22, 0.42, 0.55), Vector3(PI * 0.5, 0, 0))      # exhaust
+	_cy(_visual, 0.08, 0.16, dark, Vector3(0.22, 0.42, 0.98), Vector3(PI * 0.5, 0, 0))
+	# Front fork: steers, carries the wheel, fairing and handlebars.
+	_fork = Node3D.new()
+	_fork.position = Vector3(0, 0.95, -0.55)
+	_visual.add_child(_fork)
+	var holder := Node3D.new()
+	holder.position = Vector3(0, r - 0.95, -0.22)
+	_fork.add_child(holder)
+	var spin := Node3D.new()
+	holder.add_child(spin)
+	_cy(spin, r, 0.2, tyre, Vector3.ZERO, Vector3(0, 0, PI * 0.5))
+	_cy(spin, r * 0.5, 0.24, metal, Vector3.ZERO, Vector3(0, 0, PI * 0.5))
+	_bx(spin, Vector3(0.26, r * 0.25, r * 1.1), metal, Vector3.ZERO)
+	_wheels.push_front(spin)
+	for sx in [-0.13, 0.13]:
+		_cy(_fork, 0.035, 0.75, metal, Vector3(sx, -0.32, -0.11), Vector3(-0.3, 0, 0))
+	_bx(_fork, Vector3(0.46, 0.34, 0.16), paint, Vector3(0, 0.08, -0.08), Vector3(-0.35, 0, 0))   # fairing
+	_bx(_fork, Vector3(0.34, 0.16, 0.05), _glass_mat(), Vector3(0, 0.3, -0.1), Vector3(-0.5, 0, 0))   # windscreen
+	_cy(_fork, 0.03, 0.8, dark, Vector3(0, 0.16, 0.06), Vector3(0, 0, PI * 0.5))            # handlebar
+	for sx in [-0.4, 0.4]:
+		_cy(_fork, 0.045, 0.12, seat, Vector3(sx, 0.16, 0.06), Vector3(0, 0, PI * 0.5))
+	var lamp := _mat(Color(1.0, 0.95, 0.8), 0.2, 0.0)
+	lamp.emission = Color(1.0, 0.9, 0.6) * 0.8
+	_cy(_fork, 0.08, 0.06, lamp, Vector3(0, 0.0, -0.17), Vector3(PI * 0.5, 0, 0))
+	_bx(_visual, Vector3(0.3, 0.06, 0.4), paint, Vector3(0, r * 2.0 + 0.04, -0.77))        # front fender
+
+
+func _glass_mat() -> StandardMaterial3D:
+	var g := StandardMaterial3D.new()
+	g.albedo_color = Color(0.3, 0.45, 0.55, 0.55)
+	g.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	g.roughness = 0.05
+	return g
