@@ -57,7 +57,7 @@ const TIPS := [
 	"Fall from high up in Frontline? Press jump to open your parachute.",
 	"In Zombies, stick together: fallen players come back when the wave is cleared.",
 	"Pets wander every map. Walk up to one and press Y / E to pet it: it heals you a little.",
-	"Each player picks their own look speed and Y axis on their lobby card.",
+	"Each player has their own look speed: Options > Controls > Player 1-6 look speed.",
 	"Taunt with the D-pad (keys 1 - 4) after a knockout. It is only polite.",
 	"The theme (LB / T in the lobby) restyles every map: try Toy, Warm or Cyberpunk.",
 	"The Longshot hits harder the further its shot travels.",

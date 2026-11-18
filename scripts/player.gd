@@ -238,6 +238,11 @@ func viewmodel_layer_bit() -> int:
 
 func _ready() -> void:
 	collision_layer = 0
+	# Only the level counts as ground that carries you: standing on a prop
+	# that moves must not fling you into the air when you step off.
+	platform_floor_layers = 1
+	platform_wall_layers = 0
+	platform_on_leave = CharacterBody3D.PLATFORM_ON_LEAVE_DO_NOTHING
 	add_to_group("door_users")
 	collision_mask = WORLD_MASK | PLAYER_MASK | PROP_MASK
 	floor_max_angle = deg_to_rad(50.0)

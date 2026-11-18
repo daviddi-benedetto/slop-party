@@ -15,7 +15,7 @@ extends RefCounted
 ##                        locker rooms underground.
 ##   suburb(m)   SUBURB   a street crossing with houses (two storeys, stairs,
 ##                        porches, garages with roof access), fenced yards,
-##                        pools, a treehouse, parked cars, street lamps, a
+##                        pools, parked cars, street lamps, a
 ##                        roundabout, and a storm drain under the road.
 
 const DEPTH := 3.6
@@ -462,15 +462,13 @@ static func suburb(m) -> void:
 	# --- North-west plot (mirrored: south-east) ---
 	m._building(Vector3(-21, 0, 16), 12.0, 9.0, 2, "siding1", {"pitched": true, "roof": "block_c", "style": "house"})
 	m._slab(Rect2(-26.5, 9.6, 11.0, 1.9), 3.0, "deck", [], true, 0.25)
-	for x in [-26.2, -21.0, -15.8]:
+	# Porch posts at the ends only (one used to stand right in the doorway).
+	for x in [-26.2, -15.8]:
 		m._cyl(Vector3(x, 0, 9.8), 0.1, 2.75, "trim")
 	m._building(Vector3(-33.5, 0, 14.5), 8.2, 8.6, 1, "siding2", {"roof": "block_c", "style": "store"})
-	# Treehouse in the back garden.
+	# A big tree in the back garden (the treehouse is gone: players spawned
+	# up there and got stuck).
 	m._tree(Vector3(-33, 0, 25), 1.9)
-	m._box(Vector3(-33, 3.25, 25), Vector3(3.6, 0.3, 3.6), "deck")
-	m._wall_x(26.75, -34.8, -31.2, 3.4, 0.9, "deck", [], true, 0.12)
-	m._wall_z(-34.75, 23.2, 26.8, 3.4, 0.9, "deck", [], true, 0.12)
-	m._stairs(Vector3(-28.2, 0, 24.0), Vector3(6, 3.4, 1.4), PI, "deck")
 	# Basketball hoop on the drive.
 	m._cyl(Vector3(-9.0, 0, 8.5), 0.08, 3.05, "metal")
 	m._box(Vector3(-9.0, 3.35, 8.2), Vector3(1.8, 1.1, 0.06), "trim", true, 0.0, false)
@@ -502,8 +500,8 @@ static func suburb(m) -> void:
 	m._model("zombie/Prop/Trash_Bag_2", Vector3(24.8, 0, 6.4), 1.2, 1.2, true, "none")
 
 	m._spawns([Vector3(31, 0.1, 9.0), Vector3(34, 0.1, 24.0), Vector3(-36, 0.1, 8.0), Vector3(-29, 0.1, 27.0), Vector3(25.5, 3.5, 12.5),
-		Vector3(17, 3.5, 13.0), Vector3(-33, 3.6, 25.6), Vector3(-15, -DEPTH + 0.1, 0.0)])
-	m._pickups([["weapon", Vector3(13.5, 3.4, 17.5)], ["weapon", Vector3(-32.2, 3.4, 26.0)], ["health", Vector3(30, 0, 25.5)], ["health", Vector3(26.5, 3.4, 18.0)]])
+		Vector3(17, 3.5, 13.0), Vector3(-25.5, 0.1, 23.5), Vector3(-15, -DEPTH + 0.1, 0.0)])
+	m._pickups([["weapon", Vector3(13.5, 3.4, 17.5)], ["weapon", Vector3(-30.0, 0, 23.0)], ["health", Vector3(30, 0, 25.5)], ["health", Vector3(26.5, 3.4, 18.0)]])
 	m._pickups([["weapon", Vector3(0, -DEPTH, 0)]], false)
 
 

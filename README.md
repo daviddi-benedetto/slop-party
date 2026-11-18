@@ -35,9 +35,9 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Seven plush animals:** Bunny, Kitty, Pup, Bear, Fox, Panda and Duck, made
   for this game: big heads, soft fuzzy bodies, painted patches, glossy
   button eyes that blink, wagging tails and stubby paws that hold the weapon.
-- **Customise** on your lobby card: animal, colour (your bandana), hat, back
-  item, your own look speed and your own Y axis (normal or inverted), all
-  remembered between sessions.
+- **Customise** on your lobby card: animal, colour (your bandana), hat and
+  back item, all remembered between sessions. Each player's own look speed
+  is in **Options > Controls** (Player 1-6 look speed).
 - **Body language and faces:** animals lean into turns, tilt into the
   wall on a wall run, sit back low with feet first in a slide, snap away
   from hits and fidget when standing still. Eyes squint when hit, go wide
@@ -102,8 +102,6 @@ PLAY** lists every button and **MODES** explains each mode.
   triangle) and L1 / R2 names; Xbox-style pads keep A / B / X / Y.
 - **Screen transitions:** a slanted curtain in the theme's colours sweeps
   across between the lobby, the loading card, the match and the results.
-- **Lobby close-up:** changing your animal, colour, hat or back item leans
-  the camera towards your podium and your animal twirls to show it off.
 - **Pause menu** pops in over the blurred match with the mode, map and the
   standings at a glance.
 - **Results awards:** stats count up, and up to four titles are handed out
@@ -114,20 +112,21 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Arenas** for Rounds and Gun Game: Neon Yard (container yard), Ember Pit
   (foundry), Frost Line (polar outpost), Museum (indoor: atrium, balconies,
   vaults, café, armoury hall), Stadium (pitch, bleachers, locker rooms, a
-  club stand), Suburb (houses, yards, pools, a treehouse, a storm drain) and
+  club stand), Suburb (houses, yards, pools, a storm drain) and
   the Castle (walkable curtain walls, towers, gatehouses, a three-storey
   keep, a market, a siege camp; also Medieval mode's home).
 - **Quarantine** (Zombies): a hospital campus with a clinic, triage tents, a
   warehouse, a motel, a tunnel and a morgue cellar.
 - **Frontline:** a town with towers, warehouses, bunkers and trenches.
-- **A world you can push around:** doorways are open (no doors to get
-  stuck on); furniture and clutter have weight (you shove a chair,
-  a fridge barely moves); glass shatters; fuel barrels explode; ruined walls
-  crumble. Rooms are furnished for what they are, sparingly, so doorways
-  stay clear.
+- **Easy to move around:** doorways are open (no doors), windows are big
+  enough to jump through (break the glass and go), and nothing is placed in
+  a doorway, on or at the foot of stairs, or in front of a window. Streets
+  have no loose clutter; outdoor dressing stays put, and the small stuff
+  does not block you. A few heavy things indoors barely move when you push
+  them, and walking over anything never flings you into the air. Glass
+  shatters, fuel barrels explode and ruined walls crumble.
 - **Scenery:** dense wind-blown grass and flowers over rolling mounds, a
-  horizon of hills and mountains on every map, warm lamps indoors, sun rays,
-  and pets (dogs, cats, a fox, a bunny) you can pet for a little health.
+  horizon of hills and mountains on every map, warm lamps indoors, sun rays.
 - **Surfaces with depth:** brick, stone, cobbles, tiles, planks, siding,
   shingles, metal panels and corrugated sheet have grooves you can see into
   (parallax occlusion mapping, option **Surface depth**): mortar lines and
@@ -213,7 +212,7 @@ otherwise it runs the project from source with the bundled engine.
 
 In the lobby each player presses **A** on their own gamepad to take a seat
 (Space joins a keyboard + mouse player). Up/down picks what to customise
-(animal, colour, hat, back, look speed, Y axis) and left/right changes it.
+(animal, colour, hat, back) and left/right changes it.
 Every match opens on a loading card with the mode, map, theme and a tip.
 
 | Lobby | Gamepad | Keyboard |
@@ -278,8 +277,8 @@ Q / E to turn them):
   dropping below 60 FPS.
 - **Audio:** master, music and effects volume. Sounds are panned left and
   right relative to the nearest player's view.
-- **Controls:** gamepad and mouse look speed, stick dead zone, aim assist,
-  rumble. (Look speed and Y axis are set per player on the lobby card.)
+- **Controls:** gamepad and mouse look speed, stick dead zone, a look speed
+  for each player (Player 1-6, by join order), aim assist, rumble.
 - **Gameplay:** field of view, screen shake, view bob and sway, damage
   numbers, bot difficulty.
 - **How to play:** every button, on foot, in a vehicle and in the lobby.

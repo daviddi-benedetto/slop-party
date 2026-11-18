@@ -64,6 +64,10 @@ const Surface = preload("res://scripts/surface.gd")
 signal nav_built
 
 const DOORS := false              # hang doors in doorways (off: open doorways everywhere)
+const WIN_W := 1.6                # building windows: width, sill and top height
+const WIN_LO := 0.6
+const WIN_HI := 2.6
+const WIN_MID := 1.6
 const FURN := 2.15               # scale of the Kenney furniture kit models
 ## Loose clutter scattered on walkable spots after the nav graph exists:
 ## [model, scale, mass].
@@ -408,6 +412,11 @@ var _time := 0.0
 var _beacon: StandardMaterial3D   # skyline warning lights (blink together)
 var _rotors: Array = []           # wind turbine rotors (spin in _process)
 var _blimp: Node3D                # a blimp circling the arena far out
+var _keep: Array = []             # [Rect2 (XZ), y0, y1]: doorways, stairs, windows kept clear of furniture
+var _deferred: Array = []         # furniture / props waiting for the keep-clear check at the end of build()
+var _dropped := 0
+var _placing := false             # true while _place_deferred() runs (place for real)
+var _skipped: Array = []          # [Rect2, y] footprints of skipped furniture (things on top go too)
 var _flicker: Array = []         # [OmniLight3D, base energy, phase, speed]: neon that stutters
 var _water_t := 0.0
 
@@ -472,6 +481,7 @@ func build(index := 0, theme_key := "classic") -> void:
 	_mounds()
 	_build_floor()
 	_build_scenery()
+	_place_deferred()
 	_flush()
 	_set_pieces()
 	_wall_art()
@@ -1055,8 +1065,10 @@ func _make_materials() -> void:
 	var water := StandardMaterial3D.new()
 	water.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	water.albedo_color = Color(0.15, 0.5, 0.65, 0.55)
-	water.roughness = 0.03
-	water.metallic = 0.3
+	# Not mirror-smooth: a near-zero roughness on rippling normals made the
+	# sun's highlight sparkle and flash across the pools.
+	water.roughness = 0.22
+	water.metallic = 0.0
 	# Rippling surface: a seamless noise normal map that drifts (_process).
 	var wn := NoiseTexture2D.new()
 	wn.seamless = true
@@ -1069,7 +1081,7 @@ func _make_materials() -> void:
 	wn.noise = wnoise
 	water.normal_enabled = true
 	water.normal_texture = wn
-	water.normal_scale = 0.6
+	water.normal_scale = 0.25
 	water.uv1_triplanar = true
 	water.uv1_world_triplanar = true
 	water.uv1_scale = Vector3.ONE * 0.12
@@ -1463,6 +1475,16 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 
 ## A loose physics prop (prop.gd) standing at `pos`.
 func _prop(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, weight := 4.0, mirror := true, awake := false) -> void:
+	if not _placing:
+		_defer(_prop.bind(path, pos, yaw, scl, weight, mirror, awake), path, pos, scl, mirror, true)
+		return
+	# Clutter outdoors is scenery, not physics: it stays where it is (and the
+	# small stuff does not even block you). Indoors a few loose things remain,
+	# heavy enough that a shove barely moves them.
+	if not indoor and not _under_roof(pos):
+		var bs: Vector3 = Models.bounds(path).size * scl
+		_fixed(path, pos, yaw, scl, mirror, "box" if maxf(bs.x, bs.z) > 0.7 and bs.y > 0.5 else "none")
+		return
 	for k in (2 if mirror else 1):
 		var p = Prop.new()
 		p.setup(path, scl, weight)
@@ -1487,6 +1509,11 @@ func _glass(pos: Vector3, w: float, h: float, along_z := false, mirror := true) 
 ## leaf runs from there along +X turned by `yaw`. It opens for bots, on the
 ## interact button for humans, and can be smashed.
 func _door(hinge: Vector3, yaw := 0.0, w := 1.7, h := 2.45, model := "doors/Door_Brown", mirror := true, hp := 110.0, label := "DOOR") -> void:
+	# Keep 1.3 m either side of every doorway free of furniture.
+	var mid: Vector3 = hinge + Basis(Vector3.UP, yaw) * Vector3(w * 0.5, 0, 0)
+	var along_x: bool = absf(cos(yaw)) > 0.7
+	var r := Rect2(mid.x - w * 0.5 - 0.3, mid.z - 1.3, w + 0.6, 2.6) if along_x else Rect2(mid.x - 1.3, mid.z - w * 0.5 - 0.3, 2.6, w + 0.6)
+	_keep_clear(r, hinge.y - 0.5, hinge.y + 2.5, mirror)
 	# Doorways are left open so the maps flow (doors only slowed people down).
 	if not DOORS:
 		return
@@ -1622,6 +1649,9 @@ func _furnish(c: Vector3, sx: float, sz: float, y: float, mirror: bool) -> void:
 ## footprint (the same placement as a loose _prop), with a box collider
 ## unless collide is "none" (things standing on tables and counters).
 func _fixed(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, mirror := true, collide := "box") -> void:
+	if not _placing:
+		_defer(_fixed.bind(path, pos, yaw, scl, mirror, collide), path, pos, scl, mirror, collide != "none")
+		return
 	var b: AABB = Models.bounds(path)
 	var o := Basis(Vector3.UP, yaw) * (Vector3(b.get_center().x, b.position.y, b.get_center().z) * scl)
 	_model(path, pos - o, yaw, scl, mirror, collide)
@@ -1666,6 +1696,64 @@ func _scatter_props() -> void:
 			var off := Vector3.ZERO if n == 1 else Vector3(cos(a0 + i * TAU / n), 0, sin(a0 + i * TAU / n)) * gap * 0.6
 			_prop(c[0], p + off + Vector3(0, 0.12, 0), randf() * TAU, c[1], c[2], false, true)
 		placed += 1
+
+
+## Doorways, stairs and windows register an area here; furniture and props
+## that would stand in one are left out (_place_deferred).
+func _keep_clear(r: Rect2, y0: float, y1: float, mirror: bool) -> void:
+	_keep.append([r, y0, y1])
+	if mirror:
+		_keep.append([Rect2(-r.end.x, -r.end.y, r.size.x, r.size.y), y0, y1])
+
+
+func _defer(place: Callable, path: String, pos: Vector3, scl: float, mirror: bool, solid: bool) -> void:
+	var bs: Vector3 = Models.bounds(path).size * scl
+	_deferred.append([place, pos, maxf(bs.x, bs.z) * 0.5, mirror, solid])
+
+
+func _blocked(p: Vector3, radius: float) -> bool:
+	for k in _keep:
+		if p.y >= float(k[1]) and p.y <= float(k[2]) and (k[0] as Rect2).grow(radius * 0.5).has_point(Vector2(p.x, p.z)):
+			return true
+	return false
+
+
+func _under_roof(p: Vector3) -> bool:
+	for r in roofs:
+		if (r as Rect2).has_point(Vector2(p.x, p.z)):
+			return true
+	return false
+
+
+## Place the furniture and props queued during the build, except anything
+## standing in a doorway, on or at the foot of stairs, or in front of a
+## window. Things standing on skipped furniture (a TV on its cabinet) go too.
+func _place_deferred() -> void:
+	_placing = true
+	for d in _deferred:
+		var pos: Vector3 = d[1]
+		var radius: float = d[2]
+		var copies: Array = [pos, Vector3(-pos.x, pos.y, -pos.z)] if d[3] else [pos]
+		var skip := false
+		for c in copies:
+			if _blocked(c, radius):
+				skip = true
+			if not d[4]:
+				# Things without a collider stand on something: on skipped
+				# furniture they go too.
+				for s in _skipped:
+					if (s[0] as Rect2).has_point(Vector2(c.x, c.z)) and c.y - float(s[1]) > 0.05 and c.y - float(s[1]) < 2.0:
+						skip = true
+		if skip:
+			_dropped += 1
+			if d[4]:
+				for c in copies:
+					_skipped.append([Rect2(c.x - radius, c.z - radius, radius * 2.0, radius * 2.0), c.y])
+			continue
+		(d[0] as Callable).call()
+	if "--audit" in OS.get_cmdline_user_args() or "--clutter" in OS.get_cmdline_user_args():
+		print("[clutter] %s: %d placed, %d left out (doorways, stairs, windows)" % [MAPS[map_index].name, _deferred.size() - _dropped, _dropped])
+	_deferred.clear()
 
 
 ## Pick one of several model variants with the map's seeded random generator.
@@ -1880,6 +1968,15 @@ func _stairs(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := tr
 	for xf in copies:
 		_ramp_collider(xf, size)
 		_add(_stairs_cache[key], _mats[mat], xf)
+		# Stairs and a landing at each end stay clear.
+		var ext := Vector3(size.x * 0.5 + 0.8, 0, size.z * 0.5 + 0.2)
+		var c0: Vector3 = xf.origin
+		var b: Basis = xf.basis
+		var ax: Vector3 = (b * Vector3(ext.x, 0, 0)).abs()
+		var az: Vector3 = (b * Vector3(0, 0, ext.z)).abs()
+		var hx: float = ax.x + az.x
+		var hz: float = ax.z + az.z
+		_keep_clear(Rect2(c0.x - hx, c0.z - hz, hx * 2.0, hz * 2.0), c0.y - 0.5, c0.y + size.y + 2.5, false)
 
 
 ## A pitched roof: a prism with its ridge along X, sitting on y = base.y.
@@ -2145,9 +2242,10 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 		var nx := maxi(1, int((sx - 1.0) / 4.0))
 		var nz := maxi(1, int((sz - 1.0) / 4.0))
 		for i in nx:
-			win_x.append([x0 + sx * (i + 0.5) / nx, 1.4, 0.95, 2.3])
+			# Windows big enough to jump through (1.6 m wide, 0.6 m to 2.6 m).
+			win_x.append([x0 + sx * (i + 0.5) / nx, WIN_W, WIN_LO, WIN_HI])
 		for i in nz:
-			win_z.append([z0 + sz * (i + 0.5) / nz, 1.4, 0.95, 2.3])
+			win_z.append([z0 + sz * (i + 0.5) / nz, WIN_W, WIN_LO, WIN_HI])
 		var south: Array = win_x.duplicate()
 		var east: Array = win_z.duplicate()
 		if f == 0:
@@ -2167,15 +2265,22 @@ func _building(c: Vector3, sx: float, sz: float, floors: int, mat: String, opts 
 			# scrapes through them as it swings.
 			_door(Vector3(c.x - 0.88, y0 + 0.06, z0 + t * 0.5), 0.0, 1.76, 2.42, dm, mirror)
 			_door(Vector3(x1 - t * 0.5, y0 + 0.06, c.z - 0.88), -PI * 0.5, 1.76, 2.42, dm, mirror)
+		# The floor in front of every window stays clear (you can jump through).
+		for w in win_x:
+			for zz in ([z1] if f == 0 else [z1, z0]):
+				_keep_clear(Rect2(w[0] - WIN_W * 0.5, zz - 0.8, WIN_W, 1.6), y0 - 0.2, y0 + 2.6, mirror)
+		for w in win_z:
+			for xx in ([x0] if f == 0 else [x0, x1]):
+				_keep_clear(Rect2(xx - 0.8, w[0] - WIN_W * 0.5, 1.6, WIN_W), y0 - 0.2, y0 + 2.6, mirror)
 		# Glass in every window (not the doors), furniture on every floor.
 		for w in (win_x if opts.get("glass", true) else []):
-			_glass(Vector3(w[0], y0 + 1.625, z1 - t * 0.5), 1.4, 1.35, false, mirror)
+			_glass(Vector3(w[0], y0 + WIN_MID, z1 - t * 0.5), WIN_W, WIN_HI - WIN_LO, false, mirror)
 			if f > 0:
-				_glass(Vector3(w[0], y0 + 1.625, z0 + t * 0.5), 1.4, 1.35, false, mirror)
+				_glass(Vector3(w[0], y0 + WIN_MID, z0 + t * 0.5), WIN_W, WIN_HI - WIN_LO, false, mirror)
 		for w in (win_z if opts.get("glass", true) else []):
-			_glass(Vector3(x0 + t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
+			_glass(Vector3(x0 + t * 0.5, y0 + WIN_MID, w[0]), WIN_W, WIN_HI - WIN_LO, true, mirror)
 			if f > 0:
-				_glass(Vector3(x1 - t * 0.5, y0 + 1.625, w[0]), 1.4, 1.35, true, mirror)
+				_glass(Vector3(x1 - t * 0.5, y0 + WIN_MID, w[0]), WIN_W, WIN_HI - WIN_LO, true, mirror)
 		if opts.has("style"):
 			Arch.interior(self, opts.style, f, floors, c, sx, sz, y0, mirror)
 		elif opts.get("furnish", true):
@@ -2287,23 +2392,23 @@ func _facade(c: Vector3, sx: float, sz: float, y0: float, f: int, win_x: Array, 
 	for w in win_x:
 		for side in ([[z1, 1.0]] if f == 0 else [[z1, 1.0], [z0, -1.0]]):
 			var z: float = side[0] + side[1] * 0.05
-			_box(Vector3(w[0], y0 + 0.9, z), Vector3(1.7, 0.1, 0.22), trim, mirror, 0.0, false)
-			_box(Vector3(w[0], y0 + 2.36, z), Vector3(1.6, 0.12, 0.14), trim, mirror, 0.0, false)
+			_box(Vector3(w[0], y0 + WIN_LO - 0.05, z), Vector3(WIN_W + 0.3, 0.1, 0.22), trim, mirror, 0.0, false)
+			_box(Vector3(w[0], y0 + WIN_HI + 0.06, z), Vector3(WIN_W + 0.2, 0.12, 0.14), trim, mirror, 0.0, false)
 			for sgn in [-1.0, 1.0]:
-				_box(Vector3(w[0] + sgn * 0.74, y0 + 1.63, z), Vector3(0.1, 1.38, 0.14), trim, mirror, 0.0, false)
+				_box(Vector3(w[0] + sgn * (WIN_W * 0.5 + 0.05), y0 + WIN_MID, z), Vector3(0.1, WIN_HI - WIN_LO + 0.05, 0.14), trim, mirror, 0.0, false)
 			if pitched:
 				for sgn in [-1.0, 1.0]:
-					_box(Vector3(w[0] + sgn * 0.92, y0 + 1.63, z), Vector3(0.36, 1.35, 0.06), shut, mirror, 0.0, false)
+					_box(Vector3(w[0] + sgn * (WIN_W * 0.5 + 0.23), y0 + WIN_MID, z), Vector3(0.36, WIN_HI - WIN_LO, 0.06), shut, mirror, 0.0, false)
 	for w in win_z:
 		for side in ([[x0, -1.0]] if f == 0 else [[x0, -1.0], [x1, 1.0]]):
 			var x: float = side[0] + side[1] * 0.05
-			_box(Vector3(x, y0 + 0.9, w[0]), Vector3(0.22, 0.1, 1.7), trim, mirror, 0.0, false)
-			_box(Vector3(x, y0 + 2.36, w[0]), Vector3(0.14, 0.12, 1.6), trim, mirror, 0.0, false)
+			_box(Vector3(x, y0 + WIN_LO - 0.05, w[0]), Vector3(0.22, 0.1, WIN_W + 0.3), trim, mirror, 0.0, false)
+			_box(Vector3(x, y0 + WIN_HI + 0.06, w[0]), Vector3(0.14, 0.12, WIN_W + 0.2), trim, mirror, 0.0, false)
 			for sgn in [-1.0, 1.0]:
-				_box(Vector3(x, y0 + 1.63, w[0] + sgn * 0.74), Vector3(0.14, 1.38, 0.1), trim, mirror, 0.0, false)
+				_box(Vector3(x, y0 + WIN_MID, w[0] + sgn * (WIN_W * 0.5 + 0.05)), Vector3(0.14, WIN_HI - WIN_LO + 0.05, 0.1), trim, mirror, 0.0, false)
 			if pitched:
 				for sgn in [-1.0, 1.0]:
-					_box(Vector3(x, y0 + 1.63, w[0] + sgn * 0.92), Vector3(0.06, 1.35, 0.36), shut, mirror, 0.0, false)
+					_box(Vector3(x, y0 + WIN_MID, w[0] + sgn * (WIN_W * 0.5 + 0.23)), Vector3(0.06, WIN_HI - WIN_LO, 0.36), shut, mirror, 0.0, false)
 	if f == 0:
 		# Porches: south door (z0 side) and east door (x1 side).
 		_box(Vector3(c.x, y0 + 2.75, z0 - 0.75), Vector3(3.0, 0.14, 1.6), shut, mirror)
@@ -3733,7 +3838,7 @@ func build_nav() -> void:
 		if keep.has(l.x) and keep.has(l.y):
 			nav.connect_points(l.x, l.y)
 	nav_ready = true
-	_scatter_props()
+	# (Loose street clutter is gone: it got under everyone's feet.)
 	nav_built.emit()
 	print("[map] %s nav graph: %d nodes, %d links" % [MAPS[map_index].name, best.size(), links.size()])
 

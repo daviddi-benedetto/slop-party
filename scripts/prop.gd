@@ -15,7 +15,7 @@ extends RigidBody3D
 const Models = preload("res://scripts/models.gd")
 
 const LAYER := 4
-const DENSITY := 70.0         # kg per cubic metre of bounding box (furniture is mostly air)
+const DENSITY := 220.0        # kg per cubic metre of bounding box: heavy, a shove barely moves it
 const MAX_SPEED_GAIN := 8.0   # no single shove adds more than this (m/s)
 const Debris = preload("res://scripts/debris.gd")
 const Fx = preload("res://scripts/fx.gd")
@@ -59,7 +59,7 @@ func _ready() -> void:
 		if b.size.length() * _scl < 2.6:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_size = b.size * _scl
-	mass = clampf(_size.x * _size.y * _size.z * DENSITY, 0.25, 400.0)
+	mass = clampf(_size.x * _size.y * _size.z * DENSITY, 8.0, 600.0)
 	hp = clampf(14.0 + mass * 2.2, 16.0, 220.0)
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.9
@@ -131,4 +131,4 @@ static func kick_near(space: PhysicsDirectSpaceState3D, pos: Vector3, radius: fl
 			var dir := (velocity.normalized() + away.normalized() * 0.6 + Vector3(0, 0.15, 0)).normalized()
 			# A fixed shove (about 8 kg of moving body): a bottle skitters away,
 			# a chair scrapes along, a fridge barely budges.
-			c.knock(dir * minf(velocity.length(), 12.0) * 8.0 * strength, pos)
+			c.knock(dir * minf(velocity.length(), 12.0) * 3.0 * strength, pos)

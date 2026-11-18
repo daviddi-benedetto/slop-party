@@ -65,6 +65,14 @@ const ITEMS := [
 	{"key": "stick", "label": "Gamepad look speed", "range": [1, 10], "def": 5},
 	{"key": "deadzone", "label": "Stick dead zone", "opts": ["Small", "Normal", "Large"], "vals": [0.08, 0.14, 0.24], "def": 1},
 	{"key": "mouse", "label": "Mouse look speed", "range": [1, 10], "def": 4},
+	# Each player's own look speed on top of the gamepad / mouse speed above
+	# (P1 = the first player to join in the lobby, and so on).
+	{"key": "look_p1", "label": "Player 1 look speed", "range": [1, 10], "def": 5},
+	{"key": "look_p2", "label": "Player 2 look speed", "range": [1, 10], "def": 5},
+	{"key": "look_p3", "label": "Player 3 look speed", "range": [1, 10], "def": 5},
+	{"key": "look_p4", "label": "Player 4 look speed", "range": [1, 10], "def": 5},
+	{"key": "look_p5", "label": "Player 5 look speed", "range": [1, 10], "def": 5},
+	{"key": "look_p6", "label": "Player 6 look speed", "range": [1, 10], "def": 5},
 	{"key": "aim_assist", "label": "Gamepad aim assist", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "rumble", "label": "Controller rumble", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"section": "GAMEPLAY"},

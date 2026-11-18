@@ -192,9 +192,10 @@ func _ready() -> void:
 		else:
 			p.pname = "P%d" % (i + 1)
 			p.brain = InputSource.new(part.device)
-			# Each player's own look speed (lobby: LOOK 1-10, 5 = the global setting).
-			p.brain.sens = 0.4 + 0.12 * float(part.get("sens", 5))
-			p.brain.invert = bool(part.get("invert", false))
+			# Each player's own look speed (Options > Controls: Player N look
+			# speed, 5 = just the global gamepad / mouse speed).
+			var pn: int = clampi(int(part.get("pnum", i + 1)), 1, 6)
+			p.brain.sens = 0.4 + 0.12 * float(Settings.v("look_p%d" % pn))
 			if part.device == InputSource.KEYBOARD:
 				_kb_brain = p.brain
 		p.wants_view = part.get("view", not part.bot)
@@ -1170,7 +1171,8 @@ func _spawn_pets() -> void:
 			if i % 2 == 0:
 				demo.pet(p0)
 		return
-	var n := clampi(int(map.half_x * map.half_z / 300.0) + 2, 3, 9)
+	# Wandering pets are gone (they got in the way); --pets-demo still works.
+	var n := 0
 	for i in n:
 		var pos: Vector3 = map.random_nav_point()
 		if pos.y < -1.0:

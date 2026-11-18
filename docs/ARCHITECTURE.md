@@ -630,9 +630,7 @@ device so a PlayStation pad shows its shapes.
 (`_pause_opened`, the match clock is stopped), shows mode / map / theme and
 the standings, and is redrawn every frame while paused.
 
-**Lobby close-up** (`lobby._update_focus`): changing kind / colour / hat /
-back sets `_focus_i` for 2.4 s; the stage camera leans 42 % of the way
-towards that podium and the character makes one eased turn.
+The lobby camera stays put while players customise (the close-up and twirl were removed).
 
 **HUD performance matters.** With six HUDs, redrawing everything each frame
 cost about 10 ms in GDScript. `hud.gd` therefore splits itself into child
@@ -699,6 +697,20 @@ across the UI.
   effect (that was the case from v0.21 until this fix). Screen effects that
   must read the screen (screen_fx.gd) are a 2D post-process instead.
 - **Doors** are off (`map.DOORS`): doorways stay open; door.gd remains.
+- **Keep-clear placement** (`map._keep_clear`, `_defer`, `_place_deferred`):
+  `_fixed` and `_prop` are queued during the build; doorways (`_door`, even
+  with doors off), stairs (`_stairs`, plus landings) and the floor in front
+  of building windows register keep-clear rects; at the end of build()
+  anything standing in one is dropped (mirrored copies together), and
+  collider-less things standing on dropped furniture go too. `--clutter`
+  prints the counts. Outdoor `_prop`s become fixed scenery (small ones
+  without a collider); `_scatter_props` is no longer called. Props are
+  heavy (DENSITY 220, min 8 kg) and players use `platform_floor_layers = 1`
+  so a moving prop never carries or flings them.
+- **Windows** (`map.WIN_W` / `WIN_LO` / `WIN_HI`): 1.6 m wide, 0.6 to 2.6 m,
+  big enough to jump through once the glass is broken.
+- **Pets** no longer spawn (`--pets-demo` still shows them); the Suburb
+  treehouse is gone (spawns and a box were stuck up there).
 - **Hovering sights** (viewmodel `_update_attachments`, `_hover_parts`):
   scope and red dot have no mount; a glowing ring pair and an additive beam
   hold them up; `_attach` bobs only when not aiming (ADS alignment).
@@ -974,8 +986,9 @@ What applies where:
   saving it (e.g. `--set-volfog=1`).
 - "Scenery detail" is read when a map is built, so it takes effect next match.
 - look speed, aim assist: `input_source.gd`. Each player also has their own
-  look speed multiplier (`sens`) and Y axis (`invert`), set on their lobby
-  card and passed in the participant dictionary.
+  look speed multiplier (`sens`) from Settings `look_p1`..`look_p6` (by the
+  participant's `pnum`, the lobby join order); there is no per-player Y
+  axis any more.
 - FOV, screen shake, bot difficulty, rumble: `game.gd`. Damage numbers:
   `player.gd`.
 

@@ -33,8 +33,8 @@ const STAGE_COL := 4.6          # metres between podium columns (front row)
 const BACK_TIER := 3.4          # podium height of the back row
 const KEYBOARD := -1
 const KILL_TARGETS := [5, 10, 15, 20, 30]
-const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK", "LOOK", "Y AXIS"]
-const KEYS := ["kind", "color", "hat", "back", "sens", "inv"]
+const CATEGORIES := ["ANIMAL", "COLOR", "HAT", "BACK"]
+const KEYS := ["kind", "color", "hat", "back"]
 const SENS_STEPS := 10          # LOOK: this player's own look speed, 1-10
 const MODES := ["rounds", "zombies", "frontline", "gungame", "medieval"]
 const MODE_LABELS := ["ROUNDS", "ZOMBIES", "FRONTLINE", "GUN GAME", "MEDIEVAL"]
@@ -185,43 +185,10 @@ func _edge(key: String, now: bool) -> bool:
 	return now and not was
 
 
-## Customising: the camera leans towards that seat for a moment and the
-## character does a twirl to show off the new look.
-var _focus_i := -1
-var _focus_t := 0.0
-var _focus_w := 0.0
-var _spin := 0.0
-
-
-func _update_focus(delta: float) -> void:
-	_focus_t = maxf(0.0, _focus_t - delta)
-	_focus_w = move_toward(_focus_w, 1.0 if _focus_t > 0.0 and _focus_i >= 0 else 0.0, delta * 2.2)
-	if _stage == null or _stage.camera == null:
-		return
-	var base_pos := Vector3(0, 4.9, 18.5)
-	var base_at := Vector3(0, 3.0, 0)
-	var pos := base_pos
-	var at := base_at
-	if _focus_i >= 0:
-		var top := _slot_pos(_focus_i) + Vector3(0, _slot_h(_focus_i), 0)
-		var k := smoothstep(0.0, 1.0, _focus_w) * 0.42
-		pos = base_pos.lerp(top + Vector3(0.6, 2.2, 8.0), k)
-		at = base_at.lerp(top + Vector3(0.4, 1.3, 0), k)
-		# One eased turn while the camera is in.
-		if _focus_t > 0.0:
-			_spin = minf(1.0, _spin + delta / 1.1)
-		var c = _slot_char[_focus_i]
-		if c != null and is_instance_valid(c):
-			var e := _spin * _spin * (3.0 - 2.0 * _spin)
-			c.rotation.y = e * TAU
-	_stage.camera.look_at_from_position(pos, at)
-
-
 func _process(delta: float) -> void:
 	if not visible:
 		return
 	_t += delta
-	_update_focus(delta)
 	message_t = maxf(0.0, message_t - delta)
 	for i in MAX_PLAYERS:
 		_slot_bump[i] = minf(1.0, _slot_bump[i] + delta * 3.0)
@@ -386,17 +353,8 @@ func _edit(seat_i: int, dh: int, dv: int) -> void:
 	if dh == 0:
 		return
 	var key: String = KEYS[seat.row]
-	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.BACK_NAMES.size(), SENS_STEPS, 2][seat.row]
-	if key == "sens":
-		seat.sens = clampi(seat.sens + dh, 0, SENS_STEPS - 1)
-		Sfx.play("tick", -8.0, 0.8 + seat.sens * 0.06)
-		return
+	var count: int = [UiKit.KIND_NAMES.size(), UiKit.PLAYER_COLORS.size(), UiKit.HAT_NAMES.size(), UiKit.BACK_NAMES.size()][seat.row]
 	seat[key] = posmod(seat[key] + dh, count)
-	if key in ["kind", "color", "hat", "back"]:
-		if _focus_i != seat_i or _focus_t <= 0.0:
-			_spin = 0.0
-		_focus_i = seat_i
-		_focus_t = 2.4
 	if key == "color":
 		# Two players never share a colour.
 		var used := _used_colors(seat_i)
@@ -472,7 +430,7 @@ func _start() -> void:
 		var human := i < seats.size()
 		parts.append({"device": seats[i].device if human else -2, "bot": not human, "view": human,
 			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back,
-			"sens": (seats[i].sens + 1) if human else 5, "invert": human and seats[i].inv == 1})
+			"pnum": i + 1})
 	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
 	start.emit({"participants": parts, "kill_target": target, "map": Map.ARENAS[map_i], "theme": _look_now.get("key", "classic"), "mode": mode,
 		"teams": "versus" if versus else "coop"})
@@ -578,11 +536,9 @@ func _draw() -> void:
 	var ready := not seats.is_empty() and (seats.size() + bots >= 2 or mode != "rounds")
 	var sy := h - 36 * s
 	if ready:
-		var pulse := 1.0 + sin(_t * 5.0) * 0.04
-		draw_set_transform(Vector2(w * 0.5, sy - 14 * s), 0.0, Vector2(pulse, pulse))
-		var label := "PRESS  START  TO FIGHT!" if pad else "PRESS  ENTER  TO FIGHT!"
-		UiKit.text(self, Vector2(-w * 0.5, 16 * s), label, 46 * s, value, HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.16)
-		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# A quiet reminder, not a shout: small, gently breathing.
+		var label := "PRESS START TO FIGHT" if pad else "PRESS ENTER TO FIGHT"
+		UiKit.text(self, Vector2(0, sy + 6 * s), label, 24 * s, Color(value.lerp(Color.WHITE, 0.3), 0.55 + 0.2 * sin(_t * 2.0)), HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.12)
 	else:
 		UiKit.text(self, Vector2(0, sy), "WAITING FOR PLAYERS...", 36 * s, Color(1, 1, 1, 0.7 + 0.3 * sin(_t * 3.0)), HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.16)
 	if message_t > 0.0:
@@ -634,7 +590,7 @@ func _draw_seat(i: int, base: Vector2, head: Vector2, s: float) -> void:
 		for c in n:
 			var dp := Vector2(pw * 0.5 + (c - (n - 1) * 0.5) * 14 * s, 66 * s)
 			draw_circle(dp, (4.0 if c == seat.row else 2.6) * s, col if c == seat.row else Color(1, 1, 1, 0.3))
-		var val: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back], "SPEED %d" % (seat.sens + 1), "INVERTED" if seat.inv == 1 else "NORMAL"][seat.row]
+		var val: String = [UiKit.KIND_NAMES[seat.kind], UiKit.COLOR_NAMES[seat.color], UiKit.HAT_NAMES[seat.hat], UiKit.BACK_NAMES[seat.back]][seat.row]
 		var wob := sin(_t * 6.0) * 3 * s
 		UiKit.text(self, Vector2(14 * s - wob, 108 * s), "<", 28 * s, _ui().value)
 		UiKit.text(self, Vector2(0, 108 * s), ">", 28 * s, _ui().value, HORIZONTAL_ALIGNMENT_RIGHT, pw - 14 * s + wob)
