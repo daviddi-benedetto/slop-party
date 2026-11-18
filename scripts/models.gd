@@ -79,6 +79,10 @@ static func toy(m: Material) -> Material:
 	t.metallic *= 0.6
 	t.specular_mode = BaseMaterial3D.SPECULAR_SCHLICK_GGX
 	t.albedo_color = Looks.grade(look, t.albedo_color)
+	if t.normal_enabled:
+		# Kit textures (medieval / dungeon) have strong bump maps; softer
+		# bumps read better at toy scale and do not sparkle at a distance.
+		t.normal_scale = minf(t.normal_scale, 0.55)
 	_toys[key] = t
 	return t
 

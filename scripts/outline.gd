@@ -42,7 +42,11 @@ void fragment() {
 			de = max(de, (zn - zc) / zc);
 			ne = max(ne, 1.0 - dot(nc, nrm(uv + offs[i])));
 		}
-		edge = max(smoothstep(0.035, 0.09, de), smoothstep(0.25, 0.6, ne) * 0.7);
+		// Normal edges only for real creases (corners, roof ridges), not the
+		// bumps a normal-mapped texture puts in every brick; and they fade
+		// out sooner than silhouettes, where pixels get coarse.
+		float crease = smoothstep(0.5, 0.85, ne) * 0.7 * (1.0 - smoothstep(14.0, 35.0, zc));
+		edge = max(smoothstep(0.035, 0.09, de), crease);
 		edge *= 1.0 - smoothstep(25.0, 70.0, zc);
 	}
 	// Multiply blend: darken the edges of whatever is already drawn, without

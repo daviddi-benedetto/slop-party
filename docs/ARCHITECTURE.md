@@ -982,6 +982,14 @@ screen at once.
 
 ### Hightown (`map_city.gd`)
 
+- Kit textures (`kit_medieval`, `kit_dungeon` `.png.import`) are imported
+  with mipmaps and VRAM compression (normal maps as normal maps); without
+  mipmaps the brick / timber detail and its normals sparkled at a distance
+  and the outline pass drew tiny lines all over the walls. `Models.toy()`
+  also caps `normal_scale` at 0.55 for imported materials, and outline.gd
+  only counts normal changes above ~60 degrees (real creases), fading them
+  out by 35 m.
+
 - Kit pieces (`kit_medieval/`, glTF: `Models.scene` loads `.glb` or
   `.gltf`) are scaled `S` = 1.25 so a module is `M` = 2.5 m and a storey
   `H` = 3.9 m. They are visuals only (`_model(..., "none")`, batched like
