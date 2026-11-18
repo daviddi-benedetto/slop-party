@@ -711,6 +711,17 @@ across the UI.
   big enough to jump through once the glass is broken.
 - **Pets** no longer spawn (`--pets-demo` still shows them); the Suburb
   treehouse is gone (spawns and a box were stuck up there).
+- **Zombie climbing** (zombie.gd): when the target is above and the nav
+  route does not reach it (or a route stops getting closer for 5 s:
+  `_no_gain`, `_force_climb`), the zombie walks to the outside foot of the
+  wall of the building the target stands on (`_climb_spot`, nearest side,
+  kept until the target changes), then scrambles up it in a scripted move
+  (`_start_scale` / `_update_scale`: a ray finds the roof edge just inside
+  the wall; collisions are off during the climb) and carries on over the
+  top. Pressing into any wall while the target is higher also climbs it
+  (`_climb`). Zombies only stop when level with their target. Dev:
+  `--solo --kb --mode=zombies --perch-at=7 --roof=N` puts a lone player on
+  a roof and logs the zombies closing in.
 - **Hovering sights** (viewmodel `_update_attachments`, `_hover_parts`):
   scope and red dot have no mount; a glowing ring pair and an additive beam
   hold them up; `_attach` bobs only when not aiming (ADS alignment).

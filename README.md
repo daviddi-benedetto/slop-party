@@ -8,7 +8,8 @@ game modes:
 - **Rounds** (default) – free-for-all deathmatch. Every time you die you are
   dealt three random powerup cards and keep one for the rest of the match, so
   whoever is losing keeps getting stronger. First to the kill target wins.
-- **Zombies** – co-op survival. Your squad (plus optional CPU allies) holds out
+- **Zombies** – co-op survival. Zombies follow you anywhere: they climb
+  walls and scramble onto roofs, so there is nowhere safe to camp. Your squad (plus optional CPU allies) holds out
   against endless, ever-growing waves of walkers, runners, brutes and a boss
   every fifth wave. Everyone picks a powerup between waves; fallen players
   return when the wave is cleared. It lasts until the whole squad is down.

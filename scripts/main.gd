@@ -6,6 +6,7 @@ extends Node
 ##   --autotest            skip the lobby: start a match of 6 bots
 ##   --views=N             in autotest, give the first N bots a splitscreen view
 ##   --kb                  in autotest, make player 1 a keyboard/mouse human
+##   --solo                in autotest, player 1 is the only participant
 ##   --target=<kills>      kill target for the autotest match
 ##   --map=<index>         which arena the autotest match uses (0-5)
 ##   --mode=rounds|zombies|frontline, --teams=versus|coop   game mode
@@ -22,6 +23,7 @@ extends Node
 ##   --options-page=N      ...on its Nth page (0 = DISPLAY)
 ##   --melee-at=<sec>      player 1 swings their melee then
 ##   --box-at=<sec>        player 1 opens a mystery box then
+##   --perch-at=<sec>[--roof=N]  player 1 is put on top of a roof
 ##   --boom-at=<sec>       an explosion 7 m in front of player 1
 ##   --gore-at=<sec>[,how] a body comes apart 4 m in front of player 1
 ##                         (how: normal, head, blast, slice)
@@ -116,6 +118,8 @@ func _ready() -> void:
 			parts.append({"device": -2, "bot": true, "view": i < views, "kind": i + int(_args.get("kinds", "0")), "hat": i + 1, "face": i, "back": i + 1})
 		if _args.has("kb"):
 			parts[0] = {"device": -1, "bot": false, "view": true, "kind": 0}
+		if _args.has("solo"):
+			parts = [parts[0]]      # dev: player 1 alone (zombie tests)
 		lobby.visible = false
 		_begin({"participants": parts, "kill_target": int(_args.get("target", "15")), "map": int(_args.get("map", "0")), "theme": str(_args.get("theme", _args.get("time", "random"))),
 			"mode": str(_args.get("mode", "rounds")), "teams": str(_args.get("teams", "versus"))})
@@ -151,6 +155,41 @@ func _ready() -> void:
 					pk.take(p)
 					print("[box] at ", pk.global_position)
 					break)
+	if _args.has("perch-at"):
+		# Dev: put player 1 on top of a roof (zombie climbing tests).
+		get_tree().create_timer(float(_args["perch-at"]), true, false, true).timeout.connect(func():
+			if game == null or game.players.is_empty() or game.map.roofs.is_empty():
+				return
+			var r: Rect2 = game.map.roofs[int(_args.get("roof", "0")) % game.map.roofs.size()]
+			var c := Vector3(r.get_center().x, 60.0, r.get_center().y)
+			var q := PhysicsRayQueryParameters3D.create(c, c - Vector3(0, 80, 0), 1)
+			var hit: Dictionary = game.world.get_world_3d().direct_space_state.intersect_ray(q)
+			if hit:
+				var p = game.players[0]
+				p.global_position = hit.position + Vector3(0, 0.2, 0)
+				p.velocity = Vector3.ZERO
+				print("[perch] player 1 on a roof at ", hit.position)
+				var tm := Timer.new()
+				tm.wait_time = 3.0
+				tm.autostart = true
+				add_child(tm)
+				tm.timeout.connect(func():
+					if game == null or game.players.is_empty():
+						return
+					var p0 = game.players[0]
+					var near := 1e9
+					var hz := 0.0
+					var zz = null
+					for z in game.actors:
+						if is_instance_valid(z) and z.has_method("chest_position") and z.alive:
+							var dd: float = z.global_position.distance_to(p0.global_position)
+							if dd < near:
+								near = dd
+								hz = z.global_position.y
+								zz = z
+					if zz != null and "_wall_spot" in zz:
+						print("        zombie at %s spot %s force %.1f climb %.1f path %d/%d wall %s" % [zz.global_position.snapped(Vector3.ONE * 0.1), zz._wall_spot, zz._force_climb, zz._climb, zz._path_i, zz._path.size(), zz.is_on_wall()])
+					print("[perch] t=%.0f health %d deaths %d nearest zombie %.1f m (at height %.1f)" % [game.time, p0.health, p0.deaths, near, hz])))
 	if _args.has("boom-at"):
 		get_tree().create_timer(float(_args["boom-at"]), true, false, true).timeout.connect(func():
 			if game != null and not game.players.is_empty():
@@ -274,6 +313,13 @@ func _screenshot_later(delay: float, path: String) -> void:
 	print("[shot] frames %d, avg %.1f ms, slow (>25 ms) %d, worst %.0f ms (after the first 8 s)" % [_fr_n, _fr_sum / maxf(_fr_n, 1) * 1000.0, _fr_slow, _fr_worst * 1000.0])
 	print("[shot] physics active=%d pairs=%d islands=%d  render scale=%.2f" % [Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS),
 		Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS), Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT), Settings.res_factor])
+	if game != null and _args.has("perch-at") and not game.players.is_empty():
+		var p0 = game.players[0]
+		var nearest := 1e9
+		for z in game.actors:
+			if is_instance_valid(z) and z.has_method("chest_position"):
+				nearest = minf(nearest, z.global_position.distance_to(p0.global_position))
+		print("[perch] player 1 at %s, health %d, deaths %d, nearest zombie %.1f m" % [p0.global_position.snapped(Vector3.ONE * 0.1), p0.health, p0.deaths, nearest])
 	if game != null:
 		for p in game.players:
 			print("[shot] %s kills=%d deaths=%d cards=%s" % [p.pname, p.kills, p.deaths, str(p.cards)])

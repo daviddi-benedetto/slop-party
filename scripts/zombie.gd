@@ -14,9 +14,20 @@ extends CharacterBody3D
 ## Types (TYPES): walker, runner, brute and the boss that comes every fifth
 ## wave. zombies.gd scales health and speed with the wave number.
 
+const CLIMB_SPEED := 3.6         # m/s up a wall
 const Fx = preload("res://scripts/fx.gd")
 const Gore = preload("res://scripts/gore.gd")
 var _last_crit := false
+var _wall_spot := Vector3.INF     # outside foot of the wall to climb towards a target on a roof
+var _wall_in := Vector3.ZERO
+var _scale_from := Vector3.ZERO    # scripted wall scramble: start, top, progress
+var _scale_to := Vector3.ZERO
+var _scale_t := -1.0
+var _scale_dur := 1.0
+var _best_d := 1e9               # closest we have got to the target (progress check)
+var _no_gain := 0.0               # seconds without getting closer
+var _force_climb := 0.0           # seconds left of climbing the outside regardless of the nav route
+var _climb := 0.0                 # seconds left of wall climbing (scaling up to a target above)
 var _last_dir := Vector3.UP
 const Models = preload("res://scripts/models.gd")
 const Prop = preload("res://scripts/prop.gd")
@@ -285,6 +296,10 @@ func _physics_process(delta: float) -> void:
 	_stagger = maxf(0.0, _stagger - delta)
 	_lunge = maxf(0.0, _lunge - delta * 3.0)
 
+	if _scale_t >= 0.0:
+		_update_scale(delta)
+		return
+
 	_think -= delta
 	if _think <= 0.0:
 		_think = 0.3
@@ -304,6 +319,22 @@ func _physics_process(delta: float) -> void:
 				_repath = 1.0 + randf() * 0.5
 				_path = game.map.find_path(global_position, _target.global_position)
 				_path_i = 0
+				# On a roof no path reaches: walk round to the outside wall
+				# nearest us instead, and climb it from there.
+				var reach_ok: bool = not _path.is_empty() and absf(_path[_path.size() - 1].y - _target.global_position.y) < 1.5 and _force_climb <= 0.0
+				if to.y > 1.5 and not reach_ok:
+					if _wall_spot == Vector3.INF:
+						_wall_spot = _climb_spot(_target.global_position)
+					if _wall_spot != Vector3.INF:
+						_path = game.map.find_path(global_position, _wall_spot)
+						_path_i = 0
+				else:
+					_wall_spot = Vector3.INF
+			if _wall_spot != Vector3.INF and Vector2(global_position.x - _wall_spot.x, global_position.z - _wall_spot.z).length() < 1.6:
+				# At the foot of the wall: scramble up it onto the roof.
+				_path = PackedVector3Array()
+				move = _wall_in
+				_start_scale()
 			while _path_i < _path.size():
 				var d: Vector3 = _path[_path_i] - global_position
 				if Vector2(d.x, d.z).length() < 1.0:
@@ -315,10 +346,28 @@ func _physics_process(delta: float) -> void:
 			# steer directly through it; keep position and request a fresh route.
 			if move == Vector3.ZERO and _clear(_target):
 				move = flat.normalized()
+			# Nothing else to go on (a ledge the nav graph cannot reach): head
+			# straight for them and climb whatever is in the way.
+			if move == Vector3.ZERO:
+				move = flat.normalized()
+		# Progress check: a route that never gets us closer (stuck on stairs or
+		# in a stairwell) gives way to climbing the outside for a while.
+		var dist: float = to.length()
+		if dist < _best_d - 0.5:
+			_best_d = dist
+			_no_gain = 0.0
+		else:
+			_no_gain += delta
+		_force_climb = maxf(0.0, _force_climb - delta)
+		if _no_gain > 5.0 and to.y > 1.5:
+			_no_gain = 0.0
+			_best_d = dist
+			_force_climb = 12.0
+			_repath = 0.0
 		var reach := 1.35 * _scale + 0.4
 		if flat.length() < reach and absf(to.y) < 1.8 * _scale and _attack_cd <= 0.0:
 			_attack(_target)
-		if flat.length() < reach * 0.7:
+		if flat.length() < reach * 0.7 and absf(to.y) < 1.8 * _scale:
 			move = Vector3.ZERO
 		if flat.length() > 0.1:
 			rotation.y = lerp_angle(rotation.y, atan2(-flat.x, -flat.z), clampf(delta * 8.0, 0.0, 1.0))
@@ -327,17 +376,27 @@ func _physics_process(delta: float) -> void:
 	if _stagger > 0.0:
 		spd *= 0.2
 	var horiz := Vector3(velocity.x, 0, velocity.z).move_toward(move * spd, 30.0 * delta)
-	if is_on_floor():
+	if _climb > 0.0:
+		# Scaling a wall: up the face, then on over the top.
+		_climb -= delta
+		velocity.y = CLIMB_SPEED * clampf(spd / 3.0, 0.8, 1.5)
+		horiz = move * spd * 0.7
+	elif is_on_floor():
 		velocity.y = -0.5
 	else:
 		velocity.y -= GRAVITY * delta
 	velocity.x = horiz.x
 	velocity.z = horiz.z
 	move_and_slide()
+	# Pressing into a wall while the target is higher up: climb it. Zombies
+	# follow you anywhere: onto roofs, up walls, over ledges.
+	if move != Vector3.ZERO and is_on_wall() and _target != null and is_instance_valid(_target) and _target.global_position.y - global_position.y > 0.4:
+		if move.dot(-get_wall_normal()) > 0.2:
+			_climb = 0.3
 	# Unstick: wanting to move but not getting anywhere -> hop, skip the
 	# waypoint, and after a while repath with a sideways shuffle.
 	var got := Vector2(velocity.x, velocity.z).length()
-	if move != Vector3.ZERO and got < spd * 0.25 and _stagger <= 0.0:
+	if move != Vector3.ZERO and got < spd * 0.25 and _stagger <= 0.0 and _climb <= 0.0:
 		_stuck += delta
 		if _stuck > 0.5 and is_on_floor():
 			velocity.y = 7.5
@@ -370,7 +429,7 @@ func _physics_process(delta: float) -> void:
 			_play("Run", clampf(hs / 5.0, 0.8, 1.6))
 		else:
 			_play("Walk", clampf(hs / (1.6 * _scale), 0.7, 1.8))
-	_body.rotation.x = -_lunge * 0.25
+	_body.rotation.x = -_lunge * 0.25 - (0.45 if _climb > 0.0 else 0.0)
 	_groan -= delta
 	if _groan <= 0.0:
 		_groan = randf_range(4.0, 10.0)
@@ -378,6 +437,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _pick_target() -> void:
+	var old = _target
 	var best = null
 	var best_d := 1e9
 	for p in game.hostiles(self):
@@ -386,6 +446,79 @@ func _pick_target() -> void:
 			best_d = d
 			best = p
 	_target = best
+	if _target != old:
+		_best_d = 1e9
+		_no_gain = 0.0
+		_wall_spot = Vector3.INF
+
+
+## Start scrambling up the wall in front of us: find the top of the wall
+## (the roof edge just inside it) and climb straight up the face to it.
+func _start_scale() -> void:
+	if _scale_t >= 0.0:
+		return
+	var inner := global_position + _wall_in * 1.2
+	var q := PhysicsRayQueryParameters3D.create(Vector3(inner.x, global_position.y + 30.0, inner.z), Vector3(inner.x, global_position.y + 0.5, inner.z), 1)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or hit.position.y - global_position.y < 1.0:
+		return
+	_scale_from = global_position
+	_scale_to = hit.position + Vector3(0, 0.15, 0)
+	_scale_t = 0.0
+	_scale_dur = clampf((_scale_to.y - _scale_from.y) / CLIMB_SPEED, 0.6, 4.5)
+	collision_mask = 0
+	velocity = Vector3.ZERO
+	_wall_spot = Vector3.INF
+	Sfx.play_at("zombie", global_position, -8.0, 1.2)
+
+
+## Up the face (close against the wall), then over the edge onto the top.
+func _update_scale(delta: float) -> void:
+	_scale_t += delta / _scale_dur
+	var f := clampf(_scale_t, 0.0, 1.0)
+	var up := 0.85
+	if f < up:
+		var k := f / up
+		var p := _scale_from.lerp(Vector3(_scale_from.x, _scale_to.y + 0.4, _scale_from.z), k)
+		global_position = p + _wall_in * 0.25
+	else:
+		var k2 := (f - up) / (1.0 - up)
+		global_position = Vector3(_scale_from.x, _scale_to.y + 0.4, _scale_from.z).lerp(_scale_to, k2) + _wall_in * 0.25 * (1.0 - k2)
+	rotation.y = atan2(-_wall_in.x, -_wall_in.z)
+	_body.rotation.x = -0.6 * (1.0 - smoothstep(0.8, 1.0, f))
+	if Engine.get_physics_frames() % 10 == 0:
+		_play("Walk", 1.4)
+	if _scale_t >= 1.0:
+		_scale_t = -1.0
+		collision_mask = 1 | 2 | 4
+		velocity = Vector3.ZERO
+		_body.rotation.x = 0.0
+		_repath = 0.0
+		_best_d = 1e9
+
+
+## The point just outside the wall of the building whose roof `target` is on,
+## on the side nearest this zombie (Vector3.INF if it is not on a roof).
+## _wall_in is set to the direction into that wall.
+func _climb_spot(target: Vector3) -> Vector3:
+	for r in game.map.roofs:
+		var rr: Rect2 = r
+		if not rr.has_point(Vector2(target.x, target.z)):
+			continue
+		var p := Vector2(clampf(global_position.x, rr.position.x, rr.end.x), clampf(global_position.z, rr.position.y, rr.end.y))
+		var d := [p.x - rr.position.x, rr.end.x - p.x, p.y - rr.position.y, rr.end.y - p.y]
+		var i: int = d.find(d.min())
+		var out := [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)][i] as Vector2
+		var edge := p
+		match i:
+			0: edge.x = rr.position.x
+			1: edge.x = rr.end.x
+			2: edge.y = rr.position.y
+			3: edge.y = rr.end.y
+		var spot := edge + out * 0.9
+		_wall_in = Vector3(-out.x, 0, -out.y)
+		return Vector3(spot.x, 0.0, spot.y)
+	return Vector3.INF
 
 
 func _clear(t) -> bool:
