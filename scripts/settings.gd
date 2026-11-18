@@ -10,7 +10,9 @@ extends Node
 ## (map.gd, stage.gd, game.gd, sfx.gd) or simply reads v() when needed.
 ##
 ## Saved to "slop_party_settings.cfg" next to the executable, so the game folder
-## stays portable and nothing is written to the user profile.
+## stays portable and nothing is written to the user profile. (On a Mac the
+## .app bundle is read-only, so there it goes to Godot's user data folder:
+## ~/Library/Application Support/Godot/app_userdata/Slop Party.)
 ##
 ## Dev flags (after "--"): --uncapped leaves v-sync / frame cap alone so
 ## benchmarks work; running with -w / --windowed keeps the window windowed;
@@ -131,6 +133,10 @@ func _ready() -> void:
 			_items[item.key] = item
 			idx[item.key] = item.def
 	var dir := OS.get_executable_path().get_base_dir()
+	# On a Mac the executable lives inside the signed, read-only .app bundle,
+	# so settings go to the user data folder instead.
+	if OS.get_name() == "macOS":
+		dir = OS.get_user_data_dir()
 	_path = dir.path_join("slop_party_settings.cfg")
 	# Settings from before the rename (Fragdeck / Slop Game) carry over.
 	if not FileAccess.file_exists(_path) and FileAccess.file_exists(dir.path_join("fragdeck_settings.cfg")):

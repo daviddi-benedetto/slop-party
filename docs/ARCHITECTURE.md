@@ -50,7 +50,8 @@ has not been verified.
 |---|---|
 | Play | `Play.bat` |
 | Open editor | `Edit.bat` |
-| Export standalone exe | `tools\build.bat` → `build\SlopParty.exe` |
+| Export standalone exe | `tools\build.bat` → `build\SlopParty.exe` (+ `build\SlopParty-macOS.zip` when the macOS template is installed) |
+| Mac release zip (adds ASSETS / licences, keeps Unix permissions) | `python tools/pack_mac.py <out.zip>` |
 | Re-download engine after a git clone | `tools\setup_engine.ps1 [-Templates]` |
 
 The engine binary is `engine\Godot_v4.7.2-stable_win64.exe` (use the
@@ -1148,6 +1149,11 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
 - Bots fight, die, pick cards, respawn; a match reaches the kill target, shows
   the podium and returns to the lobby.
 - The exported `build\SlopParty.exe` starts and plays.
+- macOS (export preset "macOS"): universal .app, ad-hoc signed by Godot's
+  built-in codesign (no Apple developer ID, so Gatekeeper needs a right-click
+  → Open the first time). Needs `import_etc2_astc` on in project.godot.
+  Settings live in the user data folder there (the .app bundle is read-only).
+  Not tested on a Mac from this PC.
 
 **Not verified:**
 - v0.12 (melee, taunts, magic and medieval weapons, Gun Game, Medieval,

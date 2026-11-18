@@ -213,6 +213,16 @@ carries the notices that ship with the game. The UI fonts are Fredoka and Lilita
 Double-click **`Play.bat`**. It runs `build\SlopParty.exe` if it exists,
 otherwise it runs the project from source with the bundled engine.
 
+**On a Mac** (Apple Silicon or Intel, macOS 11+): download
+`SlopParty-macOS.zip` from the GitHub release, unzip it and drag
+**Slop Party.app** to Applications. The app isn't signed with a paid Apple
+developer ID, so the first time **right-click it → Open → Open** (on newer
+macOS: try to open it, then **System Settings → Privacy & Security → Open
+Anyway**). After that it opens normally. Settings are saved in
+`~/Library/Application Support/Godot/app_userdata/Slop Party/`. On a Mac mini
+with 4+ players, lower **Surface depth**, **Volumetric fog** or **Reflections**
+in Options if it stutters.
+
 In the lobby each player presses **A** on their own gamepad to take a seat
 (Space joins a keyboard + mouse player). Up/down picks what to customise
 (animal, colour, hat, back) and left/right changes it.
@@ -309,6 +319,7 @@ docs/                 architecture notes
 tools/                build.bat, setup_engine.ps1, smoke.sh, balance.sh
 engine/               bundled Godot editor + export templates  (not in git)
 build/SlopParty.exe    standalone single-file game              (not in git)
+build/SlopParty-macOS.zip  Mac app (Slop Party.app)             (not in git)
 ```
 
 `build\SlopParty.exe` on its own is also fully portable: it is a single file
@@ -325,7 +336,7 @@ tools\build.bat
 ```
 
 The first command re-downloads Godot 4.7.2 into `engine/`; the second
-re-exports `build\SlopParty.exe`. A ready-made build is also attached to the
+re-exports `build\SlopParty.exe` and `build\SlopParty-macOS.zip`. A ready-made build is also attached to the
 repository's GitHub Releases.
 
 ## Developing
