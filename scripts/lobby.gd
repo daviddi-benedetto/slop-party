@@ -11,7 +11,7 @@ extends Control
 ##
 ## Shared controls: RT / G game mode (ROUNDS, ZOMBIES, FRONTLINE), Y / B-key
 ## bots (Frontline: teams versus / co-op), X / K kill target (Frontline:
-## tickets), RB / M next map (Frontline has its own), LB / T visual theme
+## tickets), RB / M next map (Frontline: FRONTLINE or HIGHTOWN), LB / T visual theme
 ## (looks.gd: the stage behind the lobby and its colours change with it),
 ## Back / O options, Start / Enter to begin.
 ##
@@ -56,6 +56,7 @@ var map_i := 0
 var theme_i := 0             # index into Looks.options()
 var mode_i := 0
 var versus := true           # Frontline: humans split between the teams
+var front_i := 0             # Frontline: index into Map.FRONT_MAPS
 var message := ""
 var message_t := 0.0
 
@@ -90,6 +91,7 @@ func _ready() -> void:
 	theme_i = clampi(int(Settings.lobby.get("theme", 0)), 0, Looks.options().size() - 1)
 	mode_i = clampi(int(Settings.lobby.get("mode", 0)), 0, MODES.size() - 1)
 	versus = bool(Settings.lobby.get("versus", true))
+	front_i = clampi(int(Settings.lobby.get("front_map", 0)), 0, Map.FRONT_MAPS.size() - 1)
 	_options = SettingsMenu.new()
 	add_child(_options)
 	_options.closed.connect(func():
@@ -332,7 +334,8 @@ func _shared(what: String, dir: int) -> void:
 			_build_stage()
 		"map":
 			if mode == "frontline":
-				_say("Frontline is fought on its own huge map")
+				front_i = posmod(front_i + dir, Map.FRONT_MAPS.size())
+				Sfx.play("tick", -6.0, 1.2)
 			elif mode == "zombies":
 				_say("Zombies is played in the Quarantine zone")
 			elif mode == "medieval":
@@ -512,6 +515,7 @@ func _remember() -> void:
 	Settings.lobby["theme"] = theme_i
 	Settings.lobby["mode"] = mode_i
 	Settings.lobby["versus"] = versus
+	Settings.lobby["front_map"] = front_i
 	Settings.save()
 
 
@@ -526,7 +530,7 @@ func _start() -> void:
 			"kind": look.kind, "color": look.color, "hat": look.hat, "face": look.face, "back": look.back,
 			"pnum": i + 1})
 	var target: int = TICKETS[target_i] if mode == "frontline" else KILL_TARGETS[target_i]
-	start.emit({"participants": parts, "kill_target": target, "map": Map.ARENAS[map_i], "theme": _look_now.get("key", "classic"), "mode": mode,
+	start.emit({"participants": parts, "kill_target": target, "map": Map.FRONT_MAPS[front_i] if mode == "frontline" else Map.ARENAS[map_i], "theme": _look_now.get("key", "classic"), "mode": mode,
 		"teams": "versus" if versus else "coop"})
 
 
@@ -585,7 +589,7 @@ func _draw() -> void:
 	var by := h - 140 * s
 	var pad: bool = not Input.get_connected_joypads().is_empty()
 	var mode: String = MODES[mode_i]
-	var map_info: Dictionary = Map.MAPS[{"frontline": Map.FRONTLINE, "zombies": Map.ZOMBIE, "medieval": Map.CASTLE}.get(mode, Map.ARENAS[map_i])]
+	var map_info: Dictionary = Map.MAPS[{"frontline": Map.FRONT_MAPS[front_i], "zombies": Map.ZOMBIE, "medieval": Map.CASTLE}.get(mode, Map.ARENAS[map_i])]
 	var bot_chip := ["Y" if pad else "B", "BOTS", str(bots)]
 	var goal_chip := ["X" if pad else "K", "FIRST TO", "%d" % KILL_TARGETS[target_i]]
 	if mode == "frontline":

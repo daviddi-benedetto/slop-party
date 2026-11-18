@@ -149,7 +149,7 @@ func _ready() -> void:
 	if mode == "zombies":
 		map_i = Map.ZOMBIE
 	elif mode == "frontline":
-		map_i = Map.FRONTLINE
+		map_i = map_i if map_i in Map.FRONT_MAPS else Map.FRONTLINE
 	elif mode == "medieval":
 		map_i = Map.CASTLE
 	elif not map_i in Map.ARENAS:

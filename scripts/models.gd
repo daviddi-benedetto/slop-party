@@ -126,7 +126,8 @@ static func toy_node(n: Node) -> void:
 
 static func scene(path: String) -> PackedScene:
 	if not _scenes.has(path):
-		_scenes[path] = load(ROOT + path + ".glb")
+		# Most packs ship .glb; the building kits (kit_*) ship .gltf + .bin.
+		_scenes[path] = load(ROOT + path + ".glb") if ResourceLoader.exists(ROOT + path + ".glb") else load(ROOT + path + ".gltf")
 	return _scenes[path]
 
 

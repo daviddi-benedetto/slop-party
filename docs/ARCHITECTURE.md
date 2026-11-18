@@ -139,6 +139,8 @@ parse error in one script.
 | `scripts/frontline.gd` | Frontline mode rules: teams and CPU fill, flags, tickets, parachute spawns, vehicle respawns, bot goals, flag HUD. |
 | `scripts/vehicle.gd` | Buggy, tank and helicopter: models, driving / flying, turrets, visible muzzle flashes and tracers, weapons, damage, destruction. |
 | `scripts/map_front.gd` | Layout 6 (FRONTLINE): town, towers, warehouse, bunkers, trenches, farms, bases, vehicle spots, flags. |
+| `scripts/map_city.gd` | Layout 9 (HIGHTOWN): medieval tower city from the Medieval Village MegaKit (`_tower`), market square, Frontline bases (reuses `map_front._base`), flags, free-for-all spawns and rides. |
+| `tools/kit_test.gd` | Dev showcase for the building kits (`--kit-test[=medieval|dungeon|all] --shot=...`). |
 | `scripts/results.gd` | Victory screen: podium, crown, confetti, results table with counting-up numbers, and up to four awards (`_pick_awards`: Up Close, Box Addict, On a Roll, Heavy Hitter, Survivor) from the per-player stats game.gd passes in the rows. |
 | `scripts/map.gd` | The map builder: `MAPS`, `THEMES`, time-of-day lighting and visual themes (`looks.gd`), procedural textures, mesh batching, building blocks (walls with openings, stairs, buildings, tunnels, basements, trees, grass), layouts 0-2, bot nav graph. Stairwell openings are kept clear through slabs and facade trim. |
 | `scripts/map_places.gd` | Layouts 3-5 (Museum, Stadium, Suburb) built with the map.gd helpers. |
@@ -571,6 +573,9 @@ collision off (the vehicle takes the hits).
 
 ### Frontline (`frontline.gd`, `vehicle.gd`, `map_front.gd`)
 
+- Frontline mode plays on `Map.FRONT_MAPS` ([6 FRONTLINE, 9 HIGHTOWN]); the
+  lobby's MAP chip picks one (`lobby.front_i`, saved as `front_map`) and
+  game.gd / main.gd fall back to FRONTLINE for anything else.
 - Map index `Map.FRONTLINE` (6), hidden from the lobby's map list. Point
   symmetric: built for +X and mirrored, team colours placed unmirrored. Data
   for the rules: `map.flags`, `map.bases`, `map.vehicle_spots`.
@@ -914,6 +919,32 @@ screen at once.
   by the camera (head bob, strafe roll, recoil kick) and by `viewmodel.gd`
   (figure-of-eight bob, look sway, jump/fall inertia, guard pose). The "View
   bob and sway" option scales the walking part.
+
+### Hightown (`map_city.gd`)
+
+- Kit pieces (`kit_medieval/`, glTF: `Models.scene` loads `.glb` or
+  `.gltf`) are scaled `S` = 1.25 so a module is `M` = 2.5 m and a storey
+  `H` = 3.9 m. They are visuals only (`_model(..., "none")`, batched like
+  every static model); collision is our own invisible boxes (`_solid`,
+  both mirror copies), cut with `_wall_segments` for the real openings:
+  doors / balcony doors 1.45 x 2.75, arches 2.0 x 3.2, wide windows 1.9
+  wide from 1.2 to 3.1 m (jump through), thin windows solid (framed).
+- `_tower(c, nx, nz, storeys, roof)`: per storey and side `_side` picks a
+  module kind (`_pick_kind`: ground floor doors, an arcade of arches on the
+  street side, windows; upper floors wide / thin / timber grid, ~12 %
+  balcony doors with a `_balcony`), brick bands every fourth storey, plank
+  floor slabs (`_slab`) with the stairwell cut out, a switchback stair core
+  along the -X wall (two strips, flights alternate +Z / -Z, `_flight_rect`
+  is the hole above each), then a flat roof terrace with kit railings or the
+  kit's tiled roof + brick gables (`_roof_piece`: only the kit's sizes) with
+  an invisible prism to stand on. `_furnish` adds 2-3 dungeon-kit props per
+  floor (deferred, so the keep-clear rules apply).
+- Bots: the nav grid (3 m step) cannot link a 36 degree stair, so each
+  flight is added to `map.nav_links` and `build_nav` threads a chain of
+  points up it, joined to the grid at both ends. `build_nav` samples up to
+  12 surfaces per column (towers have 10). `--heights-at=30,60` prints
+  everyone's height (bots do climb).
+- Performance (RTX 2070): 4 views 17.1 ms, 6 views 17.9 ms in Rounds.
 
 ### Maps and themes (`map.gd`)
 

@@ -54,6 +54,7 @@ const Prop = preload("res://scripts/prop.gd")
 const Glass = preload("res://scripts/glass.gd")
 const ZombieMap = preload("res://scripts/map_zombie.gd")
 const CastleMap = preload("res://scripts/map_castle.gd")
+const CityMap = preload("res://scripts/map_city.gd")
 const Arch = preload("res://scripts/arch.gd")
 const Door = preload("res://scripts/door.gd")
 const Rubble = preload("res://scripts/rubble.gd")
@@ -118,11 +119,15 @@ const MAPS := [
 	{"name": "FRONTLINE", "size": "HUGE", "clutter": "front", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 20.0},
 	{"name": "QUARANTINE", "size": "HUGE", "clutter": "quarantine", "theme": "suburb", "half": Vector2(72, 52), "wall": 3.0, "nav_step": 3.0, "nav_top": 16.0},
 	{"name": "CASTLE", "size": "LARGE", "clutter": "castle", "theme": "castle", "half": Vector2(46, 34), "wall": 1.8, "nav_step": 2.0, "nav_top": 16.0},
+	# Frontline and free-for-all: a medieval city of towers (map_city.gd).
+	{"name": "HIGHTOWN", "size": "HUGE", "clutter": "front", "theme": "front", "half": Vector2(100, 70), "wall": 1.4, "nav_step": 3.0, "nav_top": 41.0},
 ]
 const FRONTLINE := 6             # index of the Frontline map; the lobby lists maps below it
 const ZOMBIE := 7                # large Zombies-only indoor/outdoor map
 const CASTLE := 8                # Medieval mode's home; also in the lobby's map list
-const ARENAS := [0, 1, 2, 3, 4, 5, 8, 6]   # maps the lobby offers (Rounds, Gun Game); 6 = Frontline, free-for-all
+const HIGHTOWN := 9              # medieval tower city (Frontline or free-for-all)
+const ARENAS := [0, 1, 2, 3, 4, 5, 8, 6, 9]   # maps the lobby offers (Rounds, Gun Game); 6, 9 = huge free-for-alls
+const FRONT_MAPS := [6, 9]       # maps Frontline mode can be played on
 const TIMES := ["day", "sunset", "night"]
 
 const DAY := {
@@ -378,6 +383,7 @@ var flags: Array = []             # Frontline: capture point positions (A, B, C)
 var bases: Array = []             # Frontline: team 0 / team 1 base centres
 var vehicle_spots: Array = []     # Frontline: [type, Transform3D, team]
 var ffa_vehicle_spots: Array = [] # Rounds on this map: [type, Transform3D] (unarmed)
+var nav_links: Array = []         # [bottom, top] stair flights too steep for the nav grid's step (map_city.gd)
 
 var spawn_points: Array = []      # Array of Vector3
 var pickup_spots: Array = []      # [["weapon" | "health", Vector3], ...] read by game.gd
@@ -476,6 +482,7 @@ func build(index := 0, theme_key := "classic") -> void:
 		6: Front.frontline(self)
 		7: ZombieMap.build(self)
 		8: CastleMap.build(self)
+		9: CityMap.build(self)
 		_: _layout_yard()
 	if _audit:
 		_audit_report()
@@ -532,6 +539,8 @@ func _physics_process(delta: float) -> void:
 func music_key() -> String:
 	if map_index == FRONTLINE:
 		return "frontline"
+	if map_index == HIGHTOWN:
+		return "castle"
 	if map_index == ZOMBIE:
 		return "zombies"
 	return "castle" if map_index == CASTLE else "map%d" % map_index
@@ -3805,7 +3814,7 @@ func build_nav() -> void:
 		var z := -half_z + 1.0
 		while z < half_z:
 			var top := nav_top
-			for layer in 7:
+			for layer in 12:
 				var hit := _ray(Vector3(x, top, z), Vector3(x, -DEPTH - 1.5, z))
 				if hit.is_empty():
 					break
@@ -3840,6 +3849,32 @@ func build_nav() -> void:
 						adj[i].append(j)
 						adj[j].append(i)
 
+	# Stair flights the grid cannot link (too steep per grid step): a chain of
+	# points up the flight, joined to the grid at both ends.
+	for pair in nav_links:
+		var a: Vector3 = pair[0]
+		var b: Vector3 = pair[1]
+		var n := maxi(2, int(ceil(a.distance_to(b) / 1.2)))
+		var prev := -1
+		for i in n + 1:
+			var p := a.lerp(b, float(i) / n)
+			var idx := points.size()
+			points.append(p)
+			if prev >= 0:
+				_nav_link(links, adj, prev, idx)
+			prev = idx
+			if i == 0 or i == n:
+				var k0 := Vector2i(roundi(p.x), roundi(p.z))
+				for dx in range(-4, 5):
+					for dz in range(-4, 5):
+						var kk := k0 + Vector2i(dx, dz)
+						if not cells.has(kk):
+							continue
+						for j in cells[kk]:
+							var q: Vector3 = points[j]
+							if absf(q.y - p.y) < 0.8 and Vector2(q.x - p.x, q.z - p.z).length() < 3.4 and _walkable(p, q):
+								_nav_link(links, adj, idx, j)
+
 	var seen := {}
 	var best: Array = []
 	for start in adj:
@@ -3869,6 +3904,14 @@ func build_nav() -> void:
 	# (Loose street clutter is gone: it got under everyone's feet.)
 	nav_built.emit()
 	print("[map] %s nav graph: %d nodes, %d links" % [MAPS[map_index].name, best.size(), links.size()])
+
+
+func _nav_link(links: Array, adj: Dictionary, i: int, j: int) -> void:
+	links.append(Vector2i(i, j))
+	if not adj.has(i): adj[i] = []
+	if not adj.has(j): adj[j] = []
+	adj[i].append(j)
+	adj[j].append(i)
 
 
 func _walkable(a: Vector3, b: Vector3) -> bool:

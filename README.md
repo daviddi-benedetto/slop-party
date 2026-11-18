@@ -16,7 +16,8 @@ game modes:
 - **Frontline** – Battlefield-inspired team war on a huge 200 × 140 m map:
   blue vs orange (humans split between the teams, or all together against
   the CPU), conquest flags A/B/C, tickets, parachute drops, and vehicles –
-  buggies, tanks and helicopters.
+  buggies, tanks and helicopters. Two maps: **Frontline** and **Hightown**
+  (pick with the MAP chip, RB / M).
 - **Gun Game** – free-for-all where every KO hands you the next weapon on a
   ladder of all 31 (guns, then magic, then medieval arms, ending on the
   Sword). Being finished off with a melee knife knocks you one rung down. First to
@@ -118,6 +119,12 @@ PLAY** lists every button and **MODES** explains each mode.
   keep, a market, a siege camp; also Medieval mode's home).
 - **Quarantine** (Zombies): a hospital campus with a clinic, triage tents, a
   warehouse, a motel, a tunnel and a morgue cellar.
+- **Hightown:** a medieval city that grew upwards. Timber-and-plaster towers
+  five to nine storeys tall around a market square, built from the
+  Medieval Village MegaKit, with open windows to shoot and jump through,
+  arcades, balconies, switchback stairs in every tower and roof terraces
+  with railings at the top. Huge (200 × 140 m) for Frontline, and on the
+  map list for Rounds and Gun Game (with unarmed rides, like Frontline).
 - **Frontline:** a town with towers, warehouses, bunkers and trenches. Its
   own mode's home, and also on the lobby's map list for **Rounds** and
   **Gun Game**: a huge free-for-all with spawns spread over the town, roads,

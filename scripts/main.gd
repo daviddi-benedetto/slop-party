@@ -21,6 +21,7 @@ extends Node
 ##   --pause-at=<sec>      open the pause menu after that many seconds
 ##   --options-demo        open the Options screen in the lobby after 1 second
 ##   --ram-at=sec [--ram-speed=m/s]  with --drive: launch the ride at player 2
+##   --heights-at=s1,s2    print every player's height at those times
 ##   --check-spawns        print spawn points that are blocked (after the build)
 ##   --click=x,y@sec[;...] fake mouse moves + left clicks (x, y as 0-1 of the
 ##                         window; "r" after sec = right click) to test menus
@@ -68,6 +69,14 @@ func _ready() -> void:
 		for s in str(_args.get("ids", "0")).split(","):
 			ids.append(int(s))
 		sheet.run(str(_args.sheet), ids)
+		return
+	if _args.has("kit-test"):
+		# Dev: the building-kit showcase (tools/kit_test.gd, with --shot).
+		var kt = load("res://tools/kit_test.gd").new()
+		add_child(kt)
+		kt.run(str(_args["kit-test"]), str(_args.get("kit-cam", "")))
+		if _args.has("shot"):
+			_screenshot_later(float(_args.get("shot-time", "4")), _args["shot"])
 		return
 	if _args.has("fx-test"):
 		# Dev: particle effects alone in an empty scene (with --shot).
@@ -214,6 +223,15 @@ func _ready() -> void:
 			get_tree().create_timer(1.2).timeout.connect(func():
 				print("[ram] ride moved %.1f m" % v.global_position.distance_to(v0))
 				print("[ram] %s at %s m/s: victim health %d -> %d, moved %.1f m, peak? alive %s" % [v.type, _args.get("ram-speed", "24"), hp0, victim.health, victim.global_position.distance_to(p0), victim.alive])))
+	if _args.has("heights-at"):
+		# Dev: print every player's height (are bots using the upper floors?).
+		for ts in str(_args["heights-at"]).split(","):
+			get_tree().create_timer(float(ts), true, false, true).timeout.connect(func():
+				if game != null:
+					var hs: Array = []
+					for p in game.players:
+						hs.append("%.1f" % p.global_position.y)
+					print("[heights] t=%s %s" % [ts, " ".join(hs)]))
 	if _args.has("melee-at"):
 		# Dev: player 1 swings their melee at that time (knife screenshots).
 		get_tree().create_timer(float(_args["melee-at"]), true, false, true).timeout.connect(func():
@@ -321,7 +339,9 @@ func _begin(config: Dictionary) -> void:
 ## What the loading card says for a match config.
 func _card_for(config: Dictionary) -> Dictionary:
 	var mode: String = config.get("mode", "rounds")
-	var mi: int = {"frontline": MapScript.FRONTLINE, "zombies": MapScript.ZOMBIE, "medieval": MapScript.CASTLE}.get(mode, int(config.get("map", 0)))
+	var mi: int = {"zombies": MapScript.ZOMBIE, "medieval": MapScript.CASTLE}.get(mode, int(config.get("map", 0)))
+	if mode == "frontline" and not mi in MapScript.FRONT_MAPS:
+		mi = MapScript.FRONTLINE
 	var tk := str(config.get("theme", "classic"))
 	return {"mode": {"gungame": "GUN GAME"}.get(mode, mode.to_upper()), "line": Help.mode_line(mode),
 		"map": MapScript.MAPS[clampi(mi, 0, MapScript.MAPS.size() - 1)].name, "theme": Looks.label(tk), "tip": Help.tip(),
