@@ -16,6 +16,7 @@ extends RefCounted
 const Plush = preload("res://scripts/plush.gd")
 const Fx = preload("res://scripts/fx.gd")
 const FpArm = preload("res://scripts/fp_arm.gd")
+const Voxel = preload("res://scripts/voxel.gd")
 
 const MAX_SPLATS := 150
 const MAX_GIBS := 90
@@ -60,6 +61,12 @@ static func spray(world: Node3D, pos: Vector3, dir: Vector3, amount: int, speed:
 	p.damping_max = 1.2
 	p.scale_amount_min = 0.05
 	p.scale_amount_max = 0.16
+	if Voxel.on:
+		# Voxel style: little cubes of blood instead of round drops.
+		p.mesh = _cube()
+		p.material_override = _cube_mat()
+		p.scale_amount_min = 0.035
+		p.scale_amount_max = 0.08
 	p.emitting = true
 
 
@@ -187,6 +194,14 @@ static func _parts(kind: String, look: Dictionary) -> Array:
 	var sph := _sphere()
 	match kind:
 		"meat":
+			if Voxel.on:
+				# A clump of cubes.
+				var clump: Array = []
+				var c := 0.045
+				for i in randi_range(2, 4):
+					var o := Vector3(randi_range(-1, 1), randi_range(-1, 1), randi_range(-1, 1)) * c * 0.5
+					clump.append([sph, gore if randf() < 0.6 else dark, Transform3D(Basis.from_scale(Vector3.ONE * c * 0.5), o)])
+				return clump
 			var k := Vector3(randf_range(0.05, 0.09), randf_range(0.04, 0.07), randf_range(0.05, 0.1))
 			return [[sph, gore if randf() < 0.6 else dark, Transform3D(Basis.from_scale(k), Vector3.ZERO)]]
 		"bone":
@@ -265,7 +280,19 @@ static func splat(world: Node3D, pos: Vector3, normal: Vector3, size: float) -> 
 	if _splat_tex.is_empty():
 		for i in 4:
 			_splat_tex.append(_make_splat(i))
-	d.texture_albedo = _splat_tex[randi() % _splat_tex.size()]
+	if Voxel.on:
+		# Voxel style: a splat of 10 cm blocks (three block counts, so the
+		# blocks stay about voxel-sized whatever the splat's size).
+		var res: int = 0 if size < 0.9 else (1 if size < 1.8 else 2)
+		var key := "vox%d" % res
+		if not _splat_vox.has(key):
+			var set: Array = []
+			for i in 4:
+				set.append(_voxel_splat(_splat_tex[i], [8, 14, 22][res], i))
+			_splat_vox[key] = set
+		d.texture_albedo = _splat_vox[key][randi() % 4]
+	else:
+		d.texture_albedo = _splat_tex[randi() % _splat_tex.size()]
 	d.modulate = Color(randf_range(0.8, 1.0), 1.0, 1.0, randf_range(0.85, 1.0))
 	d.size = Vector3(size, 0.6, size * randf_range(0.7, 1.2))
 	var up := normal.normalized() if normal.length() > 0.01 else Vector3.UP
@@ -281,6 +308,30 @@ static func splat(world: Node3D, pos: Vector3, normal: Vector3, size: float) -> 
 	tw.tween_property(d, "modulate:a", 0.0, 4.0)
 	tw.tween_callback(func(): d.visible = false)
 	d.set_meta("tween", tw)
+
+
+static var _splat_vox := {}
+
+
+## A smooth splat cut into `blocks` x `blocks` square blocks (each solid or
+## empty, its own shade of red), scaled back up without smoothing.
+static func _voxel_splat(src: ImageTexture, blocks: int, seed_i: int) -> ImageTexture:
+	var img := src.get_image()
+	img.clear_mipmaps()
+	img.resize(blocks, blocks, Image.INTERPOLATE_BILINEAR)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4000 + seed_i * 31 + blocks
+	for y in blocks:
+		for x in blocks:
+			var c := img.get_pixel(x, y)
+			if c.a > 0.42:
+				var sh := rng.randf_range(0.72, 1.12)
+				img.set_pixel(x, y, Color(minf(1.0, (BLOOD.r + 0.08) * sh), BLOOD.g, BLOOD.b, 0.95))
+			else:
+				img.set_pixel(x, y, Color(0, 0, 0, 0))
+	img.resize(blocks * 8, blocks * 8, Image.INTERPOLATE_NEAREST)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 ## A procedural splat: a ragged blob, drips and flecks flung outwards.
@@ -326,6 +377,26 @@ static func _ray(space: PhysicsDirectSpaceState3D, from: Vector3, to: Vector3) -
 	return space.intersect_ray(q)
 
 
+static func _cube(size := 1.0) -> BoxMesh:
+	var key := "cube_%.2f" % size
+	if not _meshes.has(key):
+		var b := BoxMesh.new()
+		b.size = Vector3.ONE * size
+		_meshes[key] = b
+	return _meshes[key]
+
+
+## Blood cubes (voxel spray): lit, coloured by the particle colour.
+static func _cube_mat() -> StandardMaterial3D:
+	if not _mats.has("cube_blood"):
+		var m := StandardMaterial3D.new()
+		m.vertex_color_use_as_albedo = true
+		m.roughness = 0.35
+		m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+		_mats["cube_blood"] = m
+	return _mats["cube_blood"]
+
+
 static func _droplet_mat() -> StandardMaterial3D:
 	if _spray_mat == null:
 		var m := StandardMaterial3D.new()
@@ -361,7 +432,11 @@ static func _mat(key: String, col: Color, rough: float) -> StandardMaterial3D:
 	return _mats[key]
 
 
-static func _sphere() -> SphereMesh:
+## The round piece of a gib: a sphere of radius 1, or in the voxel style a
+## cube 2 across (same scale), so gibs are made of voxel blocks.
+static func _sphere() -> PrimitiveMesh:
+	if Voxel.on:
+		return _cube(2.0)
 	if not _meshes.has("sphere"):
 		var s := SphereMesh.new()
 		s.radius = 1.0
@@ -372,8 +447,14 @@ static func _sphere() -> SphereMesh:
 	return _meshes.sphere
 
 
-static func _capsule(r: float, l: float) -> CapsuleMesh:
-	var key := "cap_%.3f_%.3f" % [r, l]
+static func _capsule(r: float, l: float) -> PrimitiveMesh:
+	var key := "cap_%.3f_%.3f_%s" % [r, l, Voxel.on]
+	if Voxel.on:
+		if not _meshes.has(key):
+			var bx := BoxMesh.new()
+			bx.size = Vector3(r * 1.7, maxf(l, r * 2.0), r * 1.7)
+			_meshes[key] = bx
+		return _meshes[key]
 	if not _meshes.has(key):
 		var c := CapsuleMesh.new()
 		c.radius = r

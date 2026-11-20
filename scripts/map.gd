@@ -52,6 +52,9 @@ const Front = preload("res://scripts/map_front.gd")
 const Models = preload("res://scripts/models.gd")
 const Prop = preload("res://scripts/prop.gd")
 const Glass = preload("res://scripts/glass.gd")
+## No glass anywhere (windows are open frames, glass walls and display case
+## lids are left out): it never sat right with the voxel look.
+const NO_GLASS := true
 const ZombieMap = preload("res://scripts/map_zombie.gd")
 const CastleMap = preload("res://scripts/map_castle.gd")
 const CityMap = preload("res://scripts/map_city.gd")
@@ -635,6 +638,16 @@ func _build_environment() -> void:
 		# A little haze on the smaller outdoor maps too, so the scenery beyond
 		# the walls sits back in the distance.
 		fog_density = maxf(fog_density, 0.0028)
+	# Night: real distance fog, so the far side of the map fades into the
+	# dark instead of standing out sharp against the sky.
+	if time == "night":
+		fog_density = maxf(fog_density, 0.006 if indoor else 0.011)
+	# Zombies: thick fog (scarier; the horde comes out of it), at night a
+	# murky dark, by day a grey murk.
+	var scary := map_index == ZOMBIE
+	if scary:
+		fog_density = maxf(fog_density * 1.8, 0.022 if time == "night" else 0.016)
+		fog_col = fog_col.lerp(Color(0.04, 0.05, 0.06) if time == "night" else Color(0.42, 0.45, 0.47), 0.6)
 	light_scale = p.lights
 	neon_scale = p.neon
 
@@ -671,7 +684,7 @@ func _build_environment() -> void:
 	env.fog_enabled = true
 	env.fog_light_color = fog_col
 	env.fog_density = fog_density
-	env.fog_sky_affect = 0.35 if weather == "fog" else 0.0
+	env.fog_sky_affect = 0.35 if weather == "fog" else (0.5 if scary else (0.15 if time == "night" else 0.0))
 	Looks.apply_post(look, env)
 	# Light shafts (Settings "volfog"): a thin haze the sun and lamps cut
 	# through, tinted like the fog. Kept thin so players stay readable.
@@ -932,6 +945,8 @@ func _ambient_life() -> void:
 	mat.distance_fade_max_distance = 5.0
 	var p := GPUParticles3D.new()
 	p.amount = clampi(int(half_x * half_z * 0.05), 60, 260)
+	if time == "night":
+		p.amount = clampi(int(half_x * half_z * 0.015), 20, 70)
 	p.lifetime = 9.0
 	p.preprocess = 9.0
 	p.process_material = pm
@@ -1470,6 +1485,11 @@ func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true, surface :=
 		mat = Voxel.from_standard(mat)
 	if kind == "":
 		kind = "p" if mesh is PrimitiveMesh else "c"
+		# Indexed and unindexed meshes must not share a batch: SurfaceTool
+		# then drops the unindexed triangles (every ramp and gable roof
+		# vanished in the voxel style, where they met indexed stairs).
+		if mesh is ArrayMesh and mesh.get_surface_count() > surface and (mesh as ArrayMesh).surface_get_format(surface) & Mesh.ARRAY_FORMAT_INDEX == 0:
+			kind += "n"
 	var key := "%d_%s_%s" % [mat.get_instance_id() if mat != null else 0, kind, shadow]
 	# Big maps: batch per 40 m chunk too, so cameras and shadow passes can
 	# cull the parts of the map they cannot see.
@@ -1598,7 +1618,7 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 					var gm: Mesh = part[0]
 					for si in gm.get_surface_count():
 						var gsrc: Material = gm.surface_get_material(si)
-						if gsrc is BaseMaterial3D and (gsrc as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED 								and (gsrc as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
+						if not NO_GLASS and gsrc is BaseMaterial3D and (gsrc as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED 								and (gsrc as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
 							_add(gm, _glass_like(gsrc), xf * part[1], false, si, "g%d" % gm.surface_get_format(si))
 				if shadow:
 					var vf := Voxelizer.model(path, Models.parts(path), sc, leafy, true)
@@ -1647,6 +1667,8 @@ func _prop(path: String, pos: Vector3, yaw := 0.0, scl := 1.0, weight := 4.0, mi
 ## A breakable glass pane (glass.gd) centred at `pos`, w x h, in a wall that
 ## runs along X (or along Z with along_z).
 func _glass(pos: Vector3, w: float, h: float, along_z := false, mirror := true) -> void:
+	if NO_GLASS:
+		return
 	for k in (2 if mirror else 1):
 		var g = Glass.new()
 		g.size = Vector3(w, h, 0.05)
@@ -1926,10 +1948,14 @@ func _collider(pos: Vector3, size: Vector3, yaw := 0.0) -> void:
 
 
 func _visual(pos: Vector3, size: Vector3, mat: String, yaw := 0.0) -> void:
+	if NO_GLASS and mat == "glass":
+		return
 	_add(_rounded_box(size), _mats[mat], Transform3D(Basis(Vector3.UP, yaw), pos), not _glows(mat))
 
 
 func _box(pos: Vector3, size: Vector3, mat: String, mirror := true, yaw := 0.0, collide := true) -> void:
+	if NO_GLASS and mat == "glass":
+		return
 	var copies := [[pos, yaw]]
 	if mirror:
 		copies.append([Vector3(-pos.x, pos.y, -pos.z), yaw + PI])
@@ -2075,9 +2101,17 @@ func _convex_mesh(tris: Array, centroid: Vector3) -> ArrayMesh:
 			p2 = tmp
 		else:
 			n = -n
+		# UVs in metres along the face (the voxel shader reads them).
+		var tu := n.cross(Vector3.UP)
+		if tu.length() < 0.01:
+			tu = Vector3.RIGHT
+		tu = tu.normalized()
+		var tv := n.cross(tu).normalized()
 		for p in [p0, p1, p2]:
 			st.set_normal(n)
+			st.set_uv(Vector2(p.dot(tu), p.dot(tv)) * 0.5)
 			st.add_vertex(p)
+	st.generate_tangents()
 	return st.commit()
 
 
@@ -3694,7 +3728,8 @@ func _layout_frost() -> void:
 	_glow(Vector3(34, 2.6, 0), theme.accent_a, 11.0, 2.0)
 
 	# Two-storey comms buildings with roof terraces, and bunker tunnels.
-	_building(Vector3(22, 0, -24), 9.0, 9.0, 2, "block_a", {"roof": "block_c", "style": "lab"})
+	# (Clear of the deck ramps' feet, which end at x = 20.)
+	_building(Vector3(27, 0, -23.5), 9.0, 9.0, 2, "block_a", {"roof": "block_c", "style": "lab"})
 	_tunnel(-8.0, -18.0, 18.0)
 
 	# Mid-field: walls of ice blocks, supply crates, barriers, pines.
@@ -3717,9 +3752,9 @@ func _layout_frost() -> void:
 	_glow(Vector3(-30, 4.0, 22), theme.accent_a, 14.0, 1.6)
 
 	_spawns([Vector3(41, 0.1, 27), Vector3(41, 0.1, -27), Vector3(24, 0.1, 29), Vector3(39, 0.1, 0),
-		Vector3(30, 0.1, -14), Vector3(-24, 0.1, 29), Vector3(22, 3.5, -23)])
+		Vector3(30, 0.1, -14), Vector3(-19.5, 0.1, 29.5), Vector3(27, 3.5, -22.5)])
 	_pickups([["weapon", Vector3(3.2, 4.0, 3.2)], ["weapon", Vector3(6.5, 4.0, 22.5)], ["weapon", Vector3(36, 3.6, -4)],
-		["health", Vector3(38, 0.0, 0)], ["health", Vector3(0, -DEPTH, -8.0)], ["weapon", Vector3(20.0, 6.8, -25.5)]])
+		["health", Vector3(38, 0.0, 0)], ["health", Vector3(0, -DEPTH, -8.0)], ["weapon", Vector3(25.0, 6.8, -25.0)]])
 
 
 # --------------------------------------------------------------------------
@@ -4014,7 +4049,7 @@ func _motes() -> void:
 	tex.height = 32
 	mat.albedo_texture = tex
 	var ramp := Gradient.new()
-	var bright := 1.8 if time == "night" else 0.8
+	var bright := 1.0 if time == "night" else 0.8
 	ramp.set_color(0, theme.motes[0] * bright)
 	ramp.set_color(1, theme.motes[1] * bright)
 	var rise: float = theme.mote_rise
@@ -4023,7 +4058,8 @@ func _motes() -> void:
 	p.mesh = QuadMesh.new()
 	p.material_override = mat
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	p.amount = int(half_x * half_z * 0.2)
+	# (Far fewer at night: glowing specks over a dark scene flickered.)
+	p.amount = int(half_x * half_z * (0.05 if time == "night" else 0.2))
 	p.lifetime = 10.0
 	p.preprocess = 10.0
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX

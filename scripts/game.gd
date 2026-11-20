@@ -514,7 +514,7 @@ func _ensure_scope(v: Dictionary) -> void:
 	if v.scope_vp != null:
 		return
 	var vp := SubViewport.new()
-	vp.size = Vector2i(384, 384)
+	vp.size = Vector2i(512, 512)
 	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
 	Settings.apply_viewport(vp)
 	vp.scaling_3d_scale = 1.0
@@ -636,7 +636,8 @@ func _update_cameras(delta: float) -> void:
 				v.scope_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if active else SubViewport.UPDATE_DISABLED
 				if active:
 					v.scope_cam.global_transform = cam.global_transform
-					v.scope_cam.fov = cam.fov / p.stats.scope
+					# Exactly `scope` times narrower (the lens shader relies on it).
+					v.scope_cam.fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(cam.fov) * 0.5) / p.stats.scope))
 		else:
 			# Death cam: rise a little and turn to face whoever got you, so
 			# you see where the shot came from; otherwise tilt down.

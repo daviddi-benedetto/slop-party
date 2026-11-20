@@ -55,16 +55,30 @@ const GLB := {
 ## forward tilt, roll, optional width scale x / z and yaw]. Swords, axes and spears are swung (player melee);
 ## staffs cast from the tip; knives and bombs are thrown.
 const UPRIGHT := {
-	"sword": ["medieval/Sword_1", 0.95, 0.1, -0.5, 0.25],
-	"axe": ["medieval/Skeleton_Axe", 0.95, 0.12, -0.45, 0.2],
+	"sword": ["medieval/Sword_1", 0.95, 0.1, -0.5, -0.12],
+	"axe": ["medieval/Skeleton_Axe", 0.95, 0.12, -0.45, -0.1],
 	"spear": ["medieval/Weapon_Spear", 1.9, 0.38, -1.4, 0.0, 0.35, 0.35, 0.0],
 	"knives": ["medieval/Dagger", 0.42, 0.15, -0.6, 0.2],
-	"staff_storm": ["medieval/Skeleton_Staff", 1.5, 0.45, -0.38, 0.12],
-	"staff_arcane": ["medieval/Skeleton_Staff", 1.5, 0.45, -0.38, 0.12],
+	"staff_storm": ["medieval/Skeleton_Staff", 1.2, 0.3, -0.8, -0.2],
+	"staff_arcane": ["medieval/Skeleton_Staff", 1.2, 0.3, -0.8, -0.2],
 	"bow": ["medieval/Weapon_Bow", 1.05, 0.5, -0.08, 0.3, 0.4, 1.0, PI],
 	"bomb": ["medieval/Bomb", 0.26, 0.3, 0.0, 0.0],
 }
 const MELEE_STYLES := ["sword", "axe", "spear"]
+## Long held items sit further out to the side and lower at the hip (they
+## covered the middle of the screen): style -> [position offset, roll].
+const HIP_SHIFT := {
+	"sword": [Vector3(0.11, -0.07, 0.03), -0.12],
+	"axe": [Vector3(0.11, -0.07, 0.03), -0.12],
+	"spear": [Vector3(0.1, -0.05, 0.0), -0.08],
+	"staff_storm": [Vector3(0.15, -0.12, 0.0), -0.1],
+	"staff_arcane": [Vector3(0.15, -0.12, 0.0), -0.1],
+}
+## How far a sword / axe turns about its own length at rest (radians): a
+## little, so its face shows; it turns edge-first into every slash.
+const BLADE_REST_YAW := 0.55
+## Dev: --melee-pose=0..1 freezes melee swings at that point (screenshots).
+static var _melee_pose := -2.0
 const KNIFE_TIME := 0.55         # the knife slash (melee with a gun in hand)
 ## Knife slash keyframes [time 0-1, position, rotation] in camera space: the
 ## off-paw draws the knife up and back (wind-up), whips it down across the
@@ -84,11 +98,18 @@ const LENS_SHADER := """
 shader_type spatial;
 render_mode unshaded, cull_disabled, shadows_disabled;
 uniform sampler2D view : source_color, filter_linear;
+uniform float mag = 2.0;
 void fragment() {
 	vec2 c = UV - 0.5;
 	float r = length(c);
 	if (r > 0.5) { discard; }
-	vec3 col = texture(view, UV).rgb;
+	// The scope camera looks the same way with its view narrowed by `mag`
+	// (game.gd), on a square image. Show, at each pixel of the lens, what
+	// lies behind that pixel on screen, magnified: a real zoom, never wider
+	// than the view around it.
+	vec2 ndc = SCREEN_UV * 2.0 - 1.0;
+	ndc.x *= VIEWPORT_SIZE.x / VIEWPORT_SIZE.y;
+	vec3 col = texture(view, clamp(0.5 + 0.5 * ndc * mag, vec2(0.0), vec2(1.0))).rgb;
 	float cross = (abs(c.x) < 0.0035 || abs(c.y) < 0.0035) ? step(0.07, r) : 0.0;
 	col = mix(col, vec3(0.0), cross * 0.85);
 	col = mix(col, vec3(1.0, 0.15, 0.1), smoothstep(0.016, 0.01, r));
@@ -103,6 +124,7 @@ var _color := Color.WHITE
 var kind := 0                    # the animal you play (fp_arm.gd fur colours); set before build()
 var _layer := 1
 var _with_paw := true
+var _hover_ring: MeshInstance3D      # glow under a floating first-person weapon
 var _knife: Node3D               # the melee knife rig (under the camera, built on first use)
 var _swoosh: MeshInstance3D      # the slash trail: an arc that flashes during the cut
 var _reload_arm: Node3D          # the off paw that fetches a fresh magazine on reload
@@ -208,32 +230,24 @@ func set_weapon(id: int) -> void:
 	_attach = null
 	_attach_key = ""
 	_merge()
+	_reload_arm = null
+	_mag_mesh = null
 	if _with_paw and not _style.begins_with("hands_"):
-		# Your own plush arms: the right paw on the grip, and on long guns
-		# the left paw under the fore-end.
-		_arm(Vector3(0.008, -0.1, 0.1), Vector3(0.06, -0.12, 0.2), 1.0, 0.55)
-		_reload_arm = null
-		_mag_mesh = null
-		if two_handed and not _style in ["magnum", "twins", "bow"]:
-			_reload_arm = _arm(Vector3(grip_l.x - 0.03, grip_l.y - 0.075, grip_l.z + 0.02), Vector3(-0.4, -0.3, 0.38), -1.0, 0.6)
-		elif not UPRIGHT.has(_style):
-			# One-handed guns: the off paw only appears to reload.
-			_reload_arm = _arm(Vector3(-0.06, -0.2, 0.0), Vector3(-0.4, -0.3, 0.38), -1.0, 0.6)
-			_reload_arm.visible = false
-		if _reload_arm != null and not UPRIGHT.has(_style):
-			_reload_rest = _reload_arm.transform
-			_mag_mesh = MeshInstance3D.new()
-			var mb := BoxMesh.new()
-			mb.size = Vector3(0.045, 0.11, 0.06)
-			_mag_mesh.mesh = mb
-			_mag_mesh.material_override = _dark
-			_mag_mesh.layers = _layer
-			_mag_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			_mag_mesh.position = Vector3(0.0, 0.06, -0.02)
-			_mag_mesh.visible = false
-			_reload_arm.add_child(_mag_mesh)
-		else:
-			_reload_arm = null
+		# No arms in first person: the weapon floats on its own, held up by
+		# a soft ring of light under the grip in your colour (it bobs and
+		# sways as if held). Magic hands are the exception: they are the
+		# weapon.
+		var ring := TorusMesh.new()
+		ring.inner_radius = 0.028
+		ring.outer_radius = 0.04
+		ring.rings = 20
+		ring.ring_segments = 6
+		var rm := _mat(_color.lerp(Color.WHITE, 0.35), 0.2)
+		rm.emission_enabled = true
+		rm.emission = _color.lerp(Color.WHITE, 0.3)
+		rm.emission_energy_multiplier = 2.0
+		_hover_ring = _part(ring, rm, grip_r + Vector3(0, -0.07, 0))
+		_hover_ring.scale = Vector3(1.0, 0.45, 1.0)
 	var fmat := StandardMaterial3D.new()
 	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -557,6 +571,17 @@ func _build_gun(style: String) -> void:
 			_muzzle_z = -0.49
 
 
+## The sword / axe pivot: rest tilt and roll (UPRIGHT), then `roll` more
+## about the view axis (the slash angle), `chop` about the blade's own
+## sideways axis, and turned about its length from BLADE_REST_YAW to
+## edge-on by `edge` (0..1). The model's flat side faces the camera at 0.
+func _blade_basis(roll: float, chop: float, edge: float) -> Basis:
+	var spec: Array = UPRIGHT[_style]
+	# (The axe head already meets the air edge-first: it is not turned.)
+	var yaw := 0.0 if _style == "axe" else lerpf(BLADE_REST_YAW, PI * 0.5, edge)
+	return Basis(Vector3.BACK, float(spec[4]) + roll) * Basis(Vector3.RIGHT, float(spec[3]) + chop) * Basis(Vector3.UP, yaw)
+
+
 ## A sword, axe, spear, staff, bow, knife or bomb held upright in the fist.
 ## The model hangs on the _blade pivot (at the hand) so swings can turn it.
 func _build_upright(style: String, spec: Array) -> void:
@@ -862,6 +887,7 @@ func _update_attachments(p) -> void:
 	if key == _attach_key:
 		if lens and _lens_mat != null:
 			_lens_mat.set_shader_parameter("view", scope_texture)
+			_lens_mat.set_shader_parameter("mag", p.stats.scope)
 		return
 	_attach_key = key
 	_hover_beam = null
@@ -1040,7 +1066,8 @@ func update(delta: float, p) -> void:
 		ads = Vector3(0, -(_sight_y + 0.045), -0.33)
 	elif _attach_key == "dot":
 		ads = Vector3(0, -(_sight_y + 0.05), -0.4)
-	var base := HIP.lerp(ads, smoothstep(0.0, 1.0, aim))
+	var shift: Array = HIP_SHIFT.get(_style, [Vector3.ZERO, 0.0])
+	var base := (HIP + (shift[0] as Vector3)).lerp(ads, smoothstep(0.0, 1.0, aim))
 	var pos := base + bob
 	pos += Vector3(sway.x - p.strafe_amount * 0.014 * hip, -sway.y - p.land_dip * 0.06, kick * 0.06)
 	# Jump / fall inertia: the gun trails the body's vertical motion.
@@ -1050,7 +1077,7 @@ func update(delta: float, p) -> void:
 	var rot := Vector3(
 		kick * 0.13 - sway.y * 1.3 + p.fall_amount * 0.008 * hip,
 		sway.x * 1.6,
-		sway.x * -1.4 - p.strafe_amount * 0.1 * (0.3 + 0.7 * hip) + sin(p.bob_phase) * 0.02 * amt + sin(_t * 1.1) * 0.008 * hip)
+		sway.x * -1.4 - p.strafe_amount * 0.1 * (0.3 + 0.7 * hip) + sin(p.bob_phase) * 0.02 * amt + sin(_t * 1.1) * 0.008 * hip + float(shift[1]) * hip)
 	if p.reload_left > 0.0:
 		var f: float = 1.0 - p.reload_left / p.stats.reload_time
 		var dip := sin(f * PI)
@@ -1122,7 +1149,16 @@ func update(delta: float, p) -> void:
 	# Melee: weapons slash or thrust; anything else is a quick butt strike.
 	var knife_slash: bool = _with_paw and not _style in MELEE_STYLES
 	var mdur: float = minf(KNIFE_TIME, p.stats.melee_cd * 0.9) if knife_slash else clampf(p.stats.fire_interval * 0.75, 0.3, 0.5)
+	if _melee_pose < -1.0:
+		_melee_pose = -1.0
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--melee-pose="):
+				_melee_pose = float(a.substr(13))
+	if _melee_pose >= 0.0:
+		p.melee_t = _melee_pose * mdur
 	_update_knife(p, mdur if knife_slash else 0.0)
+	if _blade != null and _style in ["sword", "axe"]:
+		_blade.basis = _blade_basis(0.0, 0.0, 0.0)
 	if p.melee_t < mdur:
 		var mf: float = p.melee_t / mdur
 		var sw := sin(mf * PI)
@@ -1132,11 +1168,17 @@ func update(delta: float, p) -> void:
 				pos.z -= sw * 0.55
 				pos.y += sw * 0.05
 			"sword", "axe":
+				# The chop (about the view's sideways axis) leads with the
+				# edge: the blade turns edge-on as the swing starts, so it
+				# cuts instead of paddling the air flat-first.
 				rot.x += 0.35 * (1.0 - mf) - 1.45 * sw
 				rot.z += sgn * (0.9 - 1.9 * mf) * sw
 				rot.y += sgn * 0.5 * sw
 				pos.x -= sgn * 0.14 * sw + 0.08 * sw
 				pos.z -= 0.14 * sw
+				var turn := smoothstep(0.0, 0.15, mf) * (1.0 - smoothstep(0.85, 1.0, mf))
+				if _blade != null:
+					_blade.basis = _blade_basis(0.0, 0.0, turn)
 			_:
 				# The gun drops out of the way while the other paw slashes.
 				var away := smoothstep(0.0, 0.25, mf) * (1.0 - smoothstep(0.6, 1.0, mf))
@@ -1230,7 +1272,7 @@ func _build_knife() -> void:
 	_knife = Node3D.new()
 	_knife.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	get_parent().add_child(_knife)
-	_knife.add_child(FpArm.build(kind, _color, _layer, 1.0, "fist", 0.45))
+	# (The knife floats too, like every first-person weapon: no paw.)
 	# Blade along the model's +Y; grip 15 % up the model sits in the paw,
 	# the blade pointing forward and a little up.
 	var path := "medieval/Knife"

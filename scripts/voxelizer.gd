@@ -787,3 +787,148 @@ static func _voxel_mi(mi: MeshInstance3D, root: Node, cell: float, accent: Color
 		mi.set_surface_override_material(si, null)
 	mi.set_meta("voxel", true)
 	out.append(m2)
+
+
+## Skinned (animated) models, e.g. the zombies: each skinned mesh is split
+## into rigid pieces, one per bone (every triangle goes to the bone that
+## weighs most on it), each voxelized in that bone's own space and hung on
+## a BoneAttachment3D, so the voxels animate with the skeleton. The
+## original meshes are hidden. `id` names the model for the cache; `cell`
+## is the voxel size in world units (the model must be in the tree and
+## scaled). Returns the new MeshInstance3Ds (for the hit flash overlay).
+static var _skin_split := {}   # id|mesh|bucket -> [[bone, key, parts], ...]
+
+static func voxelize_skinned(inst: Node3D, id: String, cell: float) -> Array:
+	var out: Array = []
+	var skels := inst.find_children("*", "Skeleton3D", true, false)
+	if skels.is_empty():
+		return out
+	var skel: Skeleton3D = skels[0]
+	var gs := skel.global_transform.basis.get_scale()
+	var s := (gs.x + gs.y + gs.z) / 3.0
+	var want := cell / maxf(s, 0.0001)
+	var b := roundi(log(want) / log(2.0) * 2.0)
+	var vs := pow(2.0, b * 0.5)
+	var attach := {}
+	for n in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi: MeshInstance3D = n
+		if not (mi.mesh is ArrayMesh) or mi.has_meta("voxel"):
+			continue
+		var am: ArrayMesh = mi.mesh
+		if am.get_surface_count() == 0 or (am.surface_get_format(0) & Mesh.ARRAY_FORMAT_BONES) == 0:
+			continue
+		var ck := "%s|%s|%d" % [id, mi.name, b]
+		if not _skin_split.has(ck):
+			_skin_split[ck] = _split_by_bone(mi, skel, "sk_%s_%s" % [id.replace("/", "_"), mi.name])
+		for piece in _skin_split[ck]:
+			var key: String = "%s@%d" % [piece[1], b]
+			var d := _data(key, piece[2], vs)
+			if d.is_empty() or (d.verts as PackedVector3Array).is_empty():
+				continue
+			var bone: int = piece[0]
+			if not attach.has(bone):
+				var ba := BoneAttachment3D.new()
+				skel.add_child(ba)
+				ba.bone_idx = bone
+				attach[bone] = ba
+			var vmi := MeshInstance3D.new()
+			vmi.mesh = _mesh(key, d)
+			var m2: ShaderMaterial = _material(key, d, false).duplicate()
+			m2.set_shader_parameter("RELIEF", 0.0)
+			m2.set_shader_parameter("vox_strength", 0.5)
+			vmi.material_override = m2
+			vmi.set_meta("voxel", true)
+			attach[bone].add_child(vmi)
+			out.append(vmi)
+		mi.visible = false
+		mi.set_meta("voxel", true)
+	return out
+
+
+## [[bone, key, parts], ...]: the skinned mesh's triangles grouped by their
+## heaviest bone, moved into that bone's space (the skin's bind pose).
+static func _split_by_bone(mi: MeshInstance3D, skel: Skeleton3D, base: String) -> Array:
+	var am: ArrayMesh = mi.mesh
+	var skin: Skin = mi.skin
+	var groups := {}    # bone -> {surface -> [verts, norms, uvs, cols]}
+	var mats: Array = []
+	for si in am.get_surface_count():
+		var m: Material = mi.material_override
+		if m == null:
+			m = mi.get_surface_override_material(si)
+		if m == null:
+			m = am.surface_get_material(si)
+		mats.append(m if m is BaseMaterial3D else null)
+		var a := am.surface_get_arrays(si)
+		var pv: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var pn: PackedVector3Array = a[Mesh.ARRAY_NORMAL] if a[Mesh.ARRAY_NORMAL] != null else PackedVector3Array()
+		var puv: PackedVector2Array = a[Mesh.ARRAY_TEX_UV] if a[Mesh.ARRAY_TEX_UV] != null else PackedVector2Array()
+		var pc: PackedColorArray = a[Mesh.ARRAY_COLOR] if a[Mesh.ARRAY_COLOR] != null else PackedColorArray()
+		var pb: PackedInt32Array = a[Mesh.ARRAY_BONES]
+		var pw: PackedFloat32Array = a[Mesh.ARRAY_WEIGHTS]
+		var idx: PackedInt32Array = a[Mesh.ARRAY_INDEX] if a[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+		if idx.is_empty():
+			idx.resize(pv.size())
+			for i in pv.size():
+				idx[i] = i
+		var k := pb.size() / maxi(pv.size(), 1)
+		for t in range(0, idx.size() - 2, 3):
+			var wsum := {}
+			for j in 3:
+				var v: int = idx[t + j]
+				for q in k:
+					var bi: int = pb[v * k + q]
+					wsum[bi] = float(wsum.get(bi, 0.0)) + pw[v * k + q]
+			var best := -1
+			var bw := -1.0
+			for bi in wsum:
+				if wsum[bi] > bw:
+					bw = wsum[bi]
+					best = bi
+			if not groups.has(best):
+				groups[best] = {}
+			if not groups[best].has(si):
+				groups[best][si] = [PackedVector3Array(), PackedVector3Array(), PackedVector2Array(), PackedColorArray()]
+			var g: Array = groups[best][si]
+			for j in 3:
+				var v: int = idx[t + j]
+				g[0].append(pv[v])
+				g[1].append(pn[v] if not pn.is_empty() else Vector3.UP)
+				if not puv.is_empty():
+					g[2].append(puv[v])
+				if not pc.is_empty():
+					g[3].append(pc[v])
+	var out: Array = []
+	for bind in groups:
+		var bone: int = bind
+		var pose := Transform3D()
+		if skin != null and bind < skin.get_bind_count():
+			bone = skin.get_bind_bone(bind)
+			if bone < 0:
+				bone = skel.find_bone(skin.get_bind_name(bind))
+			pose = skin.get_bind_pose(bind)
+		else:
+			pose = skel.get_bone_global_rest(bind).affine_inverse()
+		if bone < 0:
+			continue
+		var mesh := ArrayMesh.new()
+		var pmats: Array = []
+		for si in groups[bind]:
+			var g: Array = groups[bind][si]
+			var arr := []
+			arr.resize(Mesh.ARRAY_MAX)
+			var vv: PackedVector3Array = g[0]
+			var nn: PackedVector3Array = g[1]
+			for i in vv.size():
+				vv[i] = pose * vv[i]
+				nn[i] = (pose.basis * nn[i]).normalized()
+			arr[Mesh.ARRAY_VERTEX] = vv
+			arr[Mesh.ARRAY_NORMAL] = nn
+			if (g[2] as PackedVector2Array).size() == vv.size():
+				arr[Mesh.ARRAY_TEX_UV] = g[2]
+			if (g[3] as PackedColorArray).size() == vv.size():
+				arr[Mesh.ARRAY_COLOR] = g[3]
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+			pmats.append(mats[si])
+		out.append([bone, "%s_b%d" % [base, bone], [[mesh, Transform3D(), pmats, []]]])
+	return out

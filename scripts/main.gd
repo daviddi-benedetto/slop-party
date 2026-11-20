@@ -97,6 +97,40 @@ func _ready() -> void:
 		r3.add_child(cam)
 		cam.look_at_from_position(Vector3(0, 2, 9), Vector3(0, 1.5, 0))
 		var FxS = preload("res://scripts/fx.gd")
+		if str(_args["fx-test"]) == "gore":
+			# --fx-test=gore: the zombie rigs walking, and a death's gore.
+			preload("res://scripts/voxel.gd").on = Settings.v("voxel")
+			var floor_body := StaticBody3D.new()
+			var fcs := CollisionShape3D.new()
+			fcs.shape = WorldBoundaryShape3D.new()
+			floor_body.add_child(fcs)
+			var fmi := MeshInstance3D.new()
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(30, 30)
+			fmi.mesh = pm
+			floor_body.add_child(fmi)
+			r3.add_child(floor_body)
+			var Zb = preload("res://scripts/zombie.gd")
+			var zx := -4.5
+			for zt in Zb.MODELS:
+				var zi: Node3D = Zb.model_for(zt)
+				r3.add_child(zi)
+				zi.position = Vector3(zx, 0, -2.5)
+				zi.rotation.y = 0.0
+				preload("res://scripts/models.gd").toy_node(zi, false)
+				var tz := Time.get_ticks_usec()
+				Zb.voxelize_model(zi, zt)
+				print("[gore-test] %s rig: %.1f ms" % [zt, (Time.get_ticks_usec() - tz) / 1000.0])
+				for ap in zi.find_children("*", "AnimationPlayer", true, false):
+					if ap.has_animation("Walk"):
+						ap.get_animation("Walk").loop_mode = Animation.LOOP_LINEAR
+						ap.play("Walk")
+				zx += 3.0
+			get_tree().create_timer(float(_args.get("fx-at", "1.0"))).timeout.connect(func():
+				preload("res://scripts/gore.gd").death(r3, Vector3(0, 0, 2), Vector3(0.3, 0, 1), {"fur": Color(0.9, 0.6, 0.3)}, "head"))
+			if _args.has("shot"):
+				_screenshot_later(float(_args.get("shot-time", "2")), _args["shot"])
+			return
 		get_tree().create_timer(float(_args.get("fx-at", "1.0"))).timeout.connect(func():
 			FxS.fireball(r3, Vector3(-2.5, 1, 0), 1.0)
 			FxS.embers(r3, Vector3(-2.5, 1, 0), 1.0)
@@ -474,6 +508,14 @@ func _voxel_bake() -> void:
 				vm.build(col, 1, id, fp)
 				vm.free()
 	print("[voxel-bake] characters and weapons: %d voxelized so far" % Vz.stats.live)
+	# Zombies: voxel pieces per bone (zombie.gd, voxelizer.voxelize_skinned).
+	var Zb = preload("res://scripts/zombie.gd")
+	for zt in Zb.MODELS:
+		var zi: Node3D = Zb.model_for(zt)
+		add_child(zi)
+		Mdl.toy_node(zi, false)
+		Zb.voxelize_model(zi, zt)
+		zi.free()
 	print("[voxel-bake] done: %d models voxelized (%d ms)" % [Vz.stats.live, Vz.stats.ms])
 	get_tree().quit()
 

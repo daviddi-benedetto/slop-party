@@ -31,6 +31,9 @@ var _climb := 0.0                 # seconds left of wall climbing (scaling up to
 var _last_dir := Vector3.UP
 const Models = preload("res://scripts/models.gd")
 const Prop = preload("res://scripts/prop.gd")
+const Voxel = preload("res://scripts/voxel.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
+const VOX_CELL := 0.04           # voxel size on a zombie, metres
 
 const GRAVITY := 22.0
 const TYPES := {
@@ -135,13 +138,13 @@ func _build_model() -> void:
 	var spec: Array = MODELS[type]
 	_body = Node3D.new()
 	add_child(_body)
-	var inst: Node3D = Models.scene(spec[0]).instantiate()
-	var k: float = 1.8 * _scale * float(spec[2]) / float(spec[1])
-	inst.scale = Vector3.ONE * k
-	inst.rotation.y = PI
+	var inst := model_for(type)
 	_body.add_child(inst)
 	Models.toy_node(inst, false)
 	_meshes_inst = Models.mesh_instances(inst)
+	if Voxel.on:
+		# Voxel rig: rigid voxel pieces per bone (baked by --voxel-bake).
+		_meshes_inst.append_array(voxelize_model(inst, type))
 	if _flash_mat == null:
 		_flash_mat = StandardMaterial3D.new()
 		_flash_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -169,6 +172,21 @@ func _build_model() -> void:
 	_bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_bar.visible = false
 	add_child(_bar)
+
+
+## The type's model, scaled to its height and turned to face -Z.
+static func model_for(type_name: String) -> Node3D:
+	var spec: Array = MODELS[type_name]
+	var inst: Node3D = Models.scene(spec[0]).instantiate()
+	var k: float = 1.8 * float(TYPES[type_name].scale) * float(spec[2]) / float(spec[1])
+	inst.scale = Vector3.ONE * k
+	inst.rotation.y = PI
+	return inst
+
+
+## Voxelizes a model_for() instance that is in the tree.
+static func voxelize_model(inst: Node3D, type_name: String) -> Array:
+	return Voxelizer.voxelize_skinned(inst, MODELS[type_name][0], VOX_CELL)
 
 
 func _play(anim: String, speed := 1.0) -> void:

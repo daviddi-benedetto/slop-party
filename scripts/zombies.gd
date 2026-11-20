@@ -41,6 +41,16 @@ func prepare(parts: Array) -> Array:
 
 
 func start() -> void:
+	if Zombie.Voxel.on:
+		# Split every zombie type's rig into its voxel pieces now (about
+		# 50 ms each), not when the first of a type climbs out of the ground.
+		for zt in Zombie.MODELS:
+			var zi: Node3D = Zombie.model_for(zt)
+			zi.position = Vector3(0, -500, 0)
+			game.world.add_child(zi)
+			Zombie.Models.toy_node(zi, false)
+			Zombie.voxelize_model(zi, zt)
+			zi.free()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--wave="):
 			wave = int(a.substr(7)) - 1

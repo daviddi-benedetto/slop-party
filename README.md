@@ -79,11 +79,12 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Movement inspired by Titanfall:** sprint, crouch, slide, wall run, wall
   jump, mantle, dash and aim down sights.
 - **Block** reflects every bullet, rocket, grenade and flame back at whoever
-  fired it. In first person you see your own animal's plush arms (its fur
-  and paw colours, a wrist band in your colour): paws on the gun, open
-  mitten paws with toe beans for magic. **Melee** with any gun in hand: your other paw draws a knife
-  for a heavy slash (wind-up, fast cut, a jolt on impact). Swords, axes and
-  spears swing the blade itself.
+  fired it. In first person your weapon floats on its own over a soft ring
+  of light in your colour (no arms in the way); magic is cast from open
+  mitten paws with toe beans. Swords, axes, spears and staffs sit out at
+  the side of the screen so you can see. **Melee** with any gun in hand: a
+  floating knife slashes (wind-up, fast cut, a jolt on impact). Swords turn
+  edge-first into every slash; axes and spears swing the blade itself.
 - **Clear feedback:** hit markers (gold for headshots), a red cross and a
   stamped "FRAGGED!" on a knockout (DOUBLE KO / TRIPLE KO for quick
   chains), arcs showing where damage came from, a view flinch away from
@@ -170,12 +171,11 @@ match).
   at most to KO). A
   destroyed ride comes back after 20 s.
 - **Easy to move around:** doorways are open (no doors), windows are big
-  enough to jump through (break the glass and go), and nothing is placed in
+  enough to jump through (there is no glass anywhere), and nothing is placed in
   a doorway, on or at the foot of stairs, or in front of a window. Streets
   have no loose clutter; outdoor dressing stays put, and the small stuff
   does not block you. A few heavy things indoors barely move when you push
-  them, and walking over anything never flings you into the air. Glass
-  shatters, fuel barrels and red gas cans explode (indoors and out) and
+  them, and walking over anything never flings you into the air. Fuel barrels and red gas cans explode (indoors and out) and
   ruined walls crumble. Doorways, stairs and windows are always clear.
 - **Scenery:** dense wind-blown cartoon grass (fat, round-tipped blades)
   and flowers on clumpy turf with bare patches, over rolling mounds, a
@@ -195,8 +195,15 @@ match).
   the tall towers on the skyline blink red warning lights.
 - **Impacts that match the surface:** stone chips and dust, wood
   splinters, metal sparks with a ricochet ping, snow puffs, dirt and grass.
-- **Reloads:** your off paw drops out of view, comes back with a fresh
-  magazine and slaps it in.
+- **Reloads:** the floating gun dips and spins as it reloads.
+- **Scopes really zoom:** the lens shows what is behind it magnified by the
+  scope's power (2x, 4x).
+- **Voxel gore:** blood flies as little cubes, splatter dries into 10 cm
+  blocks, gibs are clumps of voxels, and zombies are voxel rigs that
+  animate bone by bone.
+- **Night and fog:** night themes have real distance fog (the far side of a
+  map fades into the dark) and fewer glowing specks in the air; Zombies is
+  wrapped in thick fog, so the horde comes out of the murk.
 - **Lived-in world:** graffiti and posters on the perimeter walls, wind
   turbines turning on the distant hills and a blimp drifting round the
   arena (lit at night).
