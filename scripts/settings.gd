@@ -45,6 +45,9 @@ const ITEMS := [
 	{"key": "fps_limit", "label": "Frame rate limit", "opts": ["Display", "30", "60", "120", "144", "240", "Unlimited"], "vals": [-1, 30, 60, 120, 144, 240, 0], "def": 0},
 	{"section": "GRAPHICS"},
 	{"key": "preset", "label": "Quality preset", "opts": ["Custom", "Low", "Medium", "High", "Ultra"], "vals": [0, 1, 2, 3, 4], "def": 3},
+	# Textures on floors and walls seen at a low angle stay sharp further
+	# out (otherwise they blur a few metres ahead).
+	{"key": "aniso", "label": "Texture filtering", "opts": ["2x", "4x", "8x", "16x"], "vals": [1, 2, 3, 4], "def": 3},
 	{"key": "aa", "label": "Anti-aliasing", "opts": ["Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x"], "vals": [0, 1, 2, 3, 4], "def": 2},
 	{"key": "motion_blur", "label": "Motion blur", "range": [0, 10], "def": 0},
 	# 3D resolution as a share of the screen's. Above 100 % is supersampling:
@@ -78,6 +81,12 @@ const ITEMS := [
 	# The look of the level (voxel.gd): built from small cubes, or smooth.
 	# Takes effect from the next match.
 	{"key": "voxel", "label": "World style", "opts": ["Voxel", "Smooth"], "vals": [true, false], "def": 0},
+	# Voxel style: ray-marched depth (voxels really step in and out as you
+	# move). Off by default: the illusion shifts with the view, so thin
+	# parts seemed to shake, floors seemed to sink under walls and doors,
+	# and it faded out a few metres ahead. The baked voxel shading is
+	# stable at every distance.
+	{"key": "voxel_relief", "label": "Voxel parallax depth (may shimmer)", "opts": ON_OFF, "vals": [false, true], "def": 0},
 	{"key": "scenery", "label": "Scenery detail", "opts": ["Low", "High"], "vals": [0, 1], "def": 1},
 	# Lowers the 3D resolution on the fly whenever a frame would take too long
 	# (game.gd::_auto_resolution), so busy six-player moments stay at 60.
@@ -276,6 +285,7 @@ func apply_viewport(vp: Viewport) -> void:
 	# Smooth edges on every 2D shape (HUD, menus): the drawing helpers fill
 	# polygons and circles without anti-aliasing of their own.
 	vp.msaa_2d = Viewport.MSAA_4X
+	vp.anisotropic_filtering_level = v("aniso")
 	var aa: int = v("aa")
 	var up: int = v("upscaler")
 	var sc: float = clampf(v("scale") * res_factor, 0.25, 2.0)

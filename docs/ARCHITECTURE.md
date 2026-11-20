@@ -311,6 +311,18 @@ The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
   style map boxes are crisp (`_rounded_box` returns a plain box; the 6 cm
   rounding grooved every seam, e.g. between stair steps) and stair steps
   no longer overlap.
+- **Stable by default (v0.33.3):** the ray-marched depth is an option,
+  "Voxel parallax depth" (`voxel_relief`, off): it shifts with the view,
+  so thin parts (window frames, door edges, the mystery box) seemed to
+  shake, floors seemed to sink under walls and doors, and it faded out a
+  few metres ahead (a band that followed you). Without it, level surfaces
+  use `Voxel.plain` (strength per kind from surface.gd `VOX_STYLE`) and the
+  baked shading carries the depth, the same at every distance. 16x
+  anisotropic filtering (option "Texture filtering", project default) and
+  voxel colours sampled with the pixel's own (anisotropic) footprint keep
+  floors at a low angle sharp. See-through kit parts (window glass) stay
+  real glass beside the voxels (`map._glass_like`); map window panes are
+  `no_voxel`.
 - **Crumbling walls removed** (`map.REMOVE_WEAK_WALLS`): the grey brick
   walls and their physics bricks are gone; `_weak_wall()` places nothing.
 - **Voxel meshes** store colours in a 2D atlas: every exposed face cell is

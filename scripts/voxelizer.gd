@@ -285,7 +285,7 @@ static func material_for(atlas: Texture2D, double: bool, sway: bool) -> ShaderMa
 	m.set_shader_parameter("vox_detail", Voxel.detail())
 	# Foliage is rough and deep; buildings and props more restrained (their
 	# walls are mostly plaster, wood and stone).
-	m.set_shader_parameter("RELIEF", (1.3 if sway else 0.6) if Settings.v("parallax") else 0.0)
+	m.set_shader_parameter("RELIEF", (1.3 if sway else 0.6) if Settings.v("voxel_relief") else 0.0)
 	m.set_shader_parameter("vox_strength", 0.9 if sway else 0.6)
 	m.set_shader_parameter("sway", 1.0 if sway else 0.0)
 	var g: Dictionary = look.get("grade", {})
@@ -774,7 +774,7 @@ static func _voxel_mi(mi: MeshInstance3D, root: Node, cell: float, accent: Color
 	m2.set_shader_parameter("tint", Vector3.ONE)
 	m2.set_shader_parameter("pastel", 0.0)
 	# Characters, guns, vehicles: fine voxels, subtle depth and variation.
-	m2.set_shader_parameter("RELIEF", 0.5 if Settings.v("parallax") else 0.0)
+	m2.set_shader_parameter("RELIEF", 0.5 if Settings.v("voxel_relief") else 0.0)
 	m2.set_shader_parameter("vox_strength", 0.45)
 	if accent.r >= 0.0:
 		m2.set_shader_parameter("accent", accent)

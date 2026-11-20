@@ -1083,7 +1083,6 @@ func _make_materials() -> void:
 	glass.albedo_color = Color(0.6, 0.8, 0.9, 0.18)
 	glass.roughness = 0.05
 	glass.metallic = 0.4
-	glass.rim_enabled = true
 	_mats["glass"] = glass
 	var window := StandardMaterial3D.new()
 	window.albedo_color = Color(0.12, 0.16, 0.22)
@@ -1092,6 +1091,9 @@ func _make_materials() -> void:
 	window.emission_enabled = night_amount > 0.0
 	window.emission = look.get("window", Color(1.0, 0.78, 0.45))
 	window.emission_energy_multiplier = 1.6 * night_amount
+	# Window panes stay smooth glass in the voxel style (as voxels they read
+	# as a noisy wall and seemed to crawl).
+	window.set_meta("no_voxel", true)
 	_mats["window"] = window
 	var water := StandardMaterial3D.new()
 	water.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -1143,7 +1145,7 @@ func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float
 	var m := StandardMaterial3D.new()
 	tint = Looks.grade(look, tint)
 	var toy := Color.from_hsv(tint.h, minf(1.0, tint.s * 1.12), minf(1.0, tint.v * 1.06 + 0.03), tint.a)
-	if depth_ok and Surface.DEPTH.has(kind) and Settings.v("parallax"):
+	if depth_ok and Surface.DEPTH.has(kind) and Settings.v("parallax") and (not Voxel.on or Settings.v("voxel_relief")):
 		# Parallax occlusion surfaces (surface.gd): grooves with real depth.
 		var tx: Array = _tex(kind)
 		var sm := Surface.make(toy.lerp(Color.WHITE, 0.06), _soft(kind, tx[0]) if tx[2] == null and kind != "lawn" else tx[0], tx[1], tx[3], tx[2],
@@ -1158,7 +1160,12 @@ func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float
 		var alb: Texture2D = null
 		if vt[0] != null:
 			alb = _soft(kind, vt[0]) if vt[2] == null else vt[0]
-		return Voxel.plain(toy.lerp(Color.WHITE, 0.06), alb, uv_scale, maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6, vt[2], 2.4)
+		var vsm := Voxel.plain(toy.lerp(Color.WHITE, 0.06), alb, uv_scale, maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6, vt[2], 2.4)
+		if Surface.VOX_STYLE.has(kind):
+			# How strong the voxel variation is, per kind (deep ground,
+			# calm plaster): surface.gd VOX_STYLE.
+			vsm.set_shader_parameter("vox_strength", Surface.VOX_STYLE[kind][1])
+		return vsm
 	m.albedo_color = toy.lerp(Color.WHITE, 0.06)
 	m.roughness = maxf(rough, 0.62) if metal < 0.5 else rough
 	m.metallic = metal * 0.6
@@ -1458,7 +1465,7 @@ func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true, surface :=
 	# The voxel style for every remaining plain material (hills, horizon,
 	# pieces built with their own StandardMaterial3D); see-through and
 	# unshaded ones stay as they are (Voxel.from_standard).
-	if Voxel.on and mat is BaseMaterial3D and (mat as BaseMaterial3D).shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED:
+	if Voxel.on and mat is BaseMaterial3D and (mat as BaseMaterial3D).shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED and not mat.has_meta("no_voxel"):
 		mat = Voxel.from_standard(mat)
 	if kind == "":
 		kind = "p" if mesh is PrimitiveMesh else "c"
@@ -1533,6 +1540,25 @@ func _flush_vox() -> void:
 	_vox_batches.clear()
 
 
+## A kit model's glass in the voxel world: clear, slightly tinted, a soft
+## sheen (cached per source material).
+var _glass_cache := {}
+
+
+func _glass_like(src: BaseMaterial3D) -> Material:
+	var id := src.get_instance_id()
+	if not _glass_cache.has(id):
+		var g := StandardMaterial3D.new()
+		g.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var c := src.albedo_color
+		g.albedo_color = Color(lerpf(c.r, 0.75, 0.5), lerpf(c.g, 0.88, 0.5), lerpf(c.b, 0.95, 0.5), 0.28)
+		g.roughness = 0.08
+		g.metallic_specular = 0.7
+		g.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_glass_cache[id] = g
+	return _glass_cache[id]
+
+
 func _glows(mat: String) -> bool:
 	return mat.begins_with("accent") or mat in ["rail", "pad", "lamp", "beacon", "lava", "window", "glass", "water", "line"]
 
@@ -1565,6 +1591,14 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 				# version, which looks the same in a soft shadow and costs a
 				# fraction of the triangles.
 				_add_vox(vx, xf, false, 0, leafy)
+				# See-through parts (window glass) are left out of the voxels;
+				# they stay real glass.
+				for part in Models.parts(path):
+					var gm: Mesh = part[0]
+					for si in gm.get_surface_count():
+						var gsrc: Material = gm.surface_get_material(si)
+						if gsrc is BaseMaterial3D and (gsrc as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED 								and (gsrc as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
+							_add(gm, _glass_like(gsrc), xf * part[1], false, si, "g%d" % gm.surface_get_format(si))
 				if shadow:
 					var vf := Voxelizer.model(path, Models.parts(path), sc, leafy, true)
 					_add_vox(vf if not vf.is_empty() else vx, xf, true, 1, leafy)

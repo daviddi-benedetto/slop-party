@@ -135,11 +135,16 @@ void fragment() {
 		if (triplanar) {
 			// One colour per cube (its centre), at the mip of the cube or of the
 			// pixel, whichever is bigger: smooth with distance, never a switch.
+			// (The pixel's own footprint, at least one cube: anisotropic
+			// filtering then keeps floors seen at a low angle sharp.)
 			vec2 uvp = vec2(dot(w_pos, T), dot(w_pos, B)) * tri_scale;
-			float pix = max(length(dFdx(uvp)), length(dFdy(uvp)));
-			float s = max(vox_size * tri_scale, pix);
+			float cs = vox_size * tri_scale;
+			vec2 g1 = dFdx(uvp);
+			vec2 g2 = dFdy(uvp);
+			g1 *= max(1.0, cs / max(length(g1), 1e-6));
+			g2 *= max(1.0, cs / max(length(g2), 1e-6));
 			uvp = vec2(dot(cc, T), dot(cc, B)) * tri_scale;
-			c *= textureGrad(tex, uvp, vec2(s, 0.0), vec2(0.0, s)).rgb;
+			c *= textureGrad(tex, uvp, g1, g2).rgb;
 		} else {
 			vec2 uv0 = UV * uv_scale.xy + uv_offset.xy;
 			vec2 u1 = dFdx(uv0);

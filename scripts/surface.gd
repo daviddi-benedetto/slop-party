@@ -258,10 +258,12 @@ void fragment() {
 	// One colour per cube (its centre), at the mip of the cube or of the
 	// pixel, whichever is bigger: smooth with distance, never a switch.
 	vec2 uvf = f * vox_size * uv_scale;
-	float s = max(vox_size * uv_scale, max(length(dFdx(uvf)), length(dFdy(uvf))));
+	float cs = vox_size * uv_scale;
+	vec2 g1 = dFdx(uvf);
+	vec2 g2 = dFdy(uvf);
+	g1 *= max(1.0, cs / max(length(g1), 1e-6));
+	g2 *= max(1.0, cs / max(length(g2), 1e-6));
 	vec2 uv = (cellp + 0.5) * vox_size * uv_scale;
-	vec2 g1 = vec2(s, 0.0);
-	vec2 g2 = vec2(0.0, s);
 	vec3 col = tint * textureGrad(albedo_tex, uv, g1, g2).rgb;
 	vec3 c3 = T * cellp.x + B * cellp.y + N * layer;
 	vec3 wn = N;
