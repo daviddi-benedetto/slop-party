@@ -40,7 +40,7 @@ for r in "${RUNS[@]}"; do
 	name="${r%%|*}"
 	args="${r#*|}"
 	t=12
-	[ "$name" = "lobby" ] && t=4
+	[ "$name" = "lobby" ] && t=7
 	[ "$name" = "results" ] && t=30
 	# Hightown (Frontline) takes longest to load.
 	[ "$name" = "frontline" ] && t=18
