@@ -124,6 +124,9 @@ func _ready() -> void:
 	_card.draw.connect(_draw_card)
 	layer.add_child(_card)
 
+	if _args.has("voxel-bake"):
+		_voxel_bake()
+		return
 	if _args.has("autotest"):
 		seed(int(_args.get("seed", "1")))
 		var views := int(_args.get("views", "6"))
@@ -404,6 +407,33 @@ func _process(_delta: float) -> void:
 	_fr_last = now
 
 
+## Dev: --voxel-bake builds every map once in the voxel style, so every
+## model it places is voxelized into res://assets/voxel/ (shipped with the
+## game: no voxelizing while a match loads). Run before a release.
+func _voxel_bake() -> void:
+	var Vz = preload("res://scripts/voxelizer.gd")
+	Vz.bake = true
+	Settings.idx["voxel"] = 0
+	var MapScript = preload("res://scripts/map.gd")
+	# Every map in every theme (themes place different scenery).
+	for theme_key in preload("res://scripts/looks.gd").LOOKS.keys():
+		for i in MapScript.MAPS.size():
+			var t0 := Time.get_ticks_msec()
+			var m = MapScript.new()
+			add_child(m)
+			m.build(i, theme_key)
+			print("[voxel-bake] %s map %d: %d ms, %d voxelized, %d already done" % [theme_key, i, Time.get_ticks_msec() - t0, Vz.stats.live, Vz.stats.cached])
+			m.free()
+			await get_tree().process_frame
+	# The lobby's trees (stage.gd).
+	var Mdl = preload("res://scripts/models.gd")
+	for path in ["survival/Tree_Large", "survival/Tree_Autumn", "survival/Tree"]:
+		for s in [4.6, 4.8, 5.0, 5.2, 5.4, 5.6, 5.8]:
+			Vz.model(path, Mdl.parts(path), s, true)
+	print("[voxel-bake] done: %d models voxelized (%d ms)" % [Vz.stats.live, Vz.stats.ms])
+	get_tree().quit()
+
+
 func _screenshot_later(delay: float, path: String) -> void:
 	await get_tree().create_timer(delay, true, false, true).timeout
 	await RenderingServer.frame_post_draw
@@ -417,6 +447,8 @@ func _screenshot_later(delay: float, path: String) -> void:
 	print("[shot] frames %d, avg %.1f ms, slow (>25 ms) %d, worst %.0f ms (after the first 8 s)" % [_fr_n, _fr_sum / maxf(_fr_n, 1) * 1000.0, _fr_slow, _fr_worst * 1000.0])
 	print("[shot] physics active=%d pairs=%d islands=%d  render scale=%.2f" % [Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS),
 		Performance.get_monitor(Performance.PHYSICS_3D_COLLISION_PAIRS), Performance.get_monitor(Performance.PHYSICS_3D_ISLAND_COUNT), Settings.res_factor])
+	var vz = preload("res://scripts/voxelizer.gd")
+	print("[shot] voxel models: %d voxelized now (%d ms), %d from cache; %d triangles drawn" % [vz.stats.live, vz.stats.ms, vz.stats.cached, Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)])
 	if game != null and _args.has("perch-at") and not game.players.is_empty():
 		var p0 = game.players[0]
 		var nearest := 1e9

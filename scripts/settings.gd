@@ -75,6 +75,9 @@ const ITEMS := [
 	{"key": "ssr", "label": "Reflections on wet ground", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "decals", "label": "Bullet holes and scorch marks", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "glow", "label": "Bloom", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	# The look of the level (voxel.gd): built from small cubes, or smooth.
+	# Takes effect from the next match.
+	{"key": "voxel", "label": "World style", "opts": ["Voxel", "Smooth"], "vals": [true, false], "def": 0},
 	{"key": "scenery", "label": "Scenery detail", "opts": ["Low", "High"], "vals": [0, 1], "def": 1},
 	# Lowers the 3D resolution on the fly whenever a frame would take too long
 	# (game.gd::_auto_resolution), so busy six-player moments stay at 60.

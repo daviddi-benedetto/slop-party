@@ -125,6 +125,8 @@ parse error in one script.
 | `scripts/ui_kit.gd` | Shared UI look: colours (GOLD / PANEL / ACCENT follow the theme, `use_theme`), fonts (`num()` for numbers), panels (softer corners, blurred shadow), slim bars, text with a soft shadow (no ink outlines), icons, weapon silhouettes (`weapon_icon`, `WEAPON_SHAPE` / `SHAPES`), 2D animal portraits, button prompts (PlayStation glyphs when `is_ps(device)`), easing. |
 | `scripts/fp_arm.gd` | First-person plush arms for viewmodel.gd: paw (fist or open with toe beans), wrist band in the player colour, furry forearm, in the animal's plush.gd SPEC limb / paw colours with the character's felt + fur shell materials scaled for close range. `viewmodel._arm()` places one; `viewmodel.kind` must be set before `build()`. |
 | `scripts/gore.gd` | Blood and gibs: `hit()` (spray + splatter decals behind and below the victim, called from player / zombie `take_damage`), `death()` (big spray, a ring of splatter, gibs: meat, bone, guts, arm, leg, head; `how` = normal / head (skull, eyes, brains) / blast (body apart; set by `game.explode` through the victim's "blast_t" meta) / slice (melee)). Splats pooled (`MAX_SPLATS` 150, about 50 s), gibs capped (`MAX_GIBS` 90) and bleed where they land. |
+| `scripts/voxel.gd` | The voxel world style (option "voxel", default on): shared GLSL (`FN`: cube hash, dominant-axis frame, fade by pixels per cube, faint bevel) and the voxel material for plain / textured / imported surfaces (`plain()`, `from_standard()`): one colour per 10 cm world cube (texture sampled at the cube centre, imported UVs moved there with the screen-space UV/position Jacobian), per-cube shade. `Voxel.on` / `Voxel.look` are set by map.gd and stage.gd per build. |
+| `scripts/voxelizer.gd` | The voxel prop workflow: any model (or mesh list) to real voxel geometry. Rasterize triangles into a grid (colour = material x texture at the UV x vertex colour; alpha-scissored texels skipped; emissive marked), flood-fill the outside, colour-blind greedy meshing of exposed faces, colours in an `ImageTexture3D` read by `PROP_CODE` with the cell under each pixel. `model(path, parts, scale, sway, far)` returns [mesh, material]; scale buckets (half octaves) keep voxels ~10 cm in the world; `far` = 2.8x coarser version. Cache: memory, `res://assets/voxel/*.vox` (baked, shipped; `main.gd --voxel-bake`), `user://voxel_cache/`. |
 | `scripts/surface.gd` | Level surfaces with depth (option "parallax"): a spatial shader doing world triplanar on the dominant axis plus parallax occlusion mapping from the procedural height map (`map._tex()[3]`), cavity shading, fade beyond 30 m. `DEPTH` lists the groove depth per texture kind; `map._mat()` uses it for those kinds (not for containers, crates or cars, which keep object-space StandardMaterial3D). Measured at six views, uncapped: within 0.5 ms of the plain material. |
 | `scripts/wipe.gd` | Screen transition: a theme-coloured slanted curtain driven like a fading ColorRect (`color:a` 0 to 1 covers, back to 0 reveals). Used by `main.gd` and `game.gd`. |
 | `scripts/lobby.gd` | Join screen: 3D backyard with six seats in two rows of three (P1-P3 on rugs on a raised deck, P4-P6 on tree stumps, `_slot_pos` / `_slot_h`), each seat's plate drawn beside its character, per-player character customisation (category name + dots, value between arrows, shrunk to fit), and a row of option chips sized to their own text (`_chip_w`; the whole row scales down if the window is too narrow). Emits `start(config)`. |
@@ -242,6 +244,38 @@ and floods the log with rendering errors.
 1 = world static geometry, 2 = players, zombies and vehicles. Bullets are not
 physics bodies; they ray-cast against `1 | 2`. A player inside a vehicle has
 collision off (the vehicle takes the hits).
+
+### Voxel world (`voxel.gd`, `voxelizer.gd`, `surface.gd`)
+
+The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
+- **Level surfaces** built by map.gd (boxes, floors, walls, stairs; `_mat`)
+  stay flat geometry; their shader draws the cubes. surface.gd's
+  `VOX_CODE` also ray-marches a stepped height field: texture grooves
+  (mortar, seams) sink half a voxel, ~1 % of voxels are missing, sides of
+  sunk cubes are shaded by their own normal (relief within 14 m only).
+  Plain materials use `Voxel.plain()`.
+- **Imported models placed by map._model()** become real voxels
+  (voxelizer.gd) and are drawn as MultiMeshes (`map._add_vox`, per model,
+  per 20 m chunk, never merged: the shader needs model-space positions),
+  with the coarse far version beyond 34 m (visibility ranges). Physics
+  props (prop.gd) and the lobby trees (stage.gd) use the same voxels.
+  Doors, pickups and other `toy_node()` models with `env` = true get the
+  voxel shader; characters, guns, pets and zombies pass `env` = false.
+- **Performance** (RTX 2070, Hightown, 6 views, no auto resolution):
+  17.4 ms, 10.3 M triangles a frame (the smooth style drew 23 M: the
+  greedy meshes are lighter than the original models).
+- Far away, per-voxel shading fades out (`vox_amount`, 2-5 px per cube) so
+  nothing shimmers.
+
+**Making a prop in the voxel style:** use any model (glTF / glb in
+`assets/models/`, CC0) through `map._model()` or `prop.gd`; it is voxelized
+automatically at its placed scale. To use voxels elsewhere:
+`Voxelizer.model(path, Models.parts(path), scale)` gives [mesh, material]
+for a MeshInstance3D; `Voxelizer.voxelize(parts, cell)` works on any mesh
+list (procedural meshes too). After adding models run `--voxel-bake` so
+players never wait; anything not baked is voxelized once while loading and
+cached in `user://voxel_cache/`. Bump `Voxelizer.VERSION` when the
+voxelizer changes (old caches are ignored).
 
 ### Imported models (`models.gd`, `assets/models/`)
 

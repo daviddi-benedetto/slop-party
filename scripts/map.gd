@@ -62,6 +62,8 @@ const Rubble = preload("res://scripts/rubble.gd")
 const Looks = preload("res://scripts/looks.gd")
 const Fx = preload("res://scripts/fx.gd")
 const Surface = preload("res://scripts/surface.gd")
+const Voxel = preload("res://scripts/voxel.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
 
 signal nav_built
 
@@ -443,6 +445,8 @@ func build(index := 0, theme_key := "classic") -> void:
 	theme_key = {"day": "classic", "sunset": "warm", "night": "moonlit"}.get(theme_key, theme_key)
 	look = Looks.get_look(theme_key)
 	Models.look = look
+	Voxel.on = Settings.v("voxel")
+	Voxel.look = look
 	time = look.base
 	theme = THEMES[info.theme].duplicate()
 	for k in ["accent_a", "accent_b"]:
@@ -1114,7 +1118,7 @@ func _make_materials() -> void:
 	water.uv1_scale = Vector3.ONE * 0.12
 	_mats["water"] = water
 	for i in 2:
-		_mats["leaf%d" % i] = _leaf_mat(theme.leaf[i])
+		_mats["leaf%d" % i] = Voxel.from_standard(_leaf_mat(theme.leaf[i])) if Voxel.on else _leaf_mat(theme.leaf[i])
 	var st: Array = _tex("stripes")
 	var stripes := StandardMaterial3D.new()
 	stripes.albedo_color = theme.accent_a.lerp(Color.WHITE, 0.15)
@@ -1148,6 +1152,13 @@ func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float
 		if not indoor:
 			sm.set_shader_parameter("wet", float(look.get("wet", 0.0)))
 		return sm
+	if Voxel.on:
+		# The voxel style (voxel.gd) for plain and textured surfaces alike.
+		var vt: Array = _tex(kind) if kind != "" else [null, null, null]
+		var alb: Texture2D = null
+		if vt[0] != null:
+			alb = _soft(kind, vt[0]) if vt[2] == null else vt[0]
+		return Voxel.plain(toy.lerp(Color.WHITE, 0.06), alb, uv_scale, maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6, vt[2], 2.4)
 	m.albedo_color = toy.lerp(Color.WHITE, 0.06)
 	m.roughness = maxf(rough, 0.62) if metal < 0.5 else rough
 	m.metallic = metal * 0.6
@@ -1458,8 +1469,50 @@ func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true, surface :=
 	_batches[key][2].append_from(mesh, surface, xf)
 
 
+## Voxel models (voxelizer.gd) are instanced, not merged: their shader
+## finds each voxel's colour from the model-space position. One MultiMesh
+## per model (and per chunk on big maps).
+var _vox_batches := {}
+
+
+## lod 0 = full detail (drawn up to Voxelizer.FAR_FROM), 1 = the coarse
+## far version (drawn beyond). Batches are per VOX_CHUNK square on every map,
+## so the distance switch works per neighbourhood.
+const VOX_CHUNK := 20.0
+
+
+func _add_vox(mesh: Mesh, mat: Material, xf: Transform3D, shadow: bool, lod: int) -> void:
+	var key := "%d_%d_%s_%d_%d" % [mesh.get_instance_id(), mat.get_instance_id(), shadow,
+		floori(xf.origin.x / VOX_CHUNK), floori(xf.origin.z / VOX_CHUNK)]
+	if not _vox_batches.has(key):
+		_vox_batches[key] = [mesh, mat, shadow, [], lod]
+	_vox_batches[key][3].append(xf)
+
+
 func _flush() -> void:
 	_lay_surfaces()   # any decal added after _build_floor
+	for key in _vox_batches:
+		var vb: Array = _vox_batches[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = vb[0]
+		var xfs: Array = vb[3]
+		mm.instance_count = xfs.size()
+		for i in xfs.size():
+			mm.set_instance_transform(i, xfs[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = vb[1]
+		if not vb[2]:
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if vb[4] == 0:
+			mmi.visibility_range_end = Voxelizer.FAR_FROM
+			mmi.visibility_range_end_margin = 4.0
+		else:
+			mmi.visibility_range_begin = Voxelizer.FAR_FROM
+			mmi.visibility_range_begin_margin = 4.0
+		add_child(mmi)
+	_vox_batches.clear()
 	for key in _batches:
 		var b: Array = _batches[key]
 		var mi := MeshInstance3D.new()
@@ -1493,6 +1546,18 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 		var xf := Transform3D(rot * Basis.from_scale(s3), p)
 		# Trees, bushes and plants bend in the wind (Models.sway).
 		var leafy: bool = "Tree" in path or "Bush" in path or "Pine" in path or "Plant" in path or "Fern" in path
+		if Voxel.on:
+			# The voxel style: the model as real voxels (voxelizer.gd).
+			var sc := (s3.x + s3.y + s3.z) / 3.0
+			var vx := Voxelizer.model(path, Models.parts(path), sc, leafy)
+			if not vx.is_empty():
+				_add_vox(vx[0], vx[1], xf, shadow, 0)
+				var vf := Voxelizer.model(path, Models.parts(path), sc, leafy, true)
+				if not vf.is_empty():
+					_add_vox(vf[0], vf[1], xf, shadow, 1)
+				if collide == "box":
+					_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
+				continue
 		for part in Models.parts(path):
 			var mesh: Mesh = part[0]
 			for si in mesh.get_surface_count():

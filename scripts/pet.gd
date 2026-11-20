@@ -44,7 +44,7 @@ func _ready() -> void:
 	var inst: Node3D = Models.scene(_kind[0]).instantiate()
 	inst.scale = Vector3.ONE * (float(_kind[3]) / float(_kind[2]))
 	add_child(inst)
-	Models.toy_node(inst)
+	Models.toy_node(inst, false)
 	for c in inst.find_children("*", "AnimationPlayer", true, false):
 		_anim = c
 	if _anim != null:

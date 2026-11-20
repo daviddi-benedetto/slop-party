@@ -1239,7 +1239,7 @@ func _build_knife() -> void:
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 		_knife.add_child(mi)
-		Models.toy_node(mi)
+		Models.toy_node(mi, false)
 
 
 ## The slash trail: a ribbon along the path the blade tip sweeps (from the

@@ -13,6 +13,8 @@ const Character = preload("res://scripts/character.gd")
 const SkyKit = preload("res://scripts/sky.gd")
 const Looks = preload("res://scripts/looks.gd")
 const Models = preload("res://scripts/models.gd")
+const Voxel = preload("res://scripts/voxel.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
 
 const ORANGE := Color(1.0, 0.42, 0.16)
 const CYAN := Color(0.15, 0.75, 1.0)
@@ -92,6 +94,9 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float, look := {}) -> vo
 
 	_look = look
 	Models.look = look
+	# The lobby and podium follow the world style too (voxel.gd).
+	Voxel.on = Settings.v("voxel")
+	Voxel.look = look
 	_backyard(look, st, day, ring_a, ring_b, band_a, band_b)
 
 	camera = Camera3D.new()
@@ -118,7 +123,7 @@ func _neon(col: Color, energy: float) -> StandardMaterial3D:
 func _prop(mesh: Mesh, mat: Material, pos: Vector3, scl := Vector3.ONE, parent: Node3D = null) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.mesh = mesh
-	mi.material_override = mat
+	mi.material_override = _vox(mat)
 	mi.position = pos
 	mi.scale = scl
 	(parent if parent != null else self).add_child(mi)
@@ -316,12 +321,20 @@ func _backyard(look: Dictionary, st: Dictionary, day: bool, light_a: Color, ligh
 	# Trees: in the yard's corners and beyond the fence.
 	for spec in [[-17.0, -6.0, 4.6], [16.0, -7.0, 5.0], [-23.0, -15.0, 5.4], [22.0, -16.0, 5.8], [-9.0, -19.0, 4.8], [9.0, -21.0, 5.2], [0.0, -24.0, 5.6], [-30.0, -9.0, 5.0], [30.0, -8.0, 5.0]]:
 		var path := "survival/Tree_Large" if rng.randf() < 0.4 else ("survival/Tree_Autumn" if look.get("key", "") in ["warm", "spooky"] else "survival/Tree")
-		var tree: Node3D = Models.scene(path).instantiate()
+		var tree: Node3D
+		var vx: Array = Voxelizer.model(path, Models.parts(path), spec[2], true) if Voxel.on else []
+		if not vx.is_empty():
+			tree = MeshInstance3D.new()
+			(tree as MeshInstance3D).mesh = vx[0]
+			(tree as MeshInstance3D).material_override = vx[1]
+		else:
+			tree = Models.scene(path).instantiate()
 		tree.position = Vector3(spec[0], 0, spec[1])
 		tree.scale = Vector3.ONE * spec[2]
 		tree.rotation.y = rng.randf() * TAU
 		add_child(tree)
-		Models.toy_node(tree)
+		if vx.is_empty():
+			Models.toy_node(tree)
 
 	if st.get("city", false):
 		# A neon skyline beyond the fence.
@@ -439,8 +452,13 @@ func _multi(mesh: Mesh, mat: Material, xforms: Array) -> void:
 		mm.set_instance_transform(k, xforms[k])
 	var mi := MultiMeshInstance3D.new()
 	mi.multimesh = mm
-	mi.material_override = mat
+	mi.material_override = _vox(mat)
 	add_child(mi)
+
+
+## In the voxel world style, a plain material drawn as voxels.
+func _vox(mat: Material) -> Material:
+	return Voxel.from_standard(mat) if Voxel.on and mat is BaseMaterial3D else mat
 
 
 ## Adds a character facing the camera (+Z). `look` = {kind, color, hat, face}.

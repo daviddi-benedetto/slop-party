@@ -128,6 +128,16 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Results awards:** stats count up, and up to four titles are handed out
   (Up Close for melee KOs, Box Addict, On a Roll, Heavy Hitter, Survivor).
 
+### Voxel world
+
+The world is built from small cubes, in the spirit of voxel shooters like
+Teardown: every wall, floor, building, tree, car and prop is made of 10 cm
+voxels, each with its own flat colour taken from the original textures
+(brick, plaster, timber...), with blocky silhouettes, flush surfaces with
+sunken mortar and the odd missing voxel. The lobby and podium match.
+Characters, guns and pets stay smooth plush. Options → Graphics → **World
+style** switches back to the smooth look (from the next match).
+
 ### Maps
 
 - **Arenas** for Rounds and Gun Game: Neon Yard (container yard), Ember Pit
@@ -372,7 +382,8 @@ Play.bat / Edit.bat   launchers (game / Godot editor)
 project.godot         Godot project file
 main.tscn             the only scene; everything else is built in code
 scripts/              all game code (see docs/ARCHITECTURE.md)
-assets/               3D models, plush animal meshes, audio (see ASSETS.md)
+assets/               3D models, plush animal meshes, audio (see ASSETS.md);
+                      assets/voxel/ = the models baked into voxels
 fonts/                Fredoka and Lilita One UI fonts + their licences
 docs/                 architecture notes
 tools/                build.bat, setup_engine.ps1, smoke.sh, balance.sh
@@ -411,6 +422,14 @@ below 50 FPS:
 ```
 tools/smoke.sh          # all 13 runs, about 4 minutes
 tools/smoke.sh quick    # 4 runs, about 1 minute
+```
+
+After adding or changing models, re-bake the voxel versions (about 2
+minutes; the game would otherwise voxelize them while a match loads, once,
+and cache them per player):
+
+```
+./engine/Godot_v4.7.2-stable_win64_console.exe --headless --path . -- --voxel-bake
 ```
 
 `tools/balance.sh` plays a dozen bot-only matches and prints kills per minute

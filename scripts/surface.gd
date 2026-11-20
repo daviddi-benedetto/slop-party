@@ -16,6 +16,7 @@ extends RefCounted
 ## albedo, normal map, wrapped diffuse, rim, roughness, metallic, emission.
 
 const FADE_FAR := 30.0
+const Voxel = preload("res://scripts/voxel.gd")
 
 ## Depth in metres of the deepest groove for each texture kind (map._tex).
 const DEPTH := {"bricks": 0.07, "tiles": 0.04, "planks": 0.04, "plates": 0.035, "rock": 0.11, "corrugated": 0.05,
@@ -139,6 +140,156 @@ void fragment() {
 }
 """
 
+## The voxel style (Voxel.on): the same inputs, but the surface is a field of
+## cubes (Voxel.SIZE) standing at different heights: the height map sampled
+## at each cube's centre plus a random offset. The parallax march stops at
+## the first cube whose top or side the view ray meets; tops are bevelled,
+## sides shaded by their own normal. One colour per cube.
+const VOX_CODE := """
+shader_type spatial;
+render_mode diffuse_lambert_wrap, specular_schlick_ggx;
+uniform vec3 tint : source_color = vec3(1.0);
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D normal_tex : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D height_tex : filter_linear_mipmap, repeat_enable;
+uniform sampler2D emission_tex : source_color, hint_default_black, filter_linear_mipmap, repeat_enable;
+uniform float emission_energy = 0.0;
+uniform float uv_scale = 0.25;
+uniform float depth = 0.03;
+uniform float normal_scale = 0.5;
+uniform float roughness = 0.7;
+uniform float metallic = 0.0;
+uniform float rim_amount = 0.22;
+uniform float rim_tint_amount = 0.6;
+uniform float fade_far = 30.0;
+uniform sampler2D macro_tex : filter_linear_mipmap, repeat_enable;
+uniform float weather = 1.0;
+uniform float wet = 0.0;
+uniform float vox_depth = 1.0;    // deepest cube, in cube sizes
+varying vec3 w_pos;
+varying vec3 w_nrm;
+%s
+void vertex() {
+	w_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	w_nrm = normalize(mat3(MODEL_MATRIX) * NORMAL);
+}
+// How far a cube is sunk: 0 = flush with the surface, 1 = deepest.
+float cell_h(vec2 c, float layer) {
+	vec2 uvc = (c + 0.5) * vox_size * uv_scale;
+	float g = vox_size * uv_scale;
+	float ht = textureGrad(height_tex, uvc, vec2(g, 0.0), vec2(0.0, g)).r;
+	// Teardown-like: surfaces are flush; grooves in the texture (mortar,
+	// seams) are sunk half a voxel and a few voxels are simply missing.
+	float s = (1.0 - ht) > 0.45 ? 0.5 : 0.0;
+	return vox_hash(vec3(c, layer)) > 0.988 ? 0.8 : s;
+}
+void fragment() {
+	vec3 n = normalize(w_nrm);
+	vec3 T; vec3 B; vec3 N;
+	vox_frame(n, T, B, N);
+	float layer = floor(dot(w_pos, N) / vox_size + 0.5);
+	vec2 f = vec2(dot(w_pos, T), dot(w_pos, B)) / vox_size;
+	float amt = vox_amount(f);
+	vec3 to_cam = CAMERA_POSITION_WORLD - w_pos;
+	float dist = length(to_cam);
+	vec3 v = to_cam / max(dist, 0.0001);
+	vec3 vt = vec3(dot(v, T), dot(v, B), dot(v, N));
+	// Relief only up close: one-voxel steps are invisible past ~14 m.
+	float k = vox_depth * amt * (1.0 - smoothstep(8.0, 14.0, dist));
+	vec2 p = f;
+	vec2 cellp = floor(p);
+	float hd = cell_h(cellp, layer);
+	float cur = 0.0;
+	bool side = false;
+	vec2 side_n = vec2(0.0);
+	if (k > 0.002 && vt.z > 0.06) {
+		// March down into the cube field (in cube units).
+		const float STEPS = 10.0;
+		vec2 duv = vt.xy / vt.z * k / STEPS;
+		float ls = 1.0 / STEPS;
+		for (int i = 0; i < 10; i++) {
+			if (cur * k >= hd * k) {
+				break;
+			}
+			vec2 np = p - duv;
+			cur += ls;
+			vec2 nc = floor(np);
+			if (nc != cellp) {
+				float nh = cell_h(nc, layer);
+				if (cur >= nh) {
+					// Entered a taller cube from the side.
+					side = true;
+					side_n = cellp - nc;
+					if (abs(side_n.x) > 0.5 && abs(side_n.y) > 0.5) {
+						side_n.y = 0.0;
+					}
+					p = np;
+					cellp = nc;
+					hd = nh;
+					break;
+				}
+				cellp = nc;
+				hd = nh;
+			}
+			p = np;
+		}
+	} else {
+		hd = 0.0;
+	}
+	// One colour per cube (at the matching mip), fading back to the plain
+	// texture far away.
+	vec2 uv;
+	vec2 g1;
+	vec2 g2;
+	if (amt > 0.01) {
+		uv = (cellp + 0.5) * vox_size * uv_scale;
+		g1 = vec2(vox_size * uv_scale, 0.0);
+		g2 = vec2(0.0, vox_size * uv_scale);
+	} else {
+		uv = f * vox_size * uv_scale;
+		g1 = dFdx(uv);
+		g2 = dFdy(uv);
+	}
+	vec3 col = tint * textureGrad(albedo_tex, uv, g1, g2).rgb;
+	float r = vox_hash(vec3(cellp, layer));
+	float seam = 1.0;
+	vec3 wn;
+	if (side) {
+		wn = normalize(T * side_n.x + B * side_n.y + N * 0.15);
+		col *= mix(1.0, 0.8, amt);
+	} else {
+		wn = vox_bevel(fract(p), N, T, B, amt, seam);
+	}
+	// Sunk cubes sit in their own shadow.
+	float cavity = mix(1.0, mix(1.0, 0.72, hd), amt);
+	col *= mix(1.0, 0.92 + 0.16 * r, amt) * seam * cavity;
+	vec2 wuv = f * vox_size;
+	float mac = texture(macro_tex, wuv * 0.035).r;
+	float mac2 = texture(macro_tex, wuv * 0.11 + vec2(0.37, 0.71)).r;
+	col *= mix(1.0, mix(0.84, 1.1, mac) * mix(0.95, 1.04, mac2), weather);
+	float rough = roughness;
+	if (abs(N.y) < 0.5) {
+		float grime = (1.0 - smoothstep(0.0, 1.3, w_pos.y)) * (0.55 + 0.45 * mac2);
+		col = mix(col, col * vec3(0.6, 0.56, 0.5), grime * 0.65 * weather);
+		col += vec3(0.05, 0.045, 0.035) * smoothstep(2.5, 7.0, w_pos.y) * weather;
+	} else if (N.y > 0.5 && wet > 0.0) {
+		col *= 1.0 - 0.3 * wet;
+		rough = mix(rough, 0.32, wet);
+	}
+	ALBEDO = col;
+	AO = cavity;
+	AO_LIGHT_AFFECT = 0.4;
+	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
+	ROUGHNESS = rough;
+	METALLIC = metallic;
+	RIM = rim_amount;
+	RIM_TINT = rim_tint_amount;
+	EMISSION = textureGrad(emission_tex, uv, g1, g2).rgb * emission_energy;
+}
+"""
+
+static var _vox_shader: Shader
+
 static var _shader: Shader
 static var _macro: NoiseTexture2D
 
@@ -165,6 +316,12 @@ static func make(tint: Color, albedo: Texture2D, normal: Texture2D, height: Text
 		_shader.code = CODE
 	var m := ShaderMaterial.new()
 	m.shader = _shader
+	if Voxel.on:
+		if _vox_shader == null:
+			_vox_shader = Shader.new()
+			_vox_shader.code = VOX_CODE % Voxel.FN
+		m.shader = _vox_shader
+		m.set_shader_parameter("vox_size", Voxel.SIZE)
 	m.set_shader_parameter("tint", tint)
 	m.set_shader_parameter("albedo_tex", albedo)
 	m.set_shader_parameter("normal_tex", normal)

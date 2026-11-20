@@ -13,6 +13,8 @@ extends RigidBody3D
 ## table) hold until disturbed. glass.gd shares the knock() interface.
 
 const Models = preload("res://scripts/models.gd")
+const Voxel = preload("res://scripts/voxel.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
 
 const LAYER := 4
 const DENSITY := 220.0        # kg per cubic metre of bounding box: heavy, a shove barely moves it
@@ -45,11 +47,22 @@ func _ready() -> void:
 	add_to_group("props")
 	# The model is re-centred: node origin = middle of its footprint, on the floor.
 	var b: AABB = Models.bounds(_path)
-	var inst: Node3D = Models.scene(_path).instantiate()
+	var inst: Node3D
+	var vx: Array = Voxelizer.model(_path, Models.parts(_path), _scl) if Voxel.on else []
+	if not vx.is_empty():
+		# The voxel style: the model as real voxels (voxelizer.gd).
+		inst = Node3D.new()
+		var vmi := MeshInstance3D.new()
+		vmi.mesh = vx[0]
+		vmi.material_override = vx[1]
+		inst.add_child(vmi)
+	else:
+		inst = Models.scene(_path).instantiate()
 	inst.scale = Vector3.ONE * _scl
 	inst.position = -Vector3(b.get_center().x, b.position.y, b.get_center().z) * _scl
 	add_child(inst)
-	Models.toy_node(inst)
+	if vx.is_empty():
+		Models.toy_node(inst)
 	# Small things are not drawn from far away (and never cast long shadows).
 	var far := clampf(b.size.length() * _scl * 16.0, 22.0, 48.0)
 	for mi in Models.mesh_instances(inst):

@@ -11,6 +11,7 @@ extends RefCounted
 
 const ROOT := "res://assets/models/"
 const Looks = preload("res://scripts/looks.gd")
+const Voxel = preload("res://scripts/voxel.gd")
 
 static var _scenes := {}
 static var _parts := {}
@@ -62,13 +63,14 @@ static var look := {}
 ## An imported model's material restyled to match the generated surfaces
 ## (map._mat): matte, wrapped soft lighting, a faint rim sheen, and its
 ## colour run through the theme's grade. Cached per material and theme, so
-## batching by material still works.
-static func toy(m: Material) -> Material:
+## batching by material still works. `env`: part of the level, so it takes
+## the voxel style when that is on (characters, guns and pets pass false).
+static func toy(m: Material, env := true) -> Material:
 	if not (m is BaseMaterial3D):
 		return m
 	var key := "%d|%s" % [m.get_instance_id(), look.get("key", "")]
 	if _toys.has(key):
-		return _toys[key]
+		return Voxel.from_standard(_toys[key]) if Voxel.on and env else _toys[key]
 	var t: BaseMaterial3D = m.duplicate()
 	t.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	t.rim_enabled = true
@@ -84,12 +86,14 @@ static func toy(m: Material) -> Material:
 		# bumps read better at toy scale and do not sparkle at a distance.
 		t.normal_scale = minf(t.normal_scale, 0.55)
 	_toys[key] = t
-	return t
+	return Voxel.from_standard(t) if Voxel.on and env else t
 
 
 ## The swaying version of toy(m) (cached).
 static func sway(m: Material) -> Material:
-	var t := toy(m)
+	var t := toy(m, false)
+	if Voxel.on and t is BaseMaterial3D:
+		return Voxel.from_standard(t, 1.0)
 	if not (t is BaseMaterial3D) or (t as BaseMaterial3D).transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
 		return t
 	var key := t.get_instance_id()
@@ -115,7 +119,7 @@ static func sway(m: Material) -> Material:
 
 ## toy() on every surface of every MeshInstance3D under `n` (instanced
 ## models: props, doors, pets, vehicles, zombies, pickups).
-static func toy_node(n: Node) -> void:
+static func toy_node(n: Node, env := true) -> void:
 	for mi in mesh_instances(n):
 		var mesh: Mesh = (mi as MeshInstance3D).mesh
 		if mesh == null:
@@ -125,7 +129,7 @@ static func toy_node(n: Node) -> void:
 			if src == null:
 				src = mesh.surface_get_material(si)
 			if src != null:
-				mi.set_surface_override_material(si, toy(src))
+				mi.set_surface_override_material(si, toy(src, env))
 
 
 static func scene(path: String) -> PackedScene:

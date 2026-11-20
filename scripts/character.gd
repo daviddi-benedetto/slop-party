@@ -586,7 +586,7 @@ func _show_knife(at: Vector3, f: float) -> void:
 			mi.mesh = part[0]
 			mi.transform = Transform3D(Basis.from_scale(Vector3.ONE * k), -grip * k) * part[1]
 			_knife.add_child(mi)
-			Models.toy_node(mi)
+			Models.toy_node(mi, false)
 	_knife.visible = true
 	_knife.position = at
 	# Blade up and back on the wind-up, forward and down through the cut.
