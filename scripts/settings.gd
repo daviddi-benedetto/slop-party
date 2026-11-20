@@ -63,14 +63,11 @@ const ITEMS := [
 	{"key": "ssao", "label": "Ambient occlusion", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# Light bouncing off surfaces (screen-space indirect light, SSIL). Tested
 	# SDFGI too: it cost over 10 ms a frame and stalled for seconds, so no.
-	# Ink lines along silhouettes and creases (outline.gd): shapes stand
-	# apart even with flat colours.
 	# Grooves with real depth on bricks, tiles, planks, stone... (surface.gd).
 	# Speed blur on dashes and slides, zoom blur from nearby blasts, colour
-	# fringing when badly hurt (outline.gd).
+	# fringing when badly hurt (screen_fx.gd).
 	{"key": "screenfx", "label": "Screen effects", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "parallax", "label": "Surface depth", "opts": ON_OFF, "vals": [false, true], "def": 1},
-	{"key": "outlines", "label": "Outlines", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "gi", "label": "Bounce light", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# Light shafts through the haze (volumetric fog), one or two views only.
 	{"key": "volfog", "label": "Light shafts in the air", "opts": ON_OFF, "vals": [false, true], "def": 0},
@@ -104,7 +101,10 @@ const ITEMS := [
 	{"key": "aim_assist", "label": "Gamepad aim assist", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "rumble", "label": "Controller rumble", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"section": "GAMEPLAY"},
-	{"key": "fov", "label": "Field of view", "opts": ["Narrow", "Normal", "Wide"], "vals": [86.0, 100.0, 112.0], "def": 1},
+	# Horizontal field of view in degrees, as on a 16:9 screen (ultrawide
+	# screens see more to the sides). Was Narrow 86 / Normal 100 / Wide 112
+	# under the key "fov"; the new key starts everyone at 100.
+	{"key": "fov_h", "label": "Field of view", "range": [60, 130], "step": 5, "suffix": "°", "def": 100},
 	{"key": "shake", "label": "Screen shake", "opts": ["Off", "Low", "Full"], "vals": [0.0, 0.5, 1.0], "def": 2},
 	{"key": "bob", "label": "View bob and sway", "opts": ["Off", "Low", "Full"], "vals": [0.0, 0.5, 1.0], "def": 2},
 	{"key": "numbers", "label": "Damage numbers", "opts": ON_OFF, "vals": [false, true], "def": 1},
@@ -113,7 +113,7 @@ const ITEMS := [
 
 ## preset index -> {key: choice index}
 const PRESETS := {
-	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0, "outlines": 0, "parallax": 0, "ssr": 0},
+	1: {"aa": 0, "scale": 2, "shadows": 0, "ssao": 0, "glow": 0, "scenery": 0, "dof": 0, "gi": 0, "volfog": 0, "decals": 0, "parallax": 0, "ssr": 0},
 	2: {"aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0, "gi": 0, "volfog": 0, "decals": 1},
 	3: {"aa": 2, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 0, "decals": 1},
 	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 1, "decals": 1},
@@ -148,12 +148,13 @@ func _ready() -> void:
 		if item.has("range"):
 			var opts: Array = []
 			var vals: Array = []
-			for n in range(item.range[0], item.range[1] + 1):
-				opts.append(str(n))
+			var stp: int = item.get("step", 1)
+			for n in range(item.range[0], item.range[1] + 1, stp):
+				opts.append(str(n) + item.get("suffix", ""))
 				vals.append(n)
 			item["opts"] = opts
 			item["vals"] = vals
-			item["def"] = item.def - item.range[0]
+			item["def"] = (item.def - item.range[0]) / stp
 			item["slider"] = true
 		rows.append(item)
 		if item.has("key"):
@@ -265,6 +266,9 @@ func apply() -> void:
 
 ## Anti-aliasing and render scale for one viewport (root or a splitscreen cell).
 func apply_viewport(vp: Viewport) -> void:
+	# Smooth edges on every 2D shape (HUD, menus): the drawing helpers fill
+	# polygons and circles without anti-aliasing of their own.
+	vp.msaa_2d = Viewport.MSAA_4X
 	var aa: int = v("aa")
 	var up: int = v("upscaler")
 	var sc: float = clampf(v("scale") * res_factor, 0.25, 2.0)

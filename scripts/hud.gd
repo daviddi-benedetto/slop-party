@@ -194,8 +194,7 @@ func _draw_alive(w: float, h: float) -> void:
 		var local := Basis(Vector3.UP, player.yaw).inverse() * to
 		var a := atan2(local.x, -local.z) - PI / 2
 		var alpha := clampf(d[1], 0.0, 1.0)
-		draw_arc(c, 74 * s, a - 0.3, a + 0.3, 10, Color(UiKit.INK, alpha), 9 * s)
-		draw_arc(c, 74 * s, a - 0.27, a + 0.27, 10, Color(1.0, 0.3, 0.35, alpha), 5 * s)
+		draw_arc(c, 74 * s, a - 0.28, a + 0.28, 16, Color(1.0, 0.3, 0.32, 0.85 * alpha), 3.5 * s, true)
 
 	# Crosshair (spreads with recoil).
 	var aim: float = player.aim_amount
@@ -217,31 +216,31 @@ func _draw_alive(w: float, h: float) -> void:
 	var vfov := deg_to_rad(cam.fov if cam != null else 70.0)
 	var spread: float = (player.stats.spread + (0.02 if player.stats.pellets > 1 else 0.0)) * lerpf(1.0, player.stats.ads_spread, aim)
 	spread += player.recoil * 0.01 * player.stats.recoil_kick
-	var rad: float = maxf(4.5 * s, tan(spread) / tan(vfov * 0.5) * h * 0.5)
+	var rad: float = maxf(6.0 * s, tan(spread) / tan(vfov * 0.5) * h * 0.5)
 	var lens: bool = player.stats.scope > 1.0 and player.stats.zoom >= 0.5 and aim > 0.6
 	if not scoped and not lens:
 		var ca: float = 1.0 - (aim if player.stats.red_dot else 0.5 * aim)
-		draw_arc(c, rad, 0.0, TAU, 48, Color(UiKit.INK, 0.75 * ca), 3.6 * s)
-		draw_arc(c, rad, 0.0, TAU, 48, Color(1, 1, 1, 0.95 * ca), 1.6 * s)
-		draw_circle(c, 2.2 * s, Color(UiKit.INK, ca))
-		draw_circle(c, 1.1 * s, Color(1, 1, 1, ca))
+		# A thin light-grey ring, no centre dot; a faint dark halo keeps it
+		# visible against a bright sky.
+		var lw := maxf(1.2, 1.3 * s)
+		draw_arc(c, rad, 0.0, TAU, 64, Color(0, 0, 0.02, 0.22 * ca), lw + maxf(1.5, 1.4 * s), true)
+		draw_arc(c, rad, 0.0, TAU, 64, Color(0.86, 0.87, 0.9, 0.9 * ca), lw, true)
 	# Reload: a ring that fills around the crosshair.
 	if player.reload_left > 0.0 and not scoped:
 		var rf: float = 1.0 - player.reload_left / player.stats.reload_time
 		var rr2 := 24.0 * s
-		draw_arc(c, rr2, 0, TAU, 40, Color(UiKit.INK, 0.6), 7.0 * s)
-		draw_arc(c, rr2, -PI / 2, -PI / 2 + TAU * rf, 40, UiKit.GOLD, 4.0 * s)
+		draw_arc(c, rr2, 0, TAU, 48, Color(0, 0, 0.02, 0.3), 3.0 * s, true)
+		draw_arc(c, rr2, -PI / 2, -PI / 2 + TAU * rf, 48, Color(0.92, 0.93, 0.96), 2.0 * s, true)
 	elif not player.stats.melee_weapon and player.stats.mag_size > 1 and player.ammo <= maxi(1, player.stats.mag_size / 4) and not scoped:
 		# Low ammo: a red tick under the crosshair.
 		var la := 0.6 + 0.4 * sin(game.time * 9.0)
-		draw_arc(c, 24.0 * s, PI * 0.3, PI * 0.7, 12, Color(UiKit.INK, la), 6.0 * s)
-		draw_arc(c, 24.0 * s, PI * 0.3, PI * 0.7, 12, Color(1.0, 0.35, 0.35, la), 3.5 * s)
+		draw_arc(c, 24.0 * s, PI * 0.32, PI * 0.68, 16, Color(1.0, 0.35, 0.35, la), 2.0 * s, true)
 	# Jetpack fuel: an arc left of the crosshair.
 	if player.stats.jetpack > 0.0:
 		var ff: float = clampf(player.jet_fuel / player.stats.jetpack, 0.0, 1.0)
-		draw_arc(c, 40 * s, PI * 0.7, PI * 1.3, 24, Color(UiKit.INK, 0.7), 6.0 * s)
+		draw_arc(c, 40 * s, PI * 0.7, PI * 1.3, 32, Color(0, 0, 0.02, 0.3), 3.0 * s, true)
 		if ff > 0.01:
-			draw_arc(c, 40 * s, PI * 1.3 - PI * 0.6 * ff, PI * 1.3, 24, Color(1.0, 0.6, 0.2, 0.9), 3.5 * s)
+			draw_arc(c, 40 * s, PI * 1.3 - PI * 0.6 * ff, PI * 1.3, 32, Color(1.0, 0.65, 0.3, 0.95), 2.0 * s, true)
 	if player.kill_flash > 0.7:
 		# KO: a big red cross that snaps in and fades.
 		var kt: float = (player.kill_flash - 0.7) / 0.3
@@ -249,8 +248,7 @@ func _draw_alive(w: float, h: float) -> void:
 		var kc := Color(1.0, 0.25, 0.25, clampf(kt * 1.5, 0.0, 1.0))
 		for d4 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 			var dn: Vector2 = d4.normalized()
-			draw_line(c + dn * (kr - s), c + dn * (kr + 18 * s), Color(UiKit.INK, kc.a), 9.0 * s)
-			draw_line(c + dn * kr, c + dn * (kr + 17 * s), kc, 5.0 * s)
+			draw_line(c + dn * kr, c + dn * (kr + 14 * s), kc, 2.5 * s, true)
 	elif player.hit_marker > 0.0:
 		var hm: float = player.hit_marker
 		var hc := UiKit.GOLD if player.hit_crit else Color.WHITE
@@ -258,8 +256,7 @@ func _draw_alive(w: float, h: float) -> void:
 		var r0 := (9.0 + (1.0 - hm) * 5.0) * s
 		for d4 in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
 			var dn: Vector2 = d4.normalized()
-			draw_line(c + dn * (r0 - s), c + dn * (r0 + 10 * s), Color(UiKit.INK, hc.a), 6.0 * s)
-			draw_line(c + dn * r0, c + dn * (r0 + 9 * s), hc, 3.0 * s)
+			draw_line(c + dn * r0, c + dn * (r0 + 8 * s), hc, 2.0 * s, true)
 
 
 func _draw_status(ci: Control) -> void:
@@ -273,34 +270,33 @@ func _draw_status(ci: Control) -> void:
 	var jolt: Vector2 = Vector2(sin(game.time * 71.0), cos(game.time * 63.0)) * player.hurt_flash * player.hurt_flash * 4.0 * s
 	var px: float = 40.0 * s + jolt.x
 	var py: float = h - 42.0 * s + jolt.y
-	ci.draw_circle(Vector2(px, py + 3 * s), 29 * s, Color(0.08, 0.05, 0.12, 0.4))
-	ci.draw_circle(Vector2(px, py), 29 * s, UiKit.INK)
-	ci.draw_circle(Vector2(px, py), 26 * s, UiKit.CREAM)
-	UiKit.portrait(ci, Vector2(px, py + 3 * s), 16 * s, player.color, player.kind)
-	var bar := Rect2(78 * s + jolt.x, h - 46 * s + jolt.y, 176 * s, 24 * s)
+	ci.draw_circle(Vector2(px, py), 27 * s, Color(0.03, 0.035, 0.06, 0.55))
+	ci.draw_arc(Vector2(px, py), 27 * s, 0, TAU, 48, Color(player.color, 0.9), 1.5 * s, true)
+	UiKit.portrait(ci, Vector2(px, py + 3 * s), 15 * s, player.color, player.kind)
+	var hp_text := "%d" % ceili(player.health)
+	var bar := Rect2(124 * s + jolt.x, h - 38 * s + jolt.y, 150 * s, 9 * s)
 	var low: bool = frac < 0.3
 	var fill := Color(1.0, 0.32, 0.36).lerp(Color(0.36, 0.86, 0.42), clampf(frac * 1.4 - 0.2, 0.0, 1.0))
 	if low:
 		# Near death the bar pulses and glows red.
 		var pulse := 0.5 + 0.5 * sin(game.time * 8.0)
-		UiKit.panel(ci, bar.grow((5.0 + 3.0 * pulse) * s), Color(1.0, 0.2, 0.25, 0.25 + 0.3 * pulse), 18 * s)
+		UiKit.panel(ci, bar.grow((3.0 + 2.0 * pulse) * s), Color(1.0, 0.2, 0.25, 0.2 + 0.25 * pulse), 8 * s)
 		fill = fill.lerp(Color(1.0, 0.75, 0.75), pulse * 0.35)
 	if player.heal_flash > 0.0:
-		UiKit.panel(ci, bar.grow(7.0 * s * player.heal_flash), Color(0.4, 1.0, 0.55, 0.45 * player.heal_flash), 18 * s)
+		UiKit.panel(ci, bar.grow(5.0 * s * player.heal_flash), Color(0.4, 1.0, 0.55, 0.4 * player.heal_flash), 8 * s)
 	UiKit.bar(ci, bar, frac, fill, s, clampf(player.health_ghost / player.stats.max_health, 0.0, 1.0))
-	# Chunks: a notch every 25 health.
+	# Chunks: a hairline gap every 25 health.
 	var chunks: int = int(player.stats.max_health / 25.0)
 	for i in range(1, chunks):
 		var nx: float = bar.position.x + bar.size.x * (i * 25.0 / player.stats.max_health)
-		ci.draw_line(Vector2(nx, bar.position.y + 3 * s), Vector2(nx, bar.end.y - 3 * s), Color(UiKit.INK, 0.55), 2.0 * s)
-	UiKit.icon(ci, "heart", bar.position + Vector2(14 * s, 12 * s), 8 * s, UiKit.INK)
-	UiKit.icon(ci, "heart", bar.position + Vector2(14 * s, 11 * s), 7 * s, Color.WHITE)
-	UiKit.num(ci, bar.position + Vector2(28 * s, 20 * s), "%d" % ceili(player.health), 21 * s, Color.WHITE)
+		ci.draw_line(Vector2(nx, bar.position.y), Vector2(nx, bar.end.y), Color(0.02, 0.025, 0.05, 0.7), maxf(1.0, 1.5 * s))
+	# Health number to the left of the bar.
+	UiKit.num(ci, Vector2(78 * s + jolt.x, h - 24 * s + jolt.y), hp_text, 34 * s, Color(1.0, 0.5, 0.5) if low else Color.WHITE)
 	if not compact:
-		_t(Vector2(78 * s, h - 54 * s), player.pname, 14, player.color.lerp(Color.WHITE, 0.4), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
+		_t(Vector2(124 * s, h - 50 * s), player.pname.to_upper(), 12, player.color.lerp(Color.WHITE, 0.45), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
 	if player.spawn_protect > 0.0 and not compact:
-		var sx := 78 * s + UiKit.text_width(player.pname, 14 * s) + 16 * s
-		UiKit.icon(ci, "shield", Vector2(sx, h - 57 * s), 7 * s, Color(0.5, 0.85, 1.0, 0.6 + 0.4 * sin(game.time * 12.0)))
+		var sx := 124 * s + UiKit.text_width(player.pname.to_upper(), 12 * s) + 14 * s
+		UiKit.icon(ci, "shield", Vector2(sx, h - 54 * s), 6 * s, Color(0.5, 0.85, 1.0, 0.6 + 0.4 * sin(game.time * 12.0)))
 	# Owned cards as little rarity-coloured tiles (not in compact cells).
 	if compact:
 		return
@@ -311,7 +307,7 @@ func _draw_status(ci: Control) -> void:
 	for i in range(first, total):
 		var info: Array = player.card_icons[i]
 		var r := Rect2(78 * s + (i - first) * (tile + 4 * s), h - 92 * s, tile, tile)
-		UiKit.panel(ci, r, Cards.RARITY_COLORS[info[1]], 5 * s, UiKit.INK, 2 * s)
+		UiKit.panel(ci, r, Color(Cards.RARITY_COLORS[info[1]], 0.85), 4 * s)
 		UiKit.icon(ci, info[0], r.get_center(), tile * 0.3, Color.WHITE)
 	if first > 0:
 		_t(Vector2(78 * s + (total - first) * (tile + 4 * s), h - 77 * s), "+%d" % first, 12, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
@@ -326,14 +322,13 @@ func _draw_ammo(ci: Control) -> void:
 	# and the bubble shield status beside it.
 	var wname: String = player.weapon_name()
 	var tag := Rect2(w - 20 * s - 92 * s, h - (128 if not compact else 112) * s, 92 * s, 40 * s)
-	UiKit.card(ci, tag, UiKit.PANEL, 14 * s, s)
-	UiKit.panel(ci, Rect2(tag.position + Vector2(5, 4) * s, Vector2(tag.size.x - 10 * s, tag.size.y * 0.32)), Color(1, 1, 1, 0.08), 9 * s)
+	UiKit.card(ci, tag, Color(UiKit.PANEL, 0.6), 10 * s, s)
 	UiKit.weapon_icon(ci, wname, tag.get_center(), 34 * s, Cards.RARITY_COLORS[Cards.WEAPON].lerp(Color.WHITE, 0.55))
 	if not compact:
 		UiKit.text(ci, Vector2(tag.position.x - 40 * s, tag.position.y - 7 * s), wname.to_upper(), 11 * s, Color(1, 1, 1, 0.85), HORIZONTAL_ALIGNMENT_RIGHT, tag.size.x + 40 * s, 700, 0.18)
 	if player.stats.shield_cd > 0.0:
 		var ready_col := Color(0.45, 0.9, 1.0) if player.shield_ready() else Color(0.36, 0.3, 0.46)
-		ci.draw_circle(Vector2(tag.position.x - 16 * s, tag.get_center().y), 11 * s, UiKit.INK)
+		ci.draw_circle(Vector2(tag.position.x - 16 * s, tag.get_center().y), 11 * s, Color(0.03, 0.035, 0.06, 0.55))
 		UiKit.icon(ci, "shield", Vector2(tag.position.x - 16 * s, tag.get_center().y), 7 * s, ready_col)
 	# --- bottom right: ammo, reload, dash ---
 	var ax := w - 20.0 * s
@@ -354,36 +349,30 @@ func _draw_ammo(ci: Control) -> void:
 		# Bullet pips; the last quarter of the magazine is red.
 		var n: int = player.stats.mag_size
 		if n <= 16 and not compact:
-			var pw := 6.0 * s
+			var pw := 4.0 * s
 			var pg := 3.0 * s
 			var x0 := ax - n * (pw + pg) + pg
 			for i in n:
-				var pr := Rect2(x0 + i * (pw + pg), h - 78 * s, pw, 13 * s)
-				UiKit.panel(ci, pr.grow(1.5 * s), UiKit.INK, 4 * s)
-				var pc: Color = (Color(1.0, 0.4, 0.38) if i < maxi(1, n / 4) else UiKit.GOLD) if i < player.ammo else Color(0.36, 0.3, 0.46)
-				UiKit.panel(ci, pr, pc, 3 * s)
+				var pr := Rect2(x0 + i * (pw + pg), h - 76 * s, pw, 11 * s)
+				var pc: Color = (Color(1.0, 0.42, 0.4) if i < maxi(1, n / 4) else Color(0.95, 0.96, 1.0)) if i < player.ammo else Color(1, 1, 1, 0.18)
+				UiKit.panel(ci, pr, pc, 1.5 * s)
 	# Dash gauge.
 	var dc := Vector2(ax - 168 * s, h - 34 * s)
 	var df: float = 1.0 - clampf(player.dash_cd / player.stats.dash_cooldown, 0.0, 1.0)
 	var ready: bool = df >= 1.0
 	var dr := 17.0 * s
-	ci.draw_circle(dc + Vector2(0, 3 * s), dr + 3 * s, Color(0.08, 0.05, 0.12, 0.4))
-	ci.draw_circle(dc, dr + 3 * s, UiKit.INK)
-	ci.draw_circle(dc, dr, Color(0.3, 0.85, 1.0) if ready else Color(0.32, 0.27, 0.42))
-	if not ready:
-		ci.draw_arc(dc, dr - 3 * s, -PI / 2, -PI / 2 + TAU * df, 24, Color(0.3, 0.85, 1.0), 5 * s)
-	UiKit.icon(ci, "bolt", dc, 9 * s, Color.WHITE if ready else Color(1, 1, 1, 0.5))
+	var dcol := Color(0.4, 0.85, 1.0)
+	ci.draw_circle(dc, dr, Color(0.03, 0.035, 0.06, 0.55))
+	ci.draw_arc(dc, dr, -PI / 2, -PI / 2 + TAU * df, 48, dcol if ready else Color(dcol, 0.7), 2.0 * s, true)
+	UiKit.icon(ci, "bolt", dc, 8 * s, dcol.lerp(Color.WHITE, 0.4) if ready else Color(1, 1, 1, 0.35))
 	# Block gauge.
 	var bc := dc - Vector2(44 * s, 0)
 	var bf: float = 1.0 - clampf(player.block_cd / player.stats.block_cooldown, 0.0, 1.0)
 	var bready: bool = bf >= 1.0
 	var bcol: Color = player.color.lerp(Color.WHITE, 0.25)
-	ci.draw_circle(bc + Vector2(0, 3 * s), dr + 3 * s, Color(0.0, 0.0, 0.0, 0.4))
-	ci.draw_circle(bc, dr + 3 * s, UiKit.INK)
-	ci.draw_circle(bc, dr, bcol if bready else Color(0.18, 0.18, 0.26))
-	if not bready:
-		ci.draw_arc(bc, dr - 3 * s, -PI / 2, -PI / 2 + TAU * bf, 24, bcol, 5 * s)
-	UiKit.icon(ci, "shield", bc, 9 * s, Color.WHITE if bready else Color(1, 1, 1, 0.5))
+	ci.draw_circle(bc, dr, Color(0.03, 0.035, 0.06, 0.55))
+	ci.draw_arc(bc, dr, -PI / 2, -PI / 2 + TAU * bf, 48, bcol if bready else Color(bcol, 0.7), 2.0 * s, true)
+	UiKit.icon(ci, "shield", bc, 8 * s, bcol.lerp(Color.WHITE, 0.4) if bready else Color(1, 1, 1, 0.35))
 
 
 # --------------------------------------------------------------------------
@@ -420,7 +409,9 @@ func _draw_dead(w: float, h: float) -> void:
 			_t(Vector2(0, head_y + 30 * s), "THEY HAD %d HP LEFT" % ceili(player.killer_hp), 14, Color(1, 1, 1, 0.75 * a), HORIZONTAL_ALIGNMENT_CENTER, w)
 	else:
 		_t(Vector2(0, head_y), "OOPS!", 26, Color(1.0, 0.5, 0.5, a), HORIZONTAL_ALIGNMENT_CENTER, w)
-	_t(Vector2(0, h * 0.185 + 54 * s), "PICK A POWERUP", 20, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
+	# (Skipped under "they had N HP left", which sits in the same place.)
+	if player.killer == null or not is_instance_valid(player.killer) or player.killer_hp <= 0.0:
+		_t(Vector2(0, h * 0.185 + 54 * s), "PICK A POWERUP", 20, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, w)
 
 	var n: int = player.card_choices.size()
 	if n == 0:
@@ -482,15 +473,14 @@ func _draw_vehicle(w: float, h: float) -> void:
 	draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(0.05, 0.05, 0.1, 0.3))
 	if player.hurt_flash > 0.0:
 		draw_texture_rect(UiKit.vignette(), Rect2(0, 0, w, h), false, Color(1.0, 0.2, 0.1, player.hurt_flash * 0.5))
-	draw_arc(c, 16 * s, 0, TAU, 32, Color(UiKit.INK, 0.7), 4 * s)
-	draw_arc(c, 16 * s, 0, TAU, 32, Color(1, 1, 1, 0.9), 2 * s)
-	draw_circle(c, 2.5 * s, Color.WHITE)
+	draw_arc(c, 14 * s, 0, TAU, 64, Color(0, 0, 0.02, 0.22), maxf(2.7, 2.7 * s), true)
+	draw_arc(c, 14 * s, 0, TAU, 64, Color(0.86, 0.87, 0.9, 0.9), maxf(1.2, 1.3 * s), true)
 	if player.hit_marker > 0.0:
 		var hm: float = player.hit_marker
 		for k in 4:
 			var a := PI * 0.25 + k * PI * 0.5
 			var d := Vector2(cos(a), sin(a))
-			draw_line(c + d * 10 * s, c + d * 20 * s, Color(1, 1, 1, hm), 3 * s)
+			draw_line(c + d * 10 * s, c + d * 18 * s, Color(1, 1, 1, hm), 2 * s, true)
 	var bw := 300.0 * s
 	var r := Rect2(16 * s, h - 66 * s, bw, 50 * s)
 	UiKit.card(self, r, UiKit.PANEL, 20 * s, s)
@@ -542,18 +532,15 @@ func _draw_card(card: Dictionary, centre: Vector2, sz: Vector2, rot: float, scl:
 	var r := Rect2(-sz * 0.5, sz)
 	if selected:
 		var glow := 0.55 + 0.35 * sin(game.time * 6.0)
-		UiKit.panel(self, r.grow(12 * u), Color(rc, glow * 0.35 * alpha), 22 * u)
-		UiKit.panel(self, r.grow(6 * u), Color(rc.lerp(Color.WHITE, 0.35), glow * alpha), 18 * u)
-	var body := Color(0.1, 0.11, 0.18) if selected else Color(0.07, 0.075, 0.12)
-	UiKit.panel(self, r, Color(body, alpha), 13 * u, Color(rc if selected else rc.darkened(0.45), alpha), 3 * u, 6 * u)
+		UiKit.panel(self, r.grow(10 * u), Color(rc, glow * 0.18 * alpha), 20 * u)
+	var body := Color(0.1, 0.11, 0.17) if selected else Color(0.07, 0.075, 0.12)
+	UiKit.panel(self, r, Color(body, 0.96 * alpha), 13 * u, Color(rc.lerp(Color.WHITE, 0.2) if selected else Color(rc.darkened(0.3), 0.6), alpha), (2.0 if selected else 1.2) * u, 6 * u)
 	# Art band.
 	var band := Rect2(r.position + Vector2(7, 7) * u, Vector2(sz.x - 14 * u, sz.y * 0.4))
 	UiKit.panel(self, band, Color(rc.darkened(0.25) if selected else rc.darkened(0.6), alpha), 9 * u)
-	UiKit.panel(self, Rect2(band.position + Vector2(5, 4) * u, Vector2(band.size.x - 10 * u, band.size.y * 0.3)), Color(1, 1, 1, 0.1 * alpha), 7 * u)
 	var ic := band.get_center() + Vector2(0, 2 * u)
 	var ir := band.size.y * 0.3
 	draw_circle(ic, ir * 1.4, Color(rc.lerp(Color.WHITE, 0.2), (0.45 if selected else 0.2) * alpha))
-	UiKit.icon(self, card.icon, ic + Vector2(0, 2.5 * u), ir, Color(0, 0, 0, 0.5 * alpha))
 	UiKit.icon(self, card.icon, ic, ir, Color(1, 1, 1, (1.0 if selected else 0.7) * alpha))
 	# Rarity tag.
 	var tag: String = Cards.RARITY_NAMES[card.rarity]
@@ -616,7 +603,7 @@ func _draw_feed(ci: Control) -> void:
 		var kw := UiKit.text_width(kn, 12 * s) if kn != "" else 0.0
 		var total := vw + kw + ((80 * s if wpn != "" else 62 * s) if kn != "" else 40 * s)
 		var x := w - 10 * s - total + slide
-		UiKit.panel(ci, Rect2(x, y, total, 22 * s), Color(UiKit.PANEL, 0.85 * alpha), 11 * s, Color(UiKit.INK, alpha), 2 * s)
+		UiKit.panel(ci, Rect2(x, y, total, 22 * s), Color(UiKit.PANEL, 0.6 * alpha), 5 * s)
 		var cx := x + 8 * s
 		if kn != "":
 			_t(Vector2(cx, y + 16 * s), kn, 12, Color(entry.killer.color.lerp(Color.WHITE, 0.45), alpha), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)

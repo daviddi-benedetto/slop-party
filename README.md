@@ -109,12 +109,16 @@ PLAY** lists every button and **MODES** explains each mode.
   hands you something.
 - **Health in chunks of 25** that shakes when you are hit, drains to show
   what you lost, glows green when you heal and pulses red near death.
+- **Clean, modern HUD:** the Inter typeface, a thin light-grey ring for a
+  crosshair (no centre dot) that widens with spread, slim bars and
+  translucent panels with soft shadows instead of thick outlines; every
+  edge is anti-aliased.
 - **Reload ring** around the crosshair, a red tick when the magazine runs
   low, and the last bullets in the magazine shown red.
 - **Small views stay readable:** in a small cell (5–6 way split, or a small
   window) the HUD drops the words and makes numbers and icons bigger.
-- **Numbers in a chunky display font** (Lilita One): ammo, health, scores,
-  the countdown and the results.
+- **Numbers in a condensed display font** (Barlow Condensed): ammo,
+  health, scores, the countdown and the results.
 - **PlayStation pads** show the shape buttons (cross, circle, square,
   triangle) and L1 / R2 names; Xbox-style pads keep A / B / X / Y.
 - **Screen transitions:** a slanted curtain in the theme's colours sweeps
@@ -197,8 +201,8 @@ PLAY** lists every button and **MODES** explains each mode.
   them, smoke hangs at the muzzle, paws leave prints that fade, and slides
   kick up dust.
 - **Depth:** strong ambient occlusion (soft shadows in corners and under
-  things, even in sunlight) and ink outlines along silhouettes and creases
-  (option **Outlines**), so simple shapes and flat colours read in depth.
+  things, even in sunlight), so simple shapes and flat colours read in
+  depth. (There are no ink outlines any more: they flickered.)
 - **Light and air:** bounce light (colour from lit walls and floors spills
   into the shade), a reflection probe so glass, water and metal reflect the
   level, optional light shafts through the haze, and drifting specks in the
@@ -235,8 +239,8 @@ synthesised. Weapons, zombies, cars, trees,
 furniture, doors and castle pieces are public-domain (CC0) 3D models by
 Quaternius, Kenney and Kay Lousberg. **[ASSETS.md](ASSETS.md) lists every
 asset, its author, licence and download source**; `THIRD_PARTY_LICENSES.txt`
-carries the notices that ship with the game. The UI fonts are Fredoka and Lilita One
-(both SIL Open Font License).
+carries the notices that ship with the game. The UI fonts are Inter and Barlow
+Condensed (and Fredoka on the mystery boxes), all SIL Open Font License.
 
 ## Play
 
@@ -336,7 +340,7 @@ Q / E to turn them):
   (Bilinear, FSR 1 sharp, or **FSR 2**: temporal, so it also smooths the
   flicker and jagged texture detail, outlines and thin shapes that MSAA
   cannot reach; it replaces the anti-aliasing setting and works at 100 %
-  too), FSR sharpening, shadows, ambient occlusion, surface depth, outlines, screen effects, reflections on wet ground, bounce light, light shafts in
+  too), FSR sharpening, shadows, ambient occlusion, surface depth, screen effects, reflections on wet ground, bounce light, light shafts in
   the air (Ultra; used with one or two views), bullet holes and scorch
   marks, bloom, scenery, soft focus, sun rays, and **auto resolution** (on
   by default): a busy moment lowers the 3D resolution briefly instead of
@@ -346,7 +350,8 @@ Q / E to turn them):
   right relative to the nearest player's view.
 - **Controls:** gamepad and mouse look speed, stick dead zone, a look speed
   for each player (Player 1-6, by join order), aim assist, rumble.
-- **Gameplay:** field of view, screen shake, view bob and sway, damage
+- **Gameplay:** field of view (a slider from 60 to 130 degrees, as on a
+  16:9 screen), screen shake, view bob and sway, damage
   numbers, bot difficulty.
 - **How to play:** every button, on foot, in a vehicle and in the lobby.
 - **Modes:** what each game mode is about.
@@ -368,7 +373,7 @@ project.godot         Godot project file
 main.tscn             the only scene; everything else is built in code
 scripts/              all game code (see docs/ARCHITECTURE.md)
 assets/               3D models, plush animal meshes, audio (see ASSETS.md)
-fonts/                Fredoka and Lilita One UI fonts + their licences
+fonts/                Inter, Barlow Condensed and Fredoka fonts + their licences
 docs/                 architecture notes
 tools/                build.bat, setup_engine.ps1, smoke.sh, balance.sh
 engine/               bundled Godot editor + export templates  (not in git)

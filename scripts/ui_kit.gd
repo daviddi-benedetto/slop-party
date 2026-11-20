@@ -4,8 +4,11 @@ extends RefCounted
 ## its _draw() as `ci`. Sizes are in final pixels (callers multiply by their
 ## own scale factor).
 ##
-## Style: chunky rounded "sticker" UI - thick dark outlines, drop shadows,
-## saturated candy colours, Fredoka font.
+## Style: clean and modern - Inter for text, Barlow Condensed for numbers,
+## no ink outlines (a soft shadow keeps text readable over the 3D view),
+## slim bars, gently rounded translucent panels with a hairline edge. The
+## viewports draw 2D with MSAA (Settings.apply_viewport), so every shape
+## edge is smooth.
 
 # Palette after ROUNDS: near-black navy surfaces, off-white text, a hot orange
 # highlight, and saturated neon player colours. GOLD (the highlight), PANEL
@@ -91,10 +94,14 @@ const SHAPES := {
 static func font(weight := 700) -> Font:
 	if not _fonts.has(weight):
 		var f: Font = ThemeDB.fallback_font
-		if ResourceLoader.exists("res://fonts/Fredoka.ttf"):
+		if ResourceLoader.exists("res://fonts/Inter.ttf"):
 			var fv := FontVariation.new()
-			fv.base_font = load("res://fonts/Fredoka.ttf")
-			fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): weight}
+			fv.base_font = load("res://fonts/Inter.ttf")
+			# Callers ask for 600-800 (sized for the old chunky font); Inter
+			# reads cleaner a step lighter.
+			var ts := TextServerManager.get_primary_interface()
+			fv.variation_opentype = {ts.name_to_tag("wght"): clampi(weight - 100, 400, 800), ts.name_to_tag("opsz"): 24}
+			fv.spacing_glyph = 1 if weight >= 700 else 0
 			f = fv
 		_fonts[weight] = f
 	return _fonts[weight]
@@ -110,23 +117,27 @@ static func use_theme(look: Dictionary) -> void:
 	ACCENT = ui.get("logo_b", Color(0.3, 0.75, 1.0))
 
 
-## The chunky display font for numbers (scores, ammo, health, countdown).
+## The condensed display font for numbers (scores, ammo, health, countdown).
 static func num_font() -> Font:
 	if _num_font == null:
-		_num_font = load("res://fonts/LilitaOne.ttf") if ResourceLoader.exists("res://fonts/LilitaOne.ttf") else font(700)
+		_num_font = load("res://fonts/BarlowCondensed-SemiBold.ttf") if ResourceLoader.exists("res://fonts/BarlowCondensed-SemiBold.ttf") else font(700)
 	return _num_font
 
 
-## Outlined number in the display font.
+## A soft shadow under text (instead of the old thick ink outline): a faint
+## dark halo plus a small drop, enough to read white over a bright sky.
+static func _shadow(ci: CanvasItem, f: Font, pos: Vector2, s: String, align, width: float, fs: int, a: float) -> void:
+	ci.draw_string_outline(f, pos + Vector2(0, maxf(1.0, fs * 0.04)), s, align, width, fs, maxi(2, int(fs * 0.09)), Color(0, 0, 0.02, 0.16 * a))
+	ci.draw_string(f, pos + Vector2(0, maxf(1.0, fs * 0.045)), s, align, width, fs, Color(0, 0, 0.02, 0.45 * a))
+
+
+## A number in the display font (`outline` > 0 = with the soft shadow).
 static func num(ci: CanvasItem, pos: Vector2, s: String, px: float, color: Color,
 		align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0, outline := 0.2) -> void:
 	var f := num_font()
 	var fs := maxi(8, int(px))
-	var ink := Color(INK, color.a)
 	if outline > 0.0:
-		var o := maxi(2, int(fs * outline))
-		ci.draw_string_outline(f, pos + Vector2(0, fs * 0.08), s, align, width, fs, o, ink)
-		ci.draw_string_outline(f, pos, s, align, width, fs, o, ink)
+		_shadow(ci, f, pos, s, align, width, fs, color.a)
 	ci.draw_string(f, pos, s, align, width, fs, color)
 
 
@@ -142,9 +153,9 @@ static func weapon_icon(ci: CanvasItem, wname: String, c: Vector2, r: float, col
 		weapon_icon(ci, "Blaster", c + Vector2(-0.22, -0.16) * r, r * 0.72, color, outline)
 		weapon_icon(ci, "Blaster", c + Vector2(0.22, 0.18) * r, r * 0.72, color, outline)
 		return
-	var ink := Color(INK, color.a)
-	var o := maxf(1.5, r * 0.09)
-	var passes: Array = [[ink, o], [color, 0.0]] if outline else [[color, 0.0]]
+	# A faint shadow pass instead of the old ink outline.
+	var o := maxf(1.0, r * 0.035)
+	var passes: Array = [[Color(0, 0, 0.02, 0.3 * color.a), o], [color, 0.0]] if outline else [[color, 0.0]]
 	for pass_i in passes:
 		var col: Color = pass_i[0]
 		var grow: float = pass_i[1]
@@ -192,16 +203,13 @@ static func reset_pads() -> void:
 	_ps.clear()
 
 
-## Chunky outlined text with a hard drop shadow.
+## Text with a soft shadow (`outline` > 0; 0 = plain, for text on panels).
 static func text(ci: CanvasItem, pos: Vector2, s: String, px: float, color: Color,
 		align := HORIZONTAL_ALIGNMENT_LEFT, width := -1.0, weight := 700, outline := 0.2) -> void:
 	var f := font(weight)
 	var fs := maxi(8, int(px))
-	var ink := Color(INK, color.a)
 	if outline > 0.0:
-		var o := maxi(2, int(fs * outline))
-		ci.draw_string_outline(f, pos + Vector2(0, fs * 0.09), s, align, width, fs, o, ink)
-		ci.draw_string_outline(f, pos, s, align, width, fs, o, ink)
+		_shadow(ci, f, pos, s, align, width, fs, color.a)
 	ci.draw_string(f, pos, s, align, width, fs, color)
 
 
@@ -216,32 +224,36 @@ static func panel(ci: CanvasItem, rect: Rect2, color: Color, radius: float,
 		_sb = StyleBoxFlat.new()
 		_sb.anti_aliasing = true
 	_sb.bg_color = color
-	_sb.set_corner_radius_all(int(minf(radius, minf(rect.size.x, rect.size.y) * 0.5)))
-	_sb.corner_detail = 8
+	# Gentler corners than the old sticker look; pills (radius = half the
+	# height, used for bars) stay round.
+	var rr := minf(rect.size.x, rect.size.y) * 0.5
+	_sb.set_corner_radius_all(int(minf(radius if radius >= rr - 0.5 else radius * 0.55, rr)))
+	_sb.corner_detail = 12
 	_sb.border_color = border
 	_sb.set_border_width_all(int(border_w))
-	_sb.shadow_size = 1 if shadow > 0.0 else 0
-	_sb.shadow_color = Color(0.0, 0.0, 0.02, 0.55 * color.a)
-	_sb.shadow_offset = Vector2(0, shadow)
+	# A soft, blurred shadow instead of a hard drop.
+	_sb.shadow_size = int(shadow * 3.0) if shadow > 0.0 else 0
+	_sb.shadow_color = Color(0.0, 0.0, 0.02, 0.3 * color.a)
+	_sb.shadow_offset = Vector2(0, shadow * 0.6)
 	ci.draw_style_box(_sb, rect)
 
 
-## Sticker-style panel: ink border plus drop shadow.
+## Highlighted panel: a hairline light edge and a soft shadow.
 static func card(ci: CanvasItem, rect: Rect2, color: Color, radius: float, s: float) -> void:
-	panel(ci, rect, color, radius, Color(INK, color.a), maxf(2.0, 3.0 * s), 4.0 * s)
+	panel(ci, rect, color, radius, Color(1, 1, 1, 0.14 * color.a), maxf(1.0, 1.2 * s), 4.0 * s)
 
 
-## Progress bar with ink frame.
+## Slim progress bar on a dark translucent track.
 static func bar(ci: CanvasItem, rect: Rect2, frac: float, fill: Color, s: float, ghost := -1.0) -> void:
-	var r := rect.size.y * 0.5
-	panel(ci, rect.grow(3.0 * s), INK, r + 3.0 * s, Color(0, 0, 0, 0), 0.0, 3.0 * s)
-	panel(ci, rect, Color(0.14, 0.15, 0.23), r)
+	# Thinner than the rect asked for, centred in it.
+	var h := maxf(3.0, rect.size.y * 0.62)
+	rect = Rect2(rect.position.x, rect.get_center().y - h * 0.5, rect.size.x, h)
+	var r := h * 0.5
+	panel(ci, rect, Color(0.02, 0.025, 0.05, 0.55), r, Color(1, 1, 1, 0.08), maxf(1.0, s))
 	if ghost > frac:
-		panel(ci, Rect2(rect.position, Vector2(maxf(rect.size.y, rect.size.x * ghost), rect.size.y)), Color(1, 1, 1, 0.85), r)
+		panel(ci, Rect2(rect.position, Vector2(maxf(h, rect.size.x * ghost), h)), Color(1, 1, 1, 0.55), r)
 	if frac > 0.001:
-		var fr := Rect2(rect.position, Vector2(maxf(rect.size.y, rect.size.x * frac), rect.size.y))
-		panel(ci, fr, fill, r)
-		panel(ci, Rect2(fr.position + Vector2(r * 0.6, rect.size.y * 0.16), Vector2(maxf(0.0, fr.size.x - r * 1.2), rect.size.y * 0.22)), Color(1, 1, 1, 0.35), r)
+		panel(ci, Rect2(rect.position, Vector2(maxf(h, rect.size.x * frac), h)), fill, r)
 
 
 static func ellipse(ci: CanvasItem, c: Vector2, rx: float, ry: float, color: Color, rot := 0.0) -> void:
@@ -263,7 +275,7 @@ static func poly(ci: CanvasItem, c: Vector2, r: float, pts: Array, color: Color)
 static func portrait(ci: CanvasItem, c: Vector2, r: float, color: Color, kind: int, dead := false) -> void:
 	var ink := Color(INK, color.a)
 	var light := color.lerp(Color.WHITE, 0.6)
-	var o := r * 0.13
+	var o := r * 0.05
 	var real_kind := kind
 	kind = PORTRAIT[posmod(kind, PORTRAIT.size())]
 	# Ears (ink silhouette first, then fill).
@@ -320,8 +332,7 @@ static func prompt(ci: CanvasItem, pos: Vector2, label: String, px: float, is_ke
 		if is_ps(dev):
 			if colors.has(label):
 				var c2 := pos + Vector2(h * 0.5, -px * 0.36)
-				ci.draw_circle(c2, h * 0.5 + maxf(2.0, px * 0.1), INK)
-				ci.draw_circle(c2, h * 0.5, Color(0.16, 0.17, 0.24))
+				ci.draw_circle(c2, h * 0.5, Color(0.08, 0.09, 0.13, 0.85))
 				var gr := h * 0.24
 				var lw := maxf(1.5, px * 0.13)
 				match label:
@@ -340,13 +351,13 @@ static func prompt(ci: CanvasItem, pos: Vector2, label: String, px: float, is_ke
 			label = {"LB": "L1", "RB": "R1", "LT": "L2", "RT": "R2", "START": "OPTIONS", "BACK": "SHARE"}.get(label, label)
 	if colors.has(label) and not is_key:
 		var c := pos + Vector2(h * 0.5, -px * 0.36)
-		ci.draw_circle(c, h * 0.5 + maxf(2.0, px * 0.1), INK)
-		ci.draw_circle(c, h * 0.5, colors[label])
-		text(ci, Vector2(pos.x, pos.y), label, px * 0.9, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, h, 700, 0.14)
+		ci.draw_circle(c, h * 0.5, Color(0.08, 0.09, 0.13, 0.85))
+		ci.draw_arc(c, h * 0.5 - maxf(1.0, px * 0.06), 0, TAU, 32, colors[label], maxf(1.5, px * 0.12), true)
+		text(ci, Vector2(pos.x, pos.y - px * 0.04), label, px * 0.78, colors[label].lerp(Color.WHITE, 0.35), HORIZONTAL_ALIGNMENT_CENTER, h, 700, 0.0)
 		return h
 	var w := text_width(label, px * 0.8) + px * 0.8
 	var r := Rect2(pos.x, pos.y - px * 0.98, w, h)
-	panel(ci, r, CREAM, px * 0.3, INK, maxf(2.0, px * 0.1), px * 0.12)
+	panel(ci, r, Color(0.94, 0.95, 0.98, 0.95), px * 0.22, Color(0, 0, 0, 0.25), maxf(1.0, px * 0.05), px * 0.08)
 	ci.draw_string(font(700), Vector2(pos.x, pos.y - px * 0.08), label, HORIZONTAL_ALIGNMENT_CENTER, w, maxi(8, int(px * 0.8)), INK)
 	return w
 

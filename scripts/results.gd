@@ -138,9 +138,7 @@ func _draw() -> void:
 	var heading: String = title if title != "" else "%s WINS!" % win.name
 	var bw := UiKit.text_width(heading, 110 * s) + 140 * s
 	UiKit.card(self, Rect2(-bw * 0.5, -78 * s, bw, 150 * s), win.color.darkened(0.15), 40 * s, s * 1.6)
-	UiKit.panel(self, Rect2(-bw * 0.5 + 10 * s, -68 * s, bw - 20 * s, 50 * s), Color(1, 1, 1, 0.16), 30 * s)
 	UiKit.text(self, Vector2(-bw * 0.5, 36 * s), heading, 110 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, bw, 700, 0.14)
-	UiKit.icon(self, "crown", Vector2(-bw * 0.5 + 8 * s, -74 * s), 44 * s, UiKit.INK)
 	UiKit.icon(self, "crown", Vector2(-bw * 0.5 + 8 * s, -80 * s), 40 * s, UiKit.GOLD)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -155,8 +153,7 @@ func _draw() -> void:
 		var r := Rect2(x0 + i * (cw + gap), h - 232 * s + (1.0 - slide) * 320 * s, cw, 150 * s)
 		UiKit.card(self, r, UiKit.PANEL if i > 0 else Color(0.2, 0.12, 0.05, 0.94), 26 * s, s)
 		UiKit.panel(self, Rect2(r.position, Vector2(cw, 58 * s)).grow(-5 * s), Color(row.color, 0.9), 20 * s)
-		draw_circle(Vector2(r.position.x + 36 * s, r.position.y + 30 * s), 23 * s, UiKit.INK)
-		draw_circle(Vector2(r.position.x + 36 * s, r.position.y + 30 * s), 20 * s, UiKit.CREAM)
+		draw_circle(Vector2(r.position.x + 36 * s, r.position.y + 30 * s), 20 * s, Color(0.03, 0.035, 0.06, 0.45))
 		UiKit.portrait(self, Vector2(r.position.x + 36 * s, r.position.y + 32 * s), 12 * s, row.color, row.kind)
 		UiKit.text(self, Vector2(r.position.x + 66 * s, r.position.y + 42 * s), row.name, 30 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT, -1, 700, 0.14)
 		var place: String = ["1ST", "2ND", "3RD", "4TH", "5TH", "6TH"][i]
@@ -182,9 +179,9 @@ func _draw() -> void:
 		var ar := Rect2(w - 420 * s + (1.0 - sl) * 480 * s, 250 * s + k * 104 * s, 390 * s, 88 * s)
 		UiKit.card(self, ar, UiKit.PANEL, 24 * s, s)
 		var ic := ar.position + Vector2(46 * s, 44 * s)
-		draw_circle(ic, 32 * s, UiKit.INK)
-		draw_circle(ic, 29 * s, UiKit.GOLD)
-		UiKit.icon(self, aw[2], ic, 17 * s, UiKit.INK)
+		draw_circle(ic, 29 * s, Color(UiKit.GOLD, 0.18))
+		draw_arc(ic, 29 * s, 0, TAU, 48, UiKit.GOLD, 1.5 * s, true)
+		UiKit.icon(self, aw[2], ic, 16 * s, UiKit.GOLD)
 		UiKit.text(self, ar.position + Vector2(90 * s, 38 * s), aw[0], 30 * s, UiKit.GOLD, HORIZONTAL_ALIGNMENT_LEFT, -1, 700, 0.14)
 		UiKit.portrait(self, ar.position + Vector2(ar.size.x - 34 * s, 30 * s), 13 * s, row2.color, row2.kind)
 		var line: String = "%s  -  %s" % [row2.name, aw[1] % int(_count(aw[4], t1 + 0.2))]

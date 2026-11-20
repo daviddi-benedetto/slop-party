@@ -447,9 +447,6 @@ func _add_view(player) -> void:
 	rays.layers = 1 << (15 + _views.size())   # bits 15-20: one per view
 	cam.cull_mask |= rays.layers
 	cam.add_child(rays)
-	var ink = preload("res://scripts/outline.gd").new()
-	ink.layers = rays.layers
-	cam.add_child(ink)
 
 	var layer := CanvasLayer.new()
 	layer.layer = 0
@@ -467,7 +464,7 @@ func _add_view(player) -> void:
 	hud.player = player
 	hud.game = self
 	hud_layer.add_child(hud)
-	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "rays": rays, "ink": ink, "sfx": sfx, "player": player, "fov": 70.0,
+	var view := {"container": container, "viewport": vp, "camera": cam, "gun": gun, "blur": blur, "rays": rays, "sfx": sfx, "player": player, "fov": 70.0,
 		"scope_vp": null, "scope_cam": null}
 	_views.append(view)
 
@@ -509,15 +506,18 @@ func _layout() -> void:
 		v.container.size = cell - Vector2(gap, gap)
 		# Keep the chosen horizontal FOV whatever the cell's aspect ratio...
 		var aspect := cell.x / cell.y
-		var half_h: float = deg_to_rad(Settings.v("fov") * 0.5)
+		var hfov: float = Settings.v("fov_h")
+		var half_h: float = deg_to_rad(hfov * 0.5)
 		# ...except on a screen wider than 16:9 (ultrawide), where the extra
 		# width shows more to the sides instead of cropping the top and
 		# bottom ("Hor+"), up to 125 degrees across.
 		var screen_aspect := total.x / maxf(1.0, total.y)
 		if screen_aspect > 16.0 / 9.0 + 0.01:
-			half_h = minf(deg_to_rad(62.5), atan(tan(half_h) * screen_aspect / (16.0 / 9.0)))
+			half_h = minf(maxf(deg_to_rad(62.5), half_h), atan(tan(half_h) * screen_aspect / (16.0 / 9.0)))
 		var vfov := rad_to_deg(2.0 * atan(tan(half_h) / aspect))
-		v.fov = clampf(vfov, 50.0, 82.0)
+		# Very wide splitscreen strips keep some height (the floor scales
+		# with the chosen FOV); the top end allows a 130-degree 16:9 view.
+		v.fov = clampf(vfov, clampf(hfov * 0.5, 28.0, 62.0), 112.0)
 		v.camera.fov = v.fov
 
 
@@ -712,8 +712,7 @@ func _draw_pause(menu: Control) -> void:
 	menu.draw_set_transform(Vector2(w, h) * 0.5, 0.0, Vector2.ONE * (0.85 + 0.15 * pop))
 	var r := Rect2(-330 * s, -330 * s, 660 * s, 660 * s)
 	UiKit.card(menu, r, Color(UiKit.PANEL, UiKit.PANEL.a * pop), 50 * s, s * 2.0)
-	UiKit.panel(menu, Rect2(r.position + Vector2(14, 12) * s, Vector2(r.size.x - 28 * s, 120 * s)), Color(1, 1, 1, 0.06 * pop), 38 * s)
-	UiKit.text(menu, Vector2(r.position.x, r.position.y + 112 * s), "PAUSED", 96 * s, Color(UiKit.GOLD, pop), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.14)
+	UiKit.text(menu, Vector2(r.position.x, r.position.y + 112 * s), "PAUSED", 78 * s, Color(UiKit.GOLD, pop), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.14)
 	var info: String = (map.label() if mode == "frontline" else MODE_NAMES[mode] + "  -  " + map.label())
 	UiKit.text(menu, Vector2(r.position.x, r.position.y + 160 * s), info, 24 * s, Color(UiKit.ACCENT.lerp(Color.WHITE, 0.4), pop), HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 700, 0.1)
 	if _pause_note != "":

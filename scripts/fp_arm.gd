@@ -106,10 +106,7 @@ static func plush(col: Color, furry: bool) -> StandardMaterial3D:
 		fur.grow_amount = 0.0035
 		fur.uv1_triplanar = true
 		fur.uv1_scale = Vector3.ONE * 9.0
-		fur.next_pass = outline
 		m.next_pass = fur
-	else:
-		m.next_pass = outline
 	_mats[key] = m
 	return m
 

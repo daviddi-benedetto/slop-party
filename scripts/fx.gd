@@ -991,8 +991,8 @@ static func damage_number(parent: Node, pos: Vector3, amount: float, crit: bool,
 	l.text = "%d" % maxi(1, roundi(amount))
 	l.font = UiKit.font(700)
 	l.font_size = 72 if crit else 52
-	l.outline_size = 18
-	l.outline_modulate = UiKit.INK
+	l.outline_size = 8
+	l.outline_modulate = Color(0, 0, 0.02, 0.55)
 	l.modulate = UiKit.GOLD if crit else Color.WHITE
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.fixed_size = true

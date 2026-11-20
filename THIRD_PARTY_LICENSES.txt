@@ -41,9 +41,14 @@ Copyright The Fredoka Project Authors (https://github.com/hafontia/Fredoka-One).
 Licensed under the SIL Open Font License, Version 1.1. The full licence text
 is in fonts/OFL.txt and at https://openfontlicense.org.
 
-Lilita One font (fonts/LilitaOne.ttf): Copyright (c) 2011 Juan Montoreano,
-with Reserved Font Name Lilita. Licensed under the SIL Open Font License,
-Version 1.1; the full licence text is in fonts/OFL-LilitaOne.txt.
+Inter font (fonts/Inter.ttf): Copyright 2020 The Inter Project Authors
+(https://github.com/rsms/inter). Licensed under the SIL Open Font License,
+Version 1.1; the full licence text is in fonts/OFL-Inter.txt.
+
+Barlow Condensed font (fonts/BarlowCondensed-*.ttf): Copyright 2017 The
+Barlow Project Authors (https://github.com/jpt/barlow). Licensed under the
+SIL Open Font License, Version 1.1; the full licence text is in
+fonts/OFL-BarlowCondensed.txt.
 
 
 3. 3D models (assets/models/)

@@ -57,11 +57,8 @@ void vertex() {
 	MODELVIEW_NORMAL_MATRIX = mat3(MODELVIEW_MATRIX);
 }
 void fragment() {
-	vec2 uv = UV;
-	float inside = step(0.035, uv.x) * step(uv.x, 0.965) * step(0.2, uv.y) * step(uv.y, 0.8);
-	float f = (uv.x - 0.035) / 0.93;
-	vec3 bar = f < fill ? tint.rgb * (uv.y < 0.45 ? 1.25 : 1.0) : vec3(0.14, 0.14, 0.2);
-	ALBEDO = mix(vec3(0.03, 0.03, 0.06), bar, inside);
+	// A slim flat bar: the fill, then a dark track (no frame, no shine).
+	ALBEDO = UV.x < fill ? tint.rgb : vec3(0.08, 0.085, 0.12);
 }
 """
 
@@ -279,11 +276,11 @@ func _ready() -> void:
 	name_label.font = UiKit.font(700)
 	name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	name_label.font_size = 56
-	name_label.pixel_size = 0.0042
-	name_label.outline_size = 16
-	name_label.outline_modulate = UiKit.INK
+	name_label.pixel_size = 0.003
+	name_label.outline_size = 7
+	name_label.outline_modulate = Color(0, 0, 0.02, 0.55)
 	name_label.modulate = color.lerp(Color.WHITE, 0.45)
-	name_label.position.y = 2.62
+	name_label.position.y = 2.55
 	name_label.layers = body_layer_bit()
 	add_child(name_label)
 
@@ -293,7 +290,7 @@ func _ready() -> void:
 		_bar_material = ShaderMaterial.new()
 		_bar_material.shader = sh
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.95, 0.15)
+	quad.size = Vector2(0.8, 0.07)
 	health_bar = MeshInstance3D.new()
 	health_bar.mesh = quad
 	health_bar.material_override = _bar_material
@@ -334,8 +331,8 @@ func _ready() -> void:
 	_bubble.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_bubble.font_size = 96
 	_bubble.pixel_size = 0.0042
-	_bubble.outline_size = 24
-	_bubble.outline_modulate = UiKit.INK
+	_bubble.outline_size = 10
+	_bubble.outline_modulate = Color(0, 0, 0.02, 0.55)
 	_bubble.modulate = Color.WHITE
 	_bubble.position.y = 3.05
 	_bubble.layers = body_layer_bit()
@@ -445,7 +442,7 @@ func rebuild_stats() -> void:
 	cap.radius = 0.4 * stats.size
 	cap.height = (1.15 if crouching else 1.8) * stats.size
 	_shape.position.y = cap.height * 0.5
-	name_label.position.y = 2.62 * stats.size
+	name_label.position.y = 2.55 * stats.size
 	health_bar.position.y = 2.34 * stats.size
 	# Bullets, trails and muzzle flashes take on the colour of their effect.
 	attr_color = color

@@ -196,8 +196,8 @@ func _build_flag(i: int) -> void:
 	lab.font = UiKit.font(700)
 	lab.font_size = 160
 	lab.pixel_size = 0.01
-	lab.outline_size = 30
-	lab.outline_modulate = UiKit.INK
+	lab.outline_size = 12
+	lab.outline_modulate = Color(0, 0, 0.02, 0.55)
 	lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lab.no_depth_test = true
 	lab.position.y = 10.5

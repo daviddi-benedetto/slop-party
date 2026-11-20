@@ -448,7 +448,7 @@ func set_weapon(id: int) -> void:
 		_grip_l.visible = model.two_handed
 
 
-## Soft felt with a fuzzy shell and a thin outline of a darker shade.
+## Soft felt with a fuzzy shell (no dark outline: it flickered at a distance).
 ## vcol: the colour comes from the mesh's vertex colours (the plush bodies).
 func _plush(col: Color, furry := true, vcol := false) -> StandardMaterial3D:
 	var outline := StandardMaterial3D.new()
@@ -478,7 +478,6 @@ func _plush(col: Color, furry := true, vcol := false) -> StandardMaterial3D:
 			x.vertex_color_use_as_albedo = true
 			x.vertex_color_is_srgb = true
 	if not furry:
-		m.next_pass = outline
 		return m
 	# A fuzzy shell over the surface, then the outline: plush fur.
 	var fur := StandardMaterial3D.new()
@@ -495,7 +494,6 @@ func _plush(col: Color, furry := true, vcol := false) -> StandardMaterial3D:
 	if vcol:
 		fur.vertex_color_use_as_albedo = true
 		fur.vertex_color_is_srgb = true
-	fur.next_pass = outline
 	m.next_pass = fur
 	return m
 
