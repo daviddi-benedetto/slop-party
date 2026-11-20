@@ -16,6 +16,9 @@ extends Node3D
 ## The "bob" setting scales the walking part.
 
 const FpArm = preload("res://scripts/fp_arm.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
+const VOX_CELL := 0.014      # voxel size of the first-person gun (viewmodel units)
+const VOX_CELL_TP := 0.022   # in a character's hands
 const Fx = preload("res://scripts/fx.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
@@ -245,6 +248,10 @@ func set_weapon(id: int) -> void:
 	_flash = _part(fq, fmat, Vector3(_muzzle_xy.x, _muzzle_xy.y, _muzzle_z - 0.04))
 	_flash.visible = false
 	_swap = 0.0
+	# The voxel world style: the gun and paws in small voxels (first person
+	# finer, as it is right in front of the camera).
+	if Settings.v("voxel"):
+		Voxelizer.voxelize_node(self, VOX_CELL if _with_paw else VOX_CELL_TP, _color)
 
 
 ## Distance of the muzzle along -Z in model units (character.gd uses it).

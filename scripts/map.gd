@@ -1455,6 +1455,11 @@ static func _tex(kind: String) -> Array:
 ## Primitive meshes and our own ArrayMeshes have different vertex formats, so
 ## they go into separate batches.
 func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true, surface := 0, kind := "") -> void:
+	# The voxel style for every remaining plain material (hills, horizon,
+	# pieces built with their own StandardMaterial3D); see-through and
+	# unshaded ones stay as they are (Voxel.from_standard).
+	if Voxel.on and mat is BaseMaterial3D and (mat as BaseMaterial3D).shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED:
+		mat = Voxel.from_standard(mat)
 	if kind == "":
 		kind = "p" if mesh is PrimitiveMesh else "c"
 	var key := "%d_%s_%s" % [mat.get_instance_id() if mat != null else 0, kind, shadow]
@@ -1469,9 +1474,9 @@ func _add(mesh: Mesh, mat: Material, xf: Transform3D, shadow := true, surface :=
 	_batches[key][2].append_from(mesh, surface, xf)
 
 
-## Voxel models (voxelizer.gd) are instanced, not merged: their shader
-## finds each voxel's colour from the model-space position. One MultiMesh
-## per model (and per chunk on big maps).
+## Voxel models (voxelizer.gd) are instanced: one MultiMesh per model per
+## VOX_CHUNK square and detail level (merging them all into one atlas was
+## tried: no faster to draw, and much slower to load).
 var _vox_batches := {}
 
 
@@ -1481,38 +1486,19 @@ var _vox_batches := {}
 const VOX_CHUNK := 20.0
 
 
-func _add_vox(mesh: Mesh, mat: Material, xf: Transform3D, shadow: bool, lod: int) -> void:
-	var key := "%d_%d_%s_%d_%d" % [mesh.get_instance_id(), mat.get_instance_id(), shadow,
-		floori(xf.origin.x / VOX_CHUNK), floori(xf.origin.z / VOX_CHUNK)]
+## vx: Voxelizer.model() result [mesh, material, key, data].
+func _add_vox(vx: Array, xf: Transform3D, shadow: bool, lod: int, _sway: bool) -> void:
+	var key := "%s_%s_%d_%d_%d" % [vx[2], shadow, lod, floori(xf.origin.x / VOX_CHUNK), floori(xf.origin.z / VOX_CHUNK)]
 	if not _vox_batches.has(key):
-		_vox_batches[key] = [mesh, mat, shadow, [], lod]
-	_vox_batches[key][3].append(xf)
+		_vox_batches[key] = [vx[0], vx[1], shadow, lod, []]
+	_vox_batches[key][4].append(xf)
 
 
 func _flush() -> void:
 	_lay_surfaces()   # any decal added after _build_floor
-	for key in _vox_batches:
-		var vb: Array = _vox_batches[key]
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = vb[0]
-		var xfs: Array = vb[3]
-		mm.instance_count = xfs.size()
-		for i in xfs.size():
-			mm.set_instance_transform(i, xfs[i])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.multimesh = mm
-		mmi.material_override = vb[1]
-		if not vb[2]:
-			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		if vb[4] == 0:
-			mmi.visibility_range_end = Voxelizer.FAR_FROM
-			mmi.visibility_range_end_margin = 4.0
-		else:
-			mmi.visibility_range_begin = Voxelizer.FAR_FROM
-			mmi.visibility_range_begin_margin = 4.0
-		add_child(mmi)
-	_vox_batches.clear()
+	if "--clutter" in OS.get_cmdline_user_args():
+		print("[clutter] batches: %d merged, %d voxel batches" % [_batches.size(), _vox_batches.size()])
+	_flush_vox()
 	for key in _batches:
 		var b: Array = _batches[key]
 		var mi := MeshInstance3D.new()
@@ -1522,6 +1508,38 @@ func _flush() -> void:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(mi)
 	_batches.clear()
+
+
+func _flush_vox() -> void:
+	if "--clutter" in OS.get_cmdline_user_args():
+		print("[clutter] %d voxel multimeshes" % _vox_batches.size())
+	for key in _vox_batches:
+		var vb: Array = _vox_batches[key]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = vb[0]
+		var xfs: Array = vb[4]
+		mm.instance_count = xfs.size()
+		for i in xfs.size():
+			mm.set_instance_transform(i, xfs[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.material_override = vb[1]
+		var lod: int = vb[3]
+		if not vb[2] or lod == 1:
+			# (The coarse far versions cast no shadows: past 55 m the
+			# shadow cascades are too coarse to show them anyway.)
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# Near and far versions cross-fade (dithered) over FAR_FADE metres.
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		if lod == 0:
+			mmi.visibility_range_end = Voxelizer.FAR_FROM
+			mmi.visibility_range_end_margin = Voxelizer.FAR_FADE
+		else:
+			mmi.visibility_range_begin = Voxelizer.FAR_FROM
+			mmi.visibility_range_begin_margin = Voxelizer.FAR_FADE
+		add_child(mmi)
+	_vox_batches.clear()
 
 
 func _glows(mat: String) -> bool:
@@ -1551,10 +1569,10 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 			var sc := (s3.x + s3.y + s3.z) / 3.0
 			var vx := Voxelizer.model(path, Models.parts(path), sc, leafy)
 			if not vx.is_empty():
-				_add_vox(vx[0], vx[1], xf, shadow, 0)
+				_add_vox(vx, xf, shadow, 0, leafy)
 				var vf := Voxelizer.model(path, Models.parts(path), sc, leafy, true)
 				if not vf.is_empty():
-					_add_vox(vf[0], vf[1], xf, shadow, 1)
+					_add_vox(vf, xf, shadow, 1, leafy)
 				if collide == "box":
 					_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
 				continue

@@ -404,6 +404,11 @@ func _process(_delta: float) -> void:
 		_fr_worst = maxf(_fr_worst, dt)
 		if dt > 0.025:
 			_fr_slow += 1
+		if dt > 0.1 and _args.has("hitches"):
+			print("[hitch] %.0f ms at %.1f s (match time %.1f) pipelines compiled: canvas %d mesh %d surface %d draw %d specialization %d" % [dt * 1000.0, now / 1000000.0, game.time if game != null else -1.0,
+				Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_CANVAS), Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_MESH),
+				Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SURFACE), Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_DRAW),
+				Performance.get_monitor(Performance.PIPELINE_COMPILATIONS_SPECIALIZATION)])
 	_fr_last = now
 
 
@@ -430,6 +435,32 @@ func _voxel_bake() -> void:
 	for path in ["survival/Tree_Large", "survival/Tree_Autumn", "survival/Tree"]:
 		for s in [4.6, 4.8, 5.0, 5.2, 5.4, 5.6, 5.8]:
 			Vz.model(path, Mdl.parts(path), s, true)
+	# Characters with every accessory, and every weapon in first and third
+	# person (character.gd, viewmodel.gd). The player colour is a shader
+	# uniform, so one colour covers all.
+	var Ch = preload("res://scripts/character.gd")
+	var Vm = preload("res://scripts/viewmodel.gd")
+	var Kit = preload("res://scripts/ui_kit.gd")
+	# (Some parts use shades of the player colour, so every colour too:
+	# player colours, Frontline team colours, the mystery box gold.)
+	var colors: Array = Kit.PLAYER_COLORS.duplicate()
+	colors.append_array(preload("res://scripts/frontline.gd").TEAM_COLORS)
+	colors.append(Color(1.0, 0.75, 0.25))
+	for col in colors:
+		for k in Kit.KIND_NAMES.size():
+			for acc in Kit.HAT_NAMES.size():
+				var ch = Ch.new()
+				add_child(ch)
+				ch.build(k, col, 1, true, acc, acc % Kit.FACE_NAMES.size(), acc % Kit.BACK_NAMES.size())
+				ch.free()
+	for id in preload("res://scripts/weapons.gd").LIST.size():
+		for fp in [true, false]:
+			for col in colors:
+				var vm = Vm.new()
+				add_child(vm)
+				vm.build(col, 1, id, fp)
+				vm.free()
+	print("[voxel-bake] characters and weapons: %d voxelized so far" % Vz.stats.live)
 	print("[voxel-bake] done: %d models voxelized (%d ms)" % [Vz.stats.live, Vz.stats.ms])
 	get_tree().quit()
 

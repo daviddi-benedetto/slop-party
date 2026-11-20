@@ -261,11 +261,37 @@ The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
   props (prop.gd) and the lobby trees (stage.gd) use the same voxels.
   Doors, pickups and other `toy_node()` models with `env` = true get the
   voxel shader; characters, guns, pets and zombies pass `env` = false.
-- **Performance** (RTX 2070, Hightown, 6 views, no auto resolution):
-  17.4 ms, 10.3 M triangles a frame (the smooth style drew 23 M: the
-  greedy meshes are lighter than the original models).
-- Far away, per-voxel shading fades out (`vox_amount`, 2-5 px per cube) so
-  nothing shimmers.
+- **Random depth on every voxel face** (`vox_depth` in voxel.gd, the same
+  logic in voxelizer.gd `PROP_CODE`): a hash gives each face a height;
+  comparing with the 4 neighbours gives a lit lip where it steps down and
+  a shadowed corner where it steps up, plus a small random tilt. Works at
+  any distance; level surfaces also get real parallax up to 28 m with the
+  same heights. Detail fades only below ~1-2.6 px per voxel (average
+  footprint, `vox_amount`).
+- **Voxel meshes** store colours in a 2D atlas: every exposed face cell is
+  one texel (UV = texel in pixels, UV2 = position in face cells, TANGENT /
+  BINORMAL = the face axes), so meshes could be merged; map.gd still
+  instances them (MultiMesh per model per 20 m chunk: merging was no faster
+  to draw and much slower to load).
+- **Far versions**: 2x coarser voxels, dithered cross-fade at 55 m over
+  14 m (`FAR_FROM`, `FAR_FADE`), no shadows from the far versions.
+- **Node trees** (`Voxelizer.voxelize_node(root, cell, accent)`): every
+  opaque MeshInstance3D under root becomes voxels in place, so rigid parts
+  keep animating: characters (character.gd `VOX_CELL` 2.5 cm, hit flash via
+  the `flash` uniform), viewmodels (1.4 cm first person, 2.2 cm in hands),
+  vehicles (6 cm), doors, pickups. Materials coloured like `accent` (the
+  player colour) are drawn from a shader uniform. Skinned meshes (pets,
+  zombies) and custom shaders (scope lens) are skipped.
+- **Bake** (`--voxel-bake`) covers every map in every theme, every
+  character with every accessory and every weapon in every player / team
+  colour; vehicles and pickups are voxelized on first use and cached.
+- **Hitches**: game._prewarm draws every effect once in front of the first
+  camera behind the opening curtain (shader pipelines compile only when
+  first drawn; the old spot 60 m underground compiled nothing), and bots
+  stagger their first path search (bot_brain `_start_delay`). `--hitches`
+  prints frames over 100 ms with pipeline compile counts.
+- **Performance** (RTX 2070, uncapped, no auto resolution): Hightown
+  4 views 12.4 ms, Suburb 6 views 13.9 ms, 1 view ~6.4 ms.
 
 **Making a prop in the voxel style:** use any model (glTF / glb in
 `assets/models/`, CC0) through `map._model()` or `prop.gd`; it is voxelized

@@ -15,6 +15,8 @@ extends AnimatableBody3D
 ## +X. map.gd places them with _door().
 
 const Models = preload("res://scripts/models.gd")
+const Voxel = preload("res://scripts/voxel.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
 const Debris = preload("res://scripts/debris.gd")
 const Fx = preload("res://scripts/fx.gd")
 
@@ -59,11 +61,14 @@ func _ready() -> void:
 		mi.transform = Transform3D(rot * Basis.from_scale(scl), Vector3(width * 0.5, 0, 0) - rot * (Vector3(b.get_center().x, b.position.y, b.get_center().z) * scl)) * part[1]
 		mi.visibility_range_end = 70.0
 		holder.add_child(mi)
-		Models.toy_node(mi)
+		if not Voxel.on:
+			Models.toy_node(mi)
 		var mesh: Mesh = part[0]
 		var mat := mesh.surface_get_material(0)
 		if mat is StandardMaterial3D and (mat as StandardMaterial3D).albedo_texture == null:
 			_wood = (mat as StandardMaterial3D).albedo_color
+	if Voxel.on:
+		Voxelizer.voxelize_node(holder, Voxel.SIZE * 0.6)   # the voxel style: the door in voxels
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(width, height, 0.14)
 	var cs := CollisionShape3D.new()

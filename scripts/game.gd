@@ -258,10 +258,38 @@ func _ready() -> void:
 	_last_usec = Time.get_ticks_usec()
 
 
-## Play every effect once, out of sight, while the countdown runs, so the
-## first real explosion or confetti burst does not hitch on shader setup.
+## Play every effect once behind the opening curtain, so the first real
+## shot, explosion or confetti burst does not hitch: a material's shaders
+## (pipelines) are only compiled the first time a camera actually draws it,
+## so the effects go 3 m in front of the first view's camera (muted), and
+## are removed before the curtain lifts.
 func _prewarm() -> void:
-	var p := Vector3(0, -60, 0)
+	var cam: Camera3D = _views[0].camera if not _views.is_empty() else null
+	if cam == null or not is_instance_valid(cam):
+		return
+	var before := {}
+	for c in world.get_children():
+		before[c] = true
+	var p: Vector3 = cam.global_position - cam.global_transform.basis.z * 3.0
+	AudioServer.set_bus_mute(0, true)
+	Fx.impact(world, p, Vector3.UP, "wood")
+	Fx.impact(world, p, Vector3.UP, "metal")
+	Fx.impact(world, p, Vector3.UP, "dirt")
+	Fx.impact(world, p, Vector3.UP, "snow")
+	Fx.impact(world, p, Vector3.UP, "stone")
+	Fx.casing(world, p, Vector3.RIGHT)
+	Fx.paw_print(world, p, 0.0, Color.WHITE)
+	Gore.hit(world, p, Vector3.FORWARD, 30.0)
+	# A harmless shot (no damage) and every view's muzzle flash.
+	if not players.is_empty():
+		var b = preload("res://scripts/bullet.gd").new()
+		b.setup(players[0], Vector3.DOWN, 0.0)
+		world.add_child(b)
+		b.global_position = p + Vector3.UP * 0.5
+		b.orient()
+	for v in _views:
+		if v.gun != null and v.gun._flash != null:
+			v.gun._flash.visible = true
 	Fx.flash(world, p, Color.WHITE, 0.1, 0.5, 0.2)
 	Fx.ring(world, p, Color.WHITE, 0.1, 0.5, 0.2)
 	Fx.burst(world, p, Color.WHITE, 4, 1.0, 0.2, 0.3)
@@ -285,6 +313,18 @@ func _prewarm() -> void:
 	Fx.decal(world, p, Vector3.UP, "hole", 0.2)
 	Fx.decal(world, p, Vector3.UP, "scorch", 0.2)
 	preload("res://scripts/debris.gd").burst(world, Transform3D(Basis(), p), Vector3.ONE, Vector3.ONE * 0.2, Color.GRAY, 1, Vector3.ZERO, 0.5)
+	# Draw them for a few frames, then clear them away (and unmute).
+	for i in 4:
+		await get_tree().process_frame
+	for v in _views:
+		if v.gun != null and is_instance_valid(v.gun) and v.gun._flash != null:
+			v.gun._flash.visible = false
+	# (Hidden and moved away rather than freed: some still have timers.)
+	for c in world.get_children():
+		if not before.has(c) and is_instance_valid(c) and not (c in players) and c is Node3D:
+			(c as Node3D).visible = false
+			(c as Node3D).global_position += Vector3(0, -400, 0)
+	AudioServer.set_bus_mute(0, Settings.v("master") == 0)
 
 
 func _exit_tree() -> void:
@@ -697,7 +737,10 @@ func _build_overlays() -> void:
 	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(_fade)
-	create_tween().tween_property(_fade, "color:a", 0.0, 0.5)
+	# (The curtain holds a moment while _prewarm's effects are drawn.)
+	var ft := create_tween()
+	ft.tween_interval(0.25)
+	ft.tween_property(_fade, "color:a", 0.0, 0.5)
 
 
 func _draw_pause(menu: Control) -> void:

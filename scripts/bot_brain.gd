@@ -38,6 +38,9 @@ var _think := 0.0
 var _path := PackedVector3Array()
 var _path_i := 0
 var _repath := 0.0
+## Bots plan their first path at different moments, so twelve path searches
+## do not all land in the frame the countdown ends (a hitch).
+var _start_delay := randf() * 0.8
 var _strafe := 1.0
 var _strafe_t := 0.0
 var _wobble := Vector2.ZERO
@@ -126,7 +129,9 @@ func update_buttons(player, delta: float) -> void:
 	else:
 		_los_time = 0.0
 		_repath -= delta
-		if _repath <= 0.0 or _path_i >= _path.size():
+		if _start_delay > 0.0:
+			_start_delay -= delta
+		elif _repath <= 0.0 or _path_i >= _path.size():
 			_repath = 1.2
 			var goal: Vector3
 			if _target != null:

@@ -17,6 +17,7 @@ extends Node3D
 ## Local space: feet at y = 0, facing -Z, about 1.72 m tall plus ears.
 
 const Viewmodel = preload("res://scripts/viewmodel.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
 const Weapons = preload("res://scripts/weapons.gd")
 const Models = preload("res://scripts/models.gd")
 const Plush = preload("res://scripts/plush.gd")
@@ -81,6 +82,9 @@ var _squash_v := 0.0
 var _was_floor := true
 var _blink := 2.0
 var _flash := 0.0
+## Voxel style: voxel size in metres for characters, and their materials.
+const VOX_CELL := 0.025
+var _vox_mats: Array = []
 var _pop := 1.0
 var _eye_pos := Vector3(0.16, 0.07, -0.33)   # right eye, in head space
 var _accent: StandardMaterial3D
@@ -182,6 +186,9 @@ func build(k: int, col: Color, layer_bits := 1, with_gun := true, hat_id := 0, f
 	_build_hat()
 	_build_face()
 	_build_back()
+	# The voxel world style: the plush animal in small voxels too.
+	if Settings.v("voxel"):
+		_vox_mats = Voxelizer.voxelize_node(self, VOX_CELL, color)
 
 
 ## A limb: {root (at the joint), seg (the capsule), paw}. _reach() aims it.
@@ -587,6 +594,8 @@ func _show_knife(at: Vector3, f: float) -> void:
 			mi.transform = Transform3D(Basis.from_scale(Vector3.ONE * k), -grip * k) * part[1]
 			_knife.add_child(mi)
 			Models.toy_node(mi, false)
+		if Settings.v("voxel"):
+			_vox_mats.append_array(Voxelizer.voxelize_node(_knife, VOX_CELL))
 	_knife.visible = true
 	_knife.position = at
 	# Blade up and back on the wind-up, forward and down through the cut.
@@ -812,6 +821,8 @@ func animate(delta: float, speed: float, on_floor: bool, vy: float, pitch: float
 		_flash = maxf(0.0, _flash - delta * 6.0)
 		for m in [_mat_body, _mat_light, _mat_paw]:
 			m.emission_energy_multiplier = _flash * 1.6
+		for m in _vox_mats:
+			m.set_shader_parameter("flash", _flash * 0.5)
 
 
 # --------------------------------------------------------------------------

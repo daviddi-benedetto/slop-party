@@ -247,7 +247,11 @@ func apply() -> void:
 		win.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
 		win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
 		win.content_scale_size = res
-	if not _uncapped:
+	if _uncapped:
+		# Benchmarks: no v-sync, no frame cap, so frame times show the real cost.
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = 0
+	else:
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v("vsync") else DisplayServer.VSYNC_DISABLED)
 		# A frame limiter fighting v-sync causes uneven frame pacing. With v-sync
 		# on, only limit when the cap is clearly below the display's refresh

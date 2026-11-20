@@ -133,10 +133,15 @@ PLAY** lists every button and **MODES** explains each mode.
 The world is built from small cubes, in the spirit of voxel shooters like
 Teardown: every wall, floor, building, tree, car and prop is made of 10 cm
 voxels, each with its own flat colour taken from the original textures
-(brick, plaster, timber...), with blocky silhouettes, flush surfaces with
-sunken mortar and the odd missing voxel. The lobby and podium match.
-Characters, guns and pets stay smooth plush. Options → Graphics → **World
-style** switches back to the smooth look (from the next match).
+(brick, plaster, timber...), with blocky silhouettes. Every face of every
+voxel sits at its own random depth (lit edges where it steps down, shaded
+corners where it steps up), so surfaces have texture at any distance; up
+close the floors and walls really step in and out. The plush animals, their
+guns (first and third person), vehicles, doors and mystery boxes are voxels
+too; only the HUD, the sky and effects are not. Far away, models swap to a
+coarser voxel version with a smooth cross-fade (no pop-in). Options →
+Graphics → **World style** switches back to the smooth look (from the next
+match).
 
 ### Maps
 

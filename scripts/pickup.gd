@@ -20,6 +20,8 @@ extends Area3D
 
 const Viewmodel = preload("res://scripts/viewmodel.gd")
 const Models = preload("res://scripts/models.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
+const VOX_CELL := 0.04
 const Weapons = preload("res://scripts/weapons.gd")
 const Fx = preload("res://scripts/fx.gd")
 
@@ -191,6 +193,9 @@ func _fill() -> void:
 	_active = true
 	_ring_mat.emission_energy_multiplier = 1.8
 	_light.visible = true
+	# The voxel world style: box, lid and contents in voxels.
+	if Settings.v("voxel"):
+		Voxelizer.voxelize_node(self, VOX_CELL)
 
 
 func prompt() -> String:

@@ -31,6 +31,8 @@ const Fx = preload("res://scripts/fx.gd")
 const Bullet = preload("res://scripts/bullet.gd")
 const Stats = preload("res://scripts/stats.gd")
 const Models = preload("res://scripts/models.gd")
+const Voxelizer = preload("res://scripts/voxelizer.gd")
+const VOX_CELL := 0.06          # voxel style: vehicles in 6 cm voxels
 const Prop = preload("res://scripts/prop.gd")
 
 static var _tracer_bullet: BoxMesh
@@ -155,6 +157,10 @@ func _ready() -> void:
 		"racer": _build_racer()
 		_: _build_buggy()
 	_merge_tree(_visual)
+	# The voxel world style: the vehicle in voxels (moving parts stay
+	# separate, so wheels and rotors still turn).
+	if Settings.v("voxel"):
+		Voxelizer.voxelize_node(_visual, VOX_CELL, color)
 	_mg_stats = _weapon_stats(10.0, 0.0, 160.0, 0.0, 0.03)
 	_main_stats = _weapon_stats(130.0, 4.5, 85.0, 7.0, 0.0) if type == "tank" else _weapon_stats(75.0, 3.5, 60.0, 0.0, 0.02)
 	game.actors.append(self)

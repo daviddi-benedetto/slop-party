@@ -165,7 +165,7 @@ uniform float fade_far = 30.0;
 uniform sampler2D macro_tex : filter_linear_mipmap, repeat_enable;
 uniform float weather = 1.0;
 uniform float wet = 0.0;
-uniform float vox_depth = 1.0;    // deepest cube, in cube sizes
+uniform float relief_depth = 1.0; // deepest cube, in cube sizes
 varying vec3 w_pos;
 varying vec3 w_nrm;
 %s
@@ -174,14 +174,16 @@ void vertex() {
 	w_nrm = normalize(mat3(MODEL_MATRIX) * NORMAL);
 }
 // How far a cube is sunk: 0 = flush with the surface, 1 = deepest.
-float cell_h(vec2 c, float layer) {
+float cell_h(vec2 c, float layer, vec3 cur_T, vec3 cur_B, vec3 cur_N) {
 	vec2 uvc = (c + 0.5) * vox_size * uv_scale;
 	float g = vox_size * uv_scale;
 	float ht = textureGrad(height_tex, uvc, vec2(g, 0.0), vec2(0.0, g)).r;
-	// Teardown-like: surfaces are flush; grooves in the texture (mortar,
-	// seams) are sunk half a voxel and a few voxels are simply missing.
-	float s = (1.0 - ht) > 0.45 ? 0.5 : 0.0;
-	return vox_hash(vec3(c, layer)) > 0.988 ? 0.8 : s;
+	// Every cube face at its own random depth (vox_h, the same numbers the
+	// fake relief shading uses), grooves in the texture (mortar, seams)
+	// deeper, and now and then a voxel simply missing.
+	vec3 c3 = cur_T * c.x + cur_B * c.y + cur_N * layer;
+	float s = (1.0 - vox_h(c3, cur_N)) * 0.55 + ((1.0 - ht) > 0.45 ? 0.35 : 0.0);
+	return vox_hash(c3) > 0.988 ? 1.0 : min(s, 0.9);
 }
 void fragment() {
 	vec3 n = normalize(w_nrm);
@@ -194,11 +196,12 @@ void fragment() {
 	float dist = length(to_cam);
 	vec3 v = to_cam / max(dist, 0.0001);
 	vec3 vt = vec3(dot(v, T), dot(v, B), dot(v, N));
-	// Relief only up close: one-voxel steps are invisible past ~14 m.
-	float k = vox_depth * amt * (1.0 - smoothstep(8.0, 14.0, dist));
+	// Real parallax relief within ~28 m; beyond, the fake relief shading
+	// (vox_depth) carries the same heights, so there is no visible edge.
+	float k = relief_depth * amt * (1.0 - smoothstep(18.0, 28.0, dist));
 	vec2 p = f;
 	vec2 cellp = floor(p);
-	float hd = cell_h(cellp, layer);
+	float hd = cell_h(cellp, layer, T, B, N);
 	float cur = 0.0;
 	bool side = false;
 	vec2 side_n = vec2(0.0);
@@ -215,7 +218,7 @@ void fragment() {
 			cur += ls;
 			vec2 nc = floor(np);
 			if (nc != cellp) {
-				float nh = cell_h(nc, layer);
+				float nh = cell_h(nc, layer, T, B, N);
 				if (cur >= nh) {
 					// Entered a taller cube from the side.
 					side = true;
@@ -251,18 +254,18 @@ void fragment() {
 		g2 = dFdy(uv);
 	}
 	vec3 col = tint * textureGrad(albedo_tex, uv, g1, g2).rgb;
-	float r = vox_hash(vec3(cellp, layer));
-	float seam = 1.0;
-	vec3 wn;
+	vec3 c3 = T * cellp.x + B * cellp.y + N * layer;
+	vec3 wn = N;
+	float sh = 1.0;
 	if (side) {
 		wn = normalize(T * side_n.x + B * side_n.y + N * 0.15);
-		col *= mix(1.0, 0.8, amt);
+		col *= mix(1.0, 0.78, amt);
 	} else {
-		wn = vox_bevel(fract(p), N, T, B, amt, seam);
+		vox_depth(c3, fract(p), T, B, N, amt, wn, sh);
 	}
 	// Sunk cubes sit in their own shadow.
-	float cavity = mix(1.0, mix(1.0, 0.72, hd), amt);
-	col *= mix(1.0, 0.92 + 0.16 * r, amt) * seam * cavity;
+	float cavity = mix(1.0, mix(1.0, 0.7, hd), amt);
+	col *= sh * cavity;
 	vec2 wuv = f * vox_size;
 	float mac = texture(macro_tex, wuv * 0.035).r;
 	float mac2 = texture(macro_tex, wuv * 0.11 + vec2(0.37, 0.71)).r;

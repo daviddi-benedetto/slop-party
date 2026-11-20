@@ -50,9 +50,38 @@ void vox_frame(vec3 n, out vec3 T, out vec3 B, out vec3 N) {
 // 0..1: how much voxel detail this pixel can show (fades out below a few
 // pixels per cube, before it would alias). f = face coordinates in cubes.
 float vox_amount(vec2 f) {
+	// Pixels per cube from its average footprint (not the most squashed
+	// side), so floors seen at a low angle keep their detail.
 	vec2 fw = fwidth(f);
-	float ppc = 1.0 / max(max(fw.x, fw.y), 1e-4);
-	return smoothstep(2.0, 5.0, ppc);
+	float ppc = 1.0 / max(sqrt(fw.x * fw.y), 1e-4);
+	return smoothstep(0.9, 2.6, ppc);
+}
+// Height of a cube face, 0..1: every face of every cube stands at its own
+// random depth (surface.gd's parallax uses the same numbers).
+float vox_h(vec3 c, vec3 N) {
+	return vox_hash(c + N * 0.37 + vec3(13.1, 7.3, 2.9));
+}
+// Fake relief, at any distance: the face is lit by its own small random
+// tilt; where it steps DOWN to a neighbour the edge rounds over (catches
+// light), where it steps UP the corner sits in shadow; higher faces are a
+// little lighter. c = cube index, fr = position on the face (0..1), T/B/N =
+// the face frame (axis-aligned, so c +- T is the next cube).
+void vox_depth(vec3 c, vec2 fr, vec3 T, vec3 B, vec3 N, float amt, inout vec3 nrm, out float shade) {
+	float h0 = vox_h(c, N);
+	float dl = h0 - vox_h(c - T, N);
+	float dr = h0 - vox_h(c + T, N);
+	float dd = h0 - vox_h(c - B, N);
+	float du = h0 - vox_h(c + B, N);
+	float w = 0.24;
+	float el = 1.0 - smoothstep(0.0, w, fr.x);
+	float er = 1.0 - smoothstep(0.0, w, 1.0 - fr.x);
+	float ed = 1.0 - smoothstep(0.0, w, fr.y);
+	float eu = 1.0 - smoothstep(0.0, w, 1.0 - fr.y);
+	vec2 tilt = vec2(-max(dl, 0.0) * el + max(dr, 0.0) * er, -max(dd, 0.0) * ed + max(du, 0.0) * eu);
+	float ao = max(-dl, 0.0) * el + max(-dr, 0.0) * er + max(-dd, 0.0) * ed + max(-du, 0.0) * eu;
+	vec2 rnd = vec2(vox_hash(c * 1.7 + 3.1), vox_hash(c * 2.3 + 7.7)) - 0.5;
+	nrm = normalize(nrm + (T * (tilt.x * 1.5 + rnd.x * 0.3) + B * (tilt.y * 1.5 + rnd.y * 0.3)) * amt);
+	shade = mix(1.0, (0.8 + 0.32 * h0) * (1.0 - 0.5 * min(ao, 1.0)), amt);
 }
 // Bevelled cube face: a normal tilted towards the nearest edges and a
 // darker seam. fr = position inside the face (0..1).
@@ -153,10 +182,10 @@ void fragment() {
 	if (use_vcol) {
 		c *= COLOR.rgb;
 	}
-	float r = vox_hash(cell);
-	float seam;
-	vec3 vn = vox_bevel(fract(f), wn, T, B, amt, seam);
-	c *= mix(1.0, 0.92 + 0.16 * r, amt) * seam;
+	float sh;
+	vec3 vn = wn;
+	vox_depth(cell, fract(f), T, B, N, amt, vn, sh);
+	c *= sh;
 	ALBEDO = c;
 	NORMAL = normalize((VIEW_MATRIX * vec4(vn, 0.0)).xyz);
 	ROUGHNESS = rough;
