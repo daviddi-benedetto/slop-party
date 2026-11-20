@@ -21,9 +21,23 @@ extends Node
 signal changed
 
 const ON_OFF := ["Off", "On"]
+const RES_NAMES := ["Native", "1280 x 720", "1600 x 900", "1920 x 1080", "2560 x 1440", "3840 x 2160 (4K)",
+	"2560 x 1080 (21:9)", "3440 x 1440 (21:9)", "3840 x 1600 (21:9)", "5120 x 2160 (21:9)", "3840 x 1080 (32:9)", "5120 x 1440 (32:9)"]
+const RES_SIZES := [Vector2i.ZERO, Vector2i(1280, 720), Vector2i(1600, 900), Vector2i(1920, 1080), Vector2i(2560, 1440), Vector2i(3840, 2160),
+	Vector2i(2560, 1080), Vector2i(3440, 1440), Vector2i(3840, 1600), Vector2i(5120, 2160), Vector2i(3840, 1080), Vector2i(5120, 1440)]
 const ITEMS := [
 	{"section": "DISPLAY"},
-	{"key": "fullscreen", "label": "Fullscreen", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	# "Fullscreen" is a borderless window the size of the screen (quick to
+	# alt-tab); "Exclusive" hands the screen to the game (can cut latency).
+	{"key": "fullscreen", "label": "Window mode", "opts": ["Windowed", "Fullscreen", "Exclusive fullscreen"], "vals": [0, 1, 2], "def": 1},
+	# The whole game (3D and menus) is drawn at this size and scaled to the
+	# window; "Native" = the window's own size. A size whose shape differs from
+	# the screen gets black bars. Ultrawide 21:9 and super-ultrawide 32:9
+	# sizes are included; on an ultrawide screen "Native" already fills it.
+	{"key": "resolution", "label": "Resolution", "opts": RES_NAMES, "vals": RES_SIZES, "def": 0},
+	# Ultrawide: keep the HUD in a 16:9 area in the middle of the screen so
+	# health and ammo are not out in your peripheral vision.
+	{"key": "hud_width", "label": "HUD width (ultrawide)", "opts": ["Full screen", "16:9 centred"], "vals": [0, 1], "def": 0},
 	{"key": "vsync", "label": "V-Sync", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# "Display" = let V-Sync pace the frames at the screen's own refresh rate
 	# (or cap at that rate with V-Sync off). A fixed cap that does not divide
@@ -33,7 +47,18 @@ const ITEMS := [
 	{"key": "preset", "label": "Quality preset", "opts": ["Custom", "Low", "Medium", "High", "Ultra"], "vals": [0, 1, 2, 3, 4], "def": 3},
 	{"key": "aa", "label": "Anti-aliasing", "opts": ["Off", "FXAA", "MSAA 2x", "MSAA 4x", "MSAA 8x"], "vals": [0, 1, 2, 3, 4], "def": 2},
 	{"key": "motion_blur", "label": "Motion blur", "range": [0, 10], "def": 0},
-	{"key": "scale", "label": "Render scale", "opts": ["50%", "67%", "75%", "85%", "100%"], "vals": [0.5, 0.67, 0.75, 0.85, 1.0], "def": 4},
+	# 3D resolution as a share of the screen's. Above 100 % is supersampling:
+	# drawn bigger, then shrunk down: the smoothest, sharpest image, at a
+	# big GPU cost (150 % = 2.25x the pixels).
+	{"key": "scale", "label": "Render scale", "opts": ["50%", "67%", "75%", "85%", "100%", "125%", "150%", "200%"], "vals": [0.5, 0.67, 0.75, 0.85, 1.0, 1.25, 1.5, 2.0], "def": 4},
+	# How the 3D image is brought up to the screen (apply_viewport):
+	# Bilinear = plain, soft; FSR 1 = sharpened (crisp edges below 100 %);
+	# FSR 2 = temporal: blends several frames, so it also smooths the
+	# flicker and jaggies MSAA cannot reach (texture detail, outlines, thin
+	# shapes, shiny highlights). FSR 2 replaces the anti-aliasing setting and
+	# works at 100 % as a high-quality anti-aliasing on its own.
+	{"key": "upscaler", "label": "Upscaling", "opts": ["Bilinear", "FSR 1 (sharp)", "FSR 2 (smoothest)"], "vals": [0, 1, 2], "def": 1},
+	{"key": "sharpen", "label": "Sharpening (FSR)", "opts": ["Off", "Low", "Medium", "High"], "vals": [2.0, 1.0, 0.5, 0.15], "def": 2},
 	{"key": "shadows", "label": "Shadows", "opts": ["Off", "Low", "High"], "vals": [0, 1, 2], "def": 2},
 	{"key": "ssao", "label": "Ambient occlusion", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	# Light bouncing off surfaces (screen-space indirect light, SSIL). Tested
@@ -56,7 +81,8 @@ const ITEMS := [
 	{"key": "scenery", "label": "Scenery detail", "opts": ["Low", "High"], "vals": [0, 1], "def": 1},
 	# Lowers the 3D resolution on the fly whenever a frame would take too long
 	# (game.gd::_auto_resolution), so busy six-player moments stay at 60.
-	{"key": "auto_res", "label": "Auto resolution (hold 60 FPS)", "opts": ON_OFF, "vals": [false, true], "def": 1},
+	# The value is the lowest share of the chosen render scale it may drop to.
+	{"key": "auto_res", "label": "Auto resolution (hold 60 FPS)", "opts": ["Off", "On", "On, never below 75%"], "vals": [1.0, 0.5, 0.75], "def": 1},
 	{"key": "dof", "label": "Soft focus in the distance", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"key": "rays", "label": "Sun rays", "opts": ON_OFF, "vals": [false, true], "def": 1},
 	{"section": "AUDIO"},
@@ -103,6 +129,7 @@ var _path := ""
 var _saved_idx := {}       # --set-<key> overrides: the real value, which is what gets saved
 var _uncapped := false
 var _keep_window := false
+var _win_res := Vector2i(-1, -1)   # the resolution the window was last sized for
 
 
 func _ready() -> void:
@@ -178,6 +205,13 @@ func step(key: String, dir: int) -> void:
 	save()
 
 
+## F11: windowed <-> fullscreen (keeps "exclusive" if that was chosen).
+func toggle_fullscreen() -> void:
+	idx["fullscreen"] = 1 if idx["fullscreen"] == 0 else 0
+	apply()
+	save()
+
+
 func reset() -> void:
 	for key in _items:
 		idx[key] = _items[key].def
@@ -187,10 +221,28 @@ func reset() -> void:
 
 func apply() -> void:
 	var win := get_window()
+	var res: Vector2i = v("resolution")
 	if not _keep_window:
-		var want := Window.MODE_FULLSCREEN if v("fullscreen") else Window.MODE_WINDOWED
+		var want: Window.Mode = [Window.MODE_WINDOWED, Window.MODE_FULLSCREEN, Window.MODE_EXCLUSIVE_FULLSCREEN][v("fullscreen")]
 		if win.mode != want:
 			win.mode = want
+			_win_res = Vector2i(-1, -1)
+		# Windowed with a chosen size: size the window to it (shrunk to fit
+		# the screen if it is bigger, keeping its shape) and centre it.
+		if want == Window.MODE_WINDOWED and res != Vector2i.ZERO and res != _win_res:
+			var area := DisplayServer.screen_get_usable_rect(win.current_screen)
+			var k := minf(1.0, minf(area.size.x * 0.96 / res.x, area.size.y * 0.92 / res.y))
+			win.size = Vector2i(Vector2(res) * k)
+			win.position = area.position + (area.size - win.size) / 2
+		_win_res = res if want == Window.MODE_WINDOWED else Vector2i(-1, -1)
+	# A chosen resolution: draw everything at that size and scale it to the
+	# window, with black bars where the shapes differ.
+	if res == Vector2i.ZERO:
+		win.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	else:
+		win.content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT
+		win.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
+		win.content_scale_size = res
 	if not _uncapped:
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v("vsync") else DisplayServer.VSYNC_DISABLED)
 		# A frame limiter fighting v-sync causes uneven frame pacing. With v-sync
@@ -214,12 +266,29 @@ func apply() -> void:
 ## Anti-aliasing and render scale for one viewport (root or a splitscreen cell).
 func apply_viewport(vp: Viewport) -> void:
 	var aa: int = v("aa")
+	var up: int = v("upscaler")
+	var sc: float = clampf(v("scale") * res_factor, 0.25, 2.0)
+	vp.scaling_3d_scale = sc
+	vp.fsr_sharpness = v("sharpen")
+	if up == 2 and sc <= 1.0:
+		# FSR 2 does its own temporal anti-aliasing; MSAA / FXAA on top only
+		# cost time (and FXAA would blur its result).
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
+		vp.msaa_3d = Viewport.MSAA_DISABLED
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		vp.use_taa = false
+		return
 	vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X, Viewport.MSAA_8X][aa]
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if aa == 1 else Viewport.SCREEN_SPACE_AA_DISABLED
-	vp.scaling_3d_scale = v("scale") * res_factor
-	# FSR 1 upscaling keeps edges crisp when the 3D resolution is below 100 %.
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if vp.scaling_3d_scale < 0.99 else Viewport.SCALING_3D_MODE_BILINEAR
-	vp.fsr_sharpness = 0.5
+	# Supersampling (above 100 %) only works with the plain filter; FSR 2
+	# above 100 % falls back to that plus TAA, which keeps its smoothness.
+	vp.use_taa = up == 2
+	if sc > 1.0:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+	elif up >= 1 and sc < 0.99:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+	else:
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
 
 
 ## Shared by map.gd and stage.gd.

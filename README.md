@@ -321,15 +321,27 @@ pick 1080p or 1440p at 60 Hz.
 Reachable from the lobby and from the pause menu, in pages (LB / RB or
 Q / E to turn them):
 
-- **Display:** fullscreen, V-Sync, frame rate limit. The default limit is
+- **Display:** window mode (windowed, fullscreen, exclusive fullscreen),
+  **resolution** (Native, or 720p up to 4K, including ultrawide 21:9 and
+  32:9 sizes; a size whose shape differs from your screen gets black bars),
+  **HUD width** (ultrawide: keep health and ammo in a 16:9 area in the
+  middle), V-Sync, frame rate limit. On a screen wider than 16:9 you see
+  more to the sides (up to 125°), and two players split side by side
+  instead of top and bottom. The default limit is
   **Display**: frames are paced by your screen's own refresh rate, which is
   the smoothest setting (a fixed 60 on a 120 or 144 Hz screen judders).
 - **Graphics:** quality preset (Low to Ultra), anti-aliasing, motion blur,
-  render scale, shadows, ambient occlusion, surface depth, outlines, screen effects, reflections on wet ground, bounce light, light shafts in
+  render scale (50-100 %, or 125 / 150 / 200 % **supersampling**: drawn
+  bigger and shrunk, the smoothest image at a big GPU cost), **upscaling**
+  (Bilinear, FSR 1 sharp, or **FSR 2**: temporal, so it also smooths the
+  flicker and jagged texture detail, outlines and thin shapes that MSAA
+  cannot reach; it replaces the anti-aliasing setting and works at 100 %
+  too), FSR sharpening, shadows, ambient occlusion, surface depth, outlines, screen effects, reflections on wet ground, bounce light, light shafts in
   the air (Ultra; used with one or two views), bullet holes and scorch
   marks, bloom, scenery, soft focus, sun rays, and **auto resolution** (on
   by default): a busy moment lowers the 3D resolution briefly instead of
-  dropping below 60 FPS.
+  dropping below 60 FPS. If the picture looks soft or blocky, try "On,
+  never below 75%" or Off; high MSAA or supersampling makes it drop more.
 - **Audio:** master, music and effects volume. Sounds are panned left and
   right relative to the nearest player's view.
 - **Controls:** gamepad and mouse look speed, stick dead zone, a look speed

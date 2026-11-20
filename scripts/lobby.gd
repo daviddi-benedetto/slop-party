@@ -262,7 +262,7 @@ func _process(delta: float) -> void:
 		_remember()
 		get_tree().quit()
 	if _edge("k_full", Input.is_physical_key_pressed(KEY_F11)):
-		Settings.step("fullscreen", 1)
+		Settings.toggle_fullscreen()
 
 	# Gamepad seats.
 	for d in Input.get_connected_joypads():

@@ -87,6 +87,15 @@ func _process(delta: float) -> void:
 		_blur.material.set_shader_parameter("amount", _blur_amount)
 	compact = size.y < 420.0
 	s = clampf(size.y / 540.0 * (1.2 if compact else 1.0), 0.55, 2.5)
+	# Ultrawide option: health, ammo, score and kill feed sit inside a 16:9
+	# area in the middle instead of the far corners.
+	var pad := 0.0
+	if Settings.v("hud_width") == 1 and size.x > size.y * 16.0 / 9.0 * 1.05:
+		pad = (size.x - size.y * 16.0 / 9.0) * 0.5
+	for l in _layers:
+		if l[0].offset_left != pad:
+			l[0].offset_left = pad
+			l[0].offset_right = -pad
 	for l in _layers:
 		var sig = l[1].call()
 		if sig != l[2]:
@@ -257,7 +266,7 @@ func _draw_status(ci: Control) -> void:
 	if not player.alive or player.vehicle != null or player.picking:
 		return
 	var h := size.y
-	var w := size.x
+	var w := ci.size.x
 	var frac: float = clampf(player.health / player.stats.max_health, 0.0, 1.0)
 	# --- bottom left: portrait, name, health, owned cards ---
 	# Hit: the whole block shakes for a moment.
@@ -311,7 +320,7 @@ func _draw_status(ci: Control) -> void:
 func _draw_ammo(ci: Control) -> void:
 	if not player.alive or player.vehicle != null or player.picking:
 		return
-	var w := size.x
+	var w := ci.size.x
 	var h := size.y
 	# Weapon: its silhouette on a badge (name underneath when there is room),
 	# and the bubble shield status beside it.
@@ -567,7 +576,7 @@ func _draw_score_strip(ci: Control) -> void:
 	if game.rules != null and game.rules.has_method("draw_strip"):
 		game.rules.draw_strip(self, ci, s)
 		return
-	var w := size.x
+	var w := ci.size.x
 	var n: int = game.players.size()
 	var chip := 46.0 * s
 	var total := n * chip + 10 * s
@@ -590,7 +599,7 @@ func _draw_score_strip(ci: Control) -> void:
 
 
 func _draw_feed(ci: Control) -> void:
-	var w := size.x
+	var w := ci.size.x
 	var y := 62.0 * s
 	var shown := 0
 	for entry in game.feed:

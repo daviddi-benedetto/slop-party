@@ -913,8 +913,8 @@ is turned on (see `confetti()`), or they are ignored.
 
 **Auto resolution** (`game._auto_resolution`, option `auto_res`): sums the
 measured GPU time of every splitscreen viewport; above 14 ms it lowers
-`Settings.res_factor` (0.5-1, multiplied into every view's
-`scaling_3d_scale`, FSR 1 upscaling), below 62 % of that it climbs back.
+`Settings.res_factor` (down to the option's floor, 0.5 or 0.75; multiplied
+into every view's `scaling_3d_scale`), below 62 % of that it climbs back.
 The HUD is 2D and stays sharp. **The look** (toy diorama): `map._mat`
 pastelises colours, flattens the generated textures (`_soft`), halves the
 normal maps and adds a faint rim; soft sun shadows (`shadow_opacity`),
@@ -1130,7 +1130,22 @@ What applies where:
 - window mode, v-sync, `Engine.max_fps`, master bus volume, shadow atlas
   size, root viewport AA: `Settings.apply()`.
 - each splitscreen cell's MSAA/FXAA and render scale:
-  `Settings.apply_viewport()` from `game.gd`.
+  `Settings.apply_viewport()` from `game.gd`. Upscaler: render scale above
+  1 = supersampling (bilinear; FSR modes are not allowed above 1, "FSR 2"
+  then means bilinear + TAA); FSR 1 below 0.99; FSR 2 at or below 1
+  (MSAA/FXAA switched off, it does its own temporal AA). The first FSR 2
+  frame compiles pipelines (about 3 s, under the match fade-in).
+- resolution (option `resolution`, `RES_SIZES`): Native =
+  `content_scale_mode` disabled; a size = `CONTENT_SCALE_MODE_VIEWPORT` at
+  that size with `ASPECT_KEEP` (black bars), and in windowed mode the window
+  is sized to it (shrunk to fit the screen, same shape). Everything reads
+  `get_visible_rect()`, so menus, HUD and splitscreen follow.
+- ultrawide: `game._grid()` picks the split whose cells are closest to 16:9
+  (`_grid_169()` is the 16:9 layout and wins ties), so on 21:9 two players
+  sit side by side; `game._layout()` widens the horizontal FOV "Hor+" by the
+  screen's width beyond 16:9 (max 125°); `hud_width` = 1 moves the HUD
+  layers (status, ammo, score strip, feed) into a centred 16:9 area.
+- F11 = `Settings.toggle_fullscreen()` (windowed <-> fullscreen).
 - shadows, ambient occlusion, bloom, bounce light, light shafts:
   `Settings.apply_environment()` from `map.gd` and `stage.gd` (game.gd
   re-applies it once it knows how many views there are).

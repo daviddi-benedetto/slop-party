@@ -371,6 +371,27 @@ func _build_views() -> void:
 
 
 func _grid(n: int) -> Vector2i:
+	var best := _grid_169(n)
+	# Wide screens (ultrawide 21:9, 32:9): pick the split whose cells come
+	# closest to a 16:9 shape, e.g. two players side by side instead of two
+	# letterbox strips. On a 16:9 screen this keeps the usual layouts.
+	var total: Vector2 = get_viewport().get_visible_rect().size
+	if n > 1 and total.y > 0.0:
+		var score := func(g: Vector2i) -> float: return absf(log((total.x / g.x) / (total.y / g.y) / (16.0 / 9.0)))
+		var best_s: float = score.call(best)
+		for cols in range(1, n + 1):
+			var rows := ceili(float(n) / cols)
+			var g := Vector2i(cols, rows)
+			if cols * rows - n >= mini(cols, rows):
+				continue             # a whole empty row / column
+			var sg: float = score.call(g)
+			if sg < best_s - 0.05:
+				best = g
+				best_s = sg
+	return best
+
+
+func _grid_169(n: int) -> Vector2i:
 	if n <= 1:
 		return Vector2i(1, 1)
 	if n == 2:
@@ -486,9 +507,15 @@ func _layout() -> void:
 		var gap := 4.0 if _views.size() > 1 else 0.0
 		v.container.position = Vector2(gx, gy) * cell + Vector2(gap, gap) * 0.5
 		v.container.size = cell - Vector2(gap, gap)
-		# Keep the chosen horizontal FOV whatever the cell's aspect ratio.
+		# Keep the chosen horizontal FOV whatever the cell's aspect ratio...
 		var aspect := cell.x / cell.y
 		var half_h: float = deg_to_rad(Settings.v("fov") * 0.5)
+		# ...except on a screen wider than 16:9 (ultrawide), where the extra
+		# width shows more to the sides instead of cropping the top and
+		# bottom ("Hor+"), up to 125 degrees across.
+		var screen_aspect := total.x / maxf(1.0, total.y)
+		if screen_aspect > 16.0 / 9.0 + 0.01:
+			half_h = minf(deg_to_rad(62.5), atan(tan(half_h) * screen_aspect / (16.0 / 9.0)))
 		var vfov := rad_to_deg(2.0 * atan(tan(half_h) / aspect))
 		v.fov = clampf(vfov, 50.0, 82.0)
 		v.camera.fov = v.fov
@@ -856,7 +883,8 @@ func _focus(cam: Camera3D, delta: float) -> void:
 ## upscales it back; HUD and text stay sharp), and it climbs back when
 ## there is headroom again. Settings.res_factor carries the result.
 func _auto_resolution(real_delta: float) -> void:
-	if not Settings.v("auto_res"):
+	var floor_f: float = Settings.v("auto_res")
+	if floor_f >= 1.0:
 		if Settings.res_factor != 1.0:
 			Settings.res_factor = 1.0
 			_on_settings()
@@ -881,8 +909,8 @@ func _auto_resolution(real_delta: float) -> void:
 	var late: bool = _res_frame > 18.2 and (refresh <= 0.0 or refresh >= 55.0) and Engine.max_fps != 30
 	var f: float = Settings.res_factor
 	if _res_gpu > budget or late:
-		f = maxf(0.5, f - (0.1 if _res_gpu > budget * 1.4 else 0.05))
-	elif _res_gpu < budget * 0.62 and f < 1.0:
+		f = maxf(floor_f, f - (0.1 if _res_gpu > budget * 1.4 else 0.05))
+	elif _res_gpu < budget * 0.62 and f < 1.0 or f < floor_f:
 		f = minf(1.0, f + 0.05)
 	if not is_equal_approx(f, Settings.res_factor):
 		Settings.res_factor = f
