@@ -109,7 +109,7 @@ PLAY** lists every button and **MODES** explains each mode.
   hands you something.
 - **Health in chunks of 25** that shakes when you are hit, drains to show
   what you lost, glows green when you heal and pulses red near death.
-- **Clean, modern HUD:** the Inter typeface, a thin light-grey ring for a
+- **Clean, modern HUD:** a thin light-grey ring for a
   crosshair (no centre dot) that widens with spread, slim bars and
   translucent panels with soft shadows instead of thick outlines; every
   edge is anti-aliased.
@@ -117,8 +117,8 @@ PLAY** lists every button and **MODES** explains each mode.
   low, and the last bullets in the magazine shown red.
 - **Small views stay readable:** in a small cell (5–6 way split, or a small
   window) the HUD drops the words and makes numbers and icons bigger.
-- **Numbers in a condensed display font** (Barlow Condensed): ammo,
-  health, scores, the countdown and the results.
+- **Numbers in a chunky display font** (Lilita One): ammo, health, scores,
+  the countdown and the results.
 - **PlayStation pads** show the shape buttons (cross, circle, square,
   triangle) and L1 / R2 names; Xbox-style pads keep A / B / X / Y.
 - **Screen transitions:** a slanted curtain in the theme's colours sweeps
@@ -239,8 +239,8 @@ synthesised. Weapons, zombies, cars, trees,
 furniture, doors and castle pieces are public-domain (CC0) 3D models by
 Quaternius, Kenney and Kay Lousberg. **[ASSETS.md](ASSETS.md) lists every
 asset, its author, licence and download source**; `THIRD_PARTY_LICENSES.txt`
-carries the notices that ship with the game. The UI fonts are Inter and Barlow
-Condensed (and Fredoka on the mystery boxes), all SIL Open Font License.
+carries the notices that ship with the game. The UI fonts are Fredoka and Lilita One
+(both SIL Open Font License).
 
 ## Play
 
@@ -373,7 +373,7 @@ project.godot         Godot project file
 main.tscn             the only scene; everything else is built in code
 scripts/              all game code (see docs/ARCHITECTURE.md)
 assets/               3D models, plush animal meshes, audio (see ASSETS.md)
-fonts/                Inter, Barlow Condensed and Fredoka fonts + their licences
+fonts/                Fredoka and Lilita One UI fonts + their licences
 docs/                 architecture notes
 tools/                build.bat, setup_engine.ps1, smoke.sh, balance.sh
 engine/               bundled Godot editor + export templates  (not in git)

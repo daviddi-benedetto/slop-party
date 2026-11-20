@@ -15,9 +15,8 @@ This file is generated from the model folders (`assets/models/`). When you add a
 | Sound effects (`assets/audio/`, 68 files) | Kenney audio packs (kenney.nl) — table below | CC0 1.0 (public domain) | Recordings replace some synthesised effects (footsteps, impacts, knife, glass, wood, explosions, UI, reload, sci-fi lasers) |
 | Other sound effects and the music | Synthesised in code (`sfx.gd`) | Ours | |
 | UI icons and portraits | Drawn in code (`ui_kit.gd`) | Ours | |
-| Mystery box "?" font `fonts/Fredoka.ttf` | Google Fonts, The Fredoka Project Authors | SIL Open Font License 1.1 (`fonts/OFL.txt`) | Free for commercial use and embedding; the font file itself may not be sold on its own |
-| UI font `fonts/Inter.ttf` (variable, opsz + wght) | The Inter Project Authors (github.com/rsms/inter), via Google Fonts (github.com/google/fonts, `ofl/inter/Inter[opsz,wght].ttf`) | SIL Open Font License 1.1 (`fonts/OFL-Inter.txt`) | Free for commercial use and embedding; the font file itself may not be sold on its own |
-| Number font `fonts/BarlowCondensed-SemiBold.ttf`, `BarlowCondensed-Medium.ttf` | The Barlow Project Authors (github.com/jpt/barlow), via Google Fonts (`ofl/barlowcondensed/`) | SIL Open Font License 1.1 (`fonts/OFL-BarlowCondensed.txt`) | Free for commercial use and embedding; the font file itself may not be sold on its own |
+| UI font `fonts/Fredoka.ttf` | Google Fonts, The Fredoka Project Authors | SIL Open Font License 1.1 (`fonts/OFL.txt`) | Free for commercial use and embedding; the font file itself may not be sold on its own |
+| Number font `fonts/LilitaOne.ttf` | Juan Montoreano, via Google Fonts (github.com/google/fonts, `ofl/lilitaone/LilitaOne-Regular.ttf`) | SIL Open Font License 1.1 (`fonts/OFL-LilitaOne.txt`) | Free for commercial use and embedding; Reserved Font Name "Lilita"; the font file itself may not be sold on its own |
 | Game engine | Godot Engine 4.7.2, godotengine.org | MIT | Requires the notice in `THIRD_PARTY_LICENSES.txt` to ship with the game |
 
 CC0 text: https://creativecommons.org/publicdomain/zero/1.0/

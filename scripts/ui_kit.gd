@@ -4,7 +4,7 @@ extends RefCounted
 ## its _draw() as `ci`. Sizes are in final pixels (callers multiply by their
 ## own scale factor).
 ##
-## Style: clean and modern - Inter for text, Barlow Condensed for numbers,
+## Style: clean and modern - Fredoka for text, Lilita One for numbers,
 ## no ink outlines (a soft shadow keeps text readable over the 3D view),
 ## slim bars, gently rounded translucent panels with a hairline edge. The
 ## viewports draw 2D with MSAA (Settings.apply_viewport), so every shape
@@ -94,14 +94,10 @@ const SHAPES := {
 static func font(weight := 700) -> Font:
 	if not _fonts.has(weight):
 		var f: Font = ThemeDB.fallback_font
-		if ResourceLoader.exists("res://fonts/Inter.ttf"):
+		if ResourceLoader.exists("res://fonts/Fredoka.ttf"):
 			var fv := FontVariation.new()
-			fv.base_font = load("res://fonts/Inter.ttf")
-			# Callers ask for 600-800 (sized for the old chunky font); Inter
-			# reads cleaner a step lighter.
-			var ts := TextServerManager.get_primary_interface()
-			fv.variation_opentype = {ts.name_to_tag("wght"): clampi(weight - 100, 400, 800), ts.name_to_tag("opsz"): 24}
-			fv.spacing_glyph = 1 if weight >= 700 else 0
+			fv.base_font = load("res://fonts/Fredoka.ttf")
+			fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): weight}
 			f = fv
 		_fonts[weight] = f
 	return _fonts[weight]
@@ -117,10 +113,10 @@ static func use_theme(look: Dictionary) -> void:
 	ACCENT = ui.get("logo_b", Color(0.3, 0.75, 1.0))
 
 
-## The condensed display font for numbers (scores, ammo, health, countdown).
+## The display font for numbers (scores, ammo, health, countdown).
 static func num_font() -> Font:
 	if _num_font == null:
-		_num_font = load("res://fonts/BarlowCondensed-SemiBold.ttf") if ResourceLoader.exists("res://fonts/BarlowCondensed-SemiBold.ttf") else font(700)
+		_num_font = load("res://fonts/LilitaOne.ttf") if ResourceLoader.exists("res://fonts/LilitaOne.ttf") else font(700)
 	return _num_font
 
 

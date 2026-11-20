@@ -274,7 +274,9 @@ func _draw_status(ci: Control) -> void:
 	ci.draw_arc(Vector2(px, py), 27 * s, 0, TAU, 48, Color(player.color, 0.9), 1.5 * s, true)
 	UiKit.portrait(ci, Vector2(px, py + 3 * s), 15 * s, player.color, player.kind)
 	var hp_text := "%d" % ceili(player.health)
-	var bar := Rect2(124 * s + jolt.x, h - 38 * s + jolt.y, 150 * s, 9 * s)
+	# The bar starts after the widest health number, so it never moves.
+	var bx: float = 78 * s + UiKit.num_width("100", 30 * s) + 12 * s
+	var bar := Rect2(bx + jolt.x, h - 38 * s + jolt.y, 150 * s, 9 * s)
 	var low: bool = frac < 0.3
 	var fill := Color(1.0, 0.32, 0.36).lerp(Color(0.36, 0.86, 0.42), clampf(frac * 1.4 - 0.2, 0.0, 1.0))
 	if low:
@@ -291,11 +293,11 @@ func _draw_status(ci: Control) -> void:
 		var nx: float = bar.position.x + bar.size.x * (i * 25.0 / player.stats.max_health)
 		ci.draw_line(Vector2(nx, bar.position.y), Vector2(nx, bar.end.y), Color(0.02, 0.025, 0.05, 0.7), maxf(1.0, 1.5 * s))
 	# Health number to the left of the bar.
-	UiKit.num(ci, Vector2(78 * s + jolt.x, h - 24 * s + jolt.y), hp_text, 34 * s, Color(1.0, 0.5, 0.5) if low else Color.WHITE)
+	UiKit.num(ci, Vector2(78 * s + jolt.x, h - 24 * s + jolt.y), hp_text, 30 * s, Color(1.0, 0.5, 0.5) if low else Color.WHITE)
 	if not compact:
-		_t(Vector2(124 * s, h - 50 * s), player.pname.to_upper(), 12, player.color.lerp(Color.WHITE, 0.45), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
+		_t(Vector2(bx, h - 50 * s), player.pname.to_upper(), 12, player.color.lerp(Color.WHITE, 0.45), HORIZONTAL_ALIGNMENT_LEFT, -1.0, 700, ci)
 	if player.spawn_protect > 0.0 and not compact:
-		var sx := 124 * s + UiKit.text_width(player.pname.to_upper(), 12 * s) + 14 * s
+		var sx := bx + UiKit.text_width(player.pname.to_upper(), 12 * s) + 14 * s
 		UiKit.icon(ci, "shield", Vector2(sx, h - 54 * s), 6 * s, Color(0.5, 0.85, 1.0, 0.6 + 0.4 * sin(game.time * 12.0)))
 	# Owned cards as little rarity-coloured tiles (not in compact cells).
 	if compact:
