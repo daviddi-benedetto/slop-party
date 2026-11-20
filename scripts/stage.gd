@@ -185,28 +185,52 @@ func add_podium(pos: Vector3, height: float, color: Color, kind := "stump") -> f
 	return top.y + (0.05 if kind == "stump" else 0.06)
 
 
-## A wooden backyard deck over x0..x1, z0..z1 (z1 is the front), h metres
-## high, with a plank skirt, posts, a back railing, steps down the right
-## side and potted plants.
+## A party stage over x0..x1, z0..z1 (z1 is the front), h metres high:
+## a red carpet with a gold border on top, a pleated velvet skirt with a
+## gold fringe round the front and sides, bunting, a draped back rail,
+## carpeted steps down the right side, tall banners and potted plants.
 func add_deck(x0: float, x1: float, z0: float, z1: float, h: float) -> void:
-	var wood := _mat(_g(Color(0.66, 0.46, 0.29)), 0.85)
-	var dark := _mat(_g(Color(0.44, 0.3, 0.19)), 0.9)
-	var skirt := _mat(_g(Color(0.5, 0.34, 0.22)), 0.9)
+	var carpet := _mat(_g(Color(0.6, 0.1, 0.14)), 0.95)
+	var velvet := _mat(_g(Color(0.55, 0.08, 0.13)), 0.95)
+	var fold := _mat(_g(Color(0.38, 0.05, 0.09)), 0.95)
+	var gold := _mat(_g(Color(0.95, 0.74, 0.3)), 0.6)
+	var cream := _mat(_g(Color(0.93, 0.88, 0.78)), 0.8)
 	var box := BoxMesh.new()
 	var w := x1 - x0
 	var d := z1 - z0
 	var cx := (x0 + x1) * 0.5
-	_prop(box, wood, Vector3(cx, h - 0.1, (z0 + z1) * 0.5), Vector3(w, 0.2, d))
-	_prop(box, dark, Vector3(cx, h * 0.5 - 0.1, (z0 + z1) * 0.5), Vector3(w - 0.3, h - 0.2, d - 0.3))
-	# Plank skirt on the front and the sides.
-	var planks: Array = []
-	var n := int((h - 0.2) / 0.32)
+	var cz := (z0 + z1) * 0.5
+	# The stage body (hidden behind the skirt) and the carpet on top.
+	_prop(box, fold, Vector3(cx, h * 0.5 - 0.05, cz), Vector3(w - 0.1, h - 0.1, d - 0.1))
+	_prop(box, carpet, Vector3(cx, h - 0.1, cz), Vector3(w + 0.1, 0.2, d + 0.1))
+	var trim: Array = []
+	for tz in [z0 + 0.35, z1 - 0.35]:
+		trim.append(Transform3D(Basis.from_scale(Vector3(w - 0.5, 0.04, 0.12)), Vector3(cx, h + 0.01, tz)))
+	for tx in [x0 + 0.35, x1 - 0.35]:
+		trim.append(Transform3D(Basis.from_scale(Vector3(0.12, 0.04, d - 0.5)), Vector3(tx, h + 0.01, cz)))
+	# Gold fringe along the top of the skirt.
+	trim.append(Transform3D(Basis.from_scale(Vector3(w + 0.36, 0.14, 0.06)), Vector3(cx, h - 0.17, z1 + 0.2)))
+	for sx in [x0 - 0.2, x1 + 0.2]:
+		trim.append(Transform3D(Basis.from_scale(Vector3(0.06, 0.14, d + 0.36)), Vector3(sx, h - 0.17, cz)))
+	_multi(box, gold, trim)
+	# Pleated velvet skirt: deep folds alternate with forward ones.
+	var pleats := [[], []]
+	var pw := 0.3
+	var sh := h - 0.2
+	var n := int(ceil((w + 0.3) / pw))
 	for k in n:
-		var y := 0.16 + k * 0.32
-		planks.append(Transform3D(Basis.from_scale(Vector3(w, 0.26, 0.06)), Vector3(cx, y, z1 - 0.03)))
-		for sx in [x0 + 0.03, x1 - 0.03]:
-			planks.append(Transform3D(Basis.from_scale(Vector3(0.06, 0.26, d)), Vector3(sx, y, (z0 + z1) * 0.5)))
-	_multi(box, skirt, planks)
+		var px := x0 - 0.15 + (k + 0.5) * (w + 0.3) / n
+		var out := k % 2 == 0
+		pleats[0 if out else 1].append(Transform3D(Basis.from_scale(Vector3((w + 0.3) / n + 0.02, sh, 0.1)), Vector3(px, sh * 0.5, z1 + (0.12 if out else 0.04))))
+	var nd := int(ceil((d + 0.3) / pw))
+	for sx in [x0, x1]:
+		var dir := -1.0 if sx == x0 else 1.0
+		for k in nd:
+			var pz := z0 - 0.15 + (k + 0.5) * (d + 0.3) / nd
+			var out := k % 2 == 0
+			pleats[0 if out else 1].append(Transform3D(Basis.from_scale(Vector3(0.1, sh, (d + 0.3) / nd + 0.02)), Vector3(sx + dir * (0.12 if out else 0.04), sh * 0.5, pz)))
+	_multi(box, velvet, pleats[0])
+	_multi(box, fold, pleats[1])
 	# Shrubs and flowers along the foot of the deck.
 	var ball := SphereMesh.new()
 	ball.radial_segments = 12
@@ -230,22 +254,40 @@ func add_deck(x0: float, x1: float, z0: float, z1: float, h: float) -> void:
 	var fx := x0 + 0.3
 	var fk := 0
 	while fx < x1 - 0.2:
-		flags[fk % 3].append(Transform3D(Basis(Vector3.RIGHT, PI).scaled(Vector3(0.42, 0.5, 0.03)), Vector3(fx, h - 0.45, z1 + 0.03)))
+		flags[fk % 3].append(Transform3D(Basis(Vector3.RIGHT, PI).scaled(Vector3(0.42, 0.5, 0.03)), Vector3(fx, h - 0.5, z1 + 0.24)))
 		fx += 0.62
 		fk += 1
 	var flag_cols := [Color(1.0, 0.36, 0.36), Color(1.0, 0.84, 0.3), Color(0.36, 0.7, 1.0)]
 	for f in 3:
 		_multi(prism, _mat(_g(flag_cols[f]), 0.8), flags[f])
-	# Posts at the corners and along the front, a rail along the back.
+	# Cream posts along the back, with velvet drapes hanging from the rail.
 	var posts: Array = []
 	var px := x0
 	while px <= x1 + 0.01:
-		posts.append(Transform3D(Basis.from_scale(Vector3(0.22, h, 0.22)), Vector3(px, h * 0.5, z1 - 0.05)))
-		posts.append(Transform3D(Basis.from_scale(Vector3(0.14, 1.0, 0.14)), Vector3(px, h + 0.5, z0 + 0.08)))
+		posts.append(Transform3D(Basis.from_scale(Vector3(0.16, 1.1, 0.16)), Vector3(px, h + 0.55, z0 + 0.08)))
 		px += w / 4.0
-	posts.append(Transform3D(Basis.from_scale(Vector3(w, 0.1, 0.12)), Vector3(cx, h + 1.0, z0 + 0.08)))
-	posts.append(Transform3D(Basis.from_scale(Vector3(w, 0.06, 0.08)), Vector3(cx, h + 0.55, z0 + 0.08)))
-	_multi(box, dark, posts)
+	posts.append(Transform3D(Basis.from_scale(Vector3(w + 0.1, 0.1, 0.14)), Vector3(cx, h + 1.08, z0 + 0.08)))
+	_multi(box, cream, posts)
+	var drapes := [[], []]
+	var bn := int(ceil(w / pw))
+	for k in bn:
+		var bx2 := x0 + (k + 0.5) * w / bn
+		var out := k % 2 == 0
+		drapes[0 if out else 1].append(Transform3D(Basis.from_scale(Vector3(w / bn + 0.02, 0.95, 0.08)), Vector3(bx2, h + 0.52, z0 + (0.0 if out else 0.07))))
+	_multi(box, velvet, drapes[0])
+	_multi(box, fold, drapes[1])
+	# Tall banners at the front corners, in the bunting colours.
+	for b in 2:
+		var bxp: float = x0 - 0.35 if b == 0 else x1 + 0.35
+		_prop(box, cream, Vector3(bxp, (h + 3.2) * 0.5, z1 + 0.35), Vector3(0.12, h + 3.2, 0.12))
+		_prop(SphereMesh.new(), gold, Vector3(bxp, h + 3.25, z1 + 0.35), Vector3.ONE * 0.22)
+		_prop(box, cream, Vector3(bxp + (0.45 if b == 0 else -0.45), h + 2.95, z1 + 0.35), Vector3(0.95, 0.07, 0.07))
+		var bc: Color = flag_cols[0] if b == 0 else flag_cols[2]
+		var bxc := bxp + (0.45 if b == 0 else -0.45)
+		_prop(box, _mat(_g(bc), 0.85), Vector3(bxc, h + 2.1, z1 + 0.35), Vector3(0.8, 1.6, 0.05))
+		var tip := PrismMesh.new()
+		_prop(tip, _mat(_g(bc), 0.85), Vector3(bxc, h + 1.08, z1 + 0.35), Vector3(0.8, 0.45, 0.05)).rotation.x = PI
+		_prop(box, gold, Vector3(bxc, h + 2.35, z1 + 0.38), Vector3(0.5, 0.5, 0.03)).rotation.z = PI / 4
 	# Steps down the right-hand side.
 	var steps: Array = []
 	var sn := int(h / 0.34)
@@ -258,7 +300,7 @@ func add_deck(x0: float, x1: float, z0: float, z1: float, h: float) -> void:
 	var length := sqrt(h * h + run * run)
 	for ez in [z0 + 0.45, z0 + 1.95]:
 		steps.append(Transform3D(Basis(Vector3.BACK, -slope).scaled(Vector3(length, 0.3, 0.1)), Vector3(x1 + run * 0.5, h * 0.5 - 0.1, ez)))
-	_multi(box, wood, steps)
+	_multi(box, carpet, steps)
 	# Potted plants in the back corners.
 	for sx in [x0 + 0.6, x1 - 0.6]:
 		var pot := CylinderMesh.new()

@@ -273,7 +273,7 @@ Anyway**). After that it opens normally. Settings are saved in
 with 4+ players, lower **Surface depth**, **Volumetric fog** or **Reflections**
 in Options if it stutters.
 
-In the lobby each player presses **A** on their own gamepad to take a seat
+In the lobby (a backyard party stage with a red carpet, velvet skirt and banners) each player presses **A** on their own gamepad to take a seat
 (Space joins a keyboard + mouse player). Up/down picks what to customise
 (animal, colour, hat, back) and left/right changes it.
 Every match opens on a loading card with the mode, map, theme and a tip.
