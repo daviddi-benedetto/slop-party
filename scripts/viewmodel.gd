@@ -91,7 +91,7 @@ const KNIFE_KEYS := [
 	[1.0, Vector3(-0.12, -0.86, -0.5), Vector3(-0.6, -0.2, 0.9)],
 ]
 
-const HIP := Vector3(0.27, -0.25, -0.58)
+const HIP := Vector3(0.26, -0.24, -0.7)    # (further out than when paws held it: the stock no longer fills the corner)
 const ADS := Vector3(0.0, -0.155, -0.5)
 
 const LENS_SHADER := """
@@ -124,7 +124,6 @@ var _color := Color.WHITE
 var kind := 0                    # the animal you play (fp_arm.gd fur colours); set before build()
 var _layer := 1
 var _with_paw := true
-var _hover_ring: MeshInstance3D      # glow under a floating first-person weapon
 var _knife: Node3D               # the melee knife rig (under the camera, built on first use)
 var _swoosh: MeshInstance3D      # the slash trail: an arc that flashes during the cut
 var _reload_arm: Node3D          # the off paw that fetches a fresh magazine on reload
@@ -232,22 +231,8 @@ func set_weapon(id: int) -> void:
 	_merge()
 	_reload_arm = null
 	_mag_mesh = null
-	if _with_paw and not _style.begins_with("hands_"):
-		# No arms in first person: the weapon floats on its own, held up by
-		# a soft ring of light under the grip in your colour (it bobs and
-		# sways as if held). Magic hands are the exception: they are the
-		# weapon.
-		var ring := TorusMesh.new()
-		ring.inner_radius = 0.028
-		ring.outer_radius = 0.04
-		ring.rings = 20
-		ring.ring_segments = 6
-		var rm := _mat(_color.lerp(Color.WHITE, 0.35), 0.2)
-		rm.emission_enabled = true
-		rm.emission = _color.lerp(Color.WHITE, 0.3)
-		rm.emission_energy_multiplier = 2.0
-		_hover_ring = _part(ring, rm, grip_r + Vector3(0, -0.07, 0))
-		_hover_ring.scale = Vector3(1.0, 0.45, 1.0)
+	# No arms in first person: the weapon simply floats (it still bobs and
+	# sways as if held). Magic hands are the exception: they are the weapon.
 	var fmat := StandardMaterial3D.new()
 	fmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	fmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA

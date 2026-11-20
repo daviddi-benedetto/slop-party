@@ -79,8 +79,8 @@ PLAY** lists every button and **MODES** explains each mode.
 - **Movement inspired by Titanfall:** sprint, crouch, slide, wall run, wall
   jump, mantle, dash and aim down sights.
 - **Block** reflects every bullet, rocket, grenade and flame back at whoever
-  fired it. In first person your weapon floats on its own over a soft ring
-  of light in your colour (no arms in the way); magic is cast from open
+  fired it. In first person your weapon floats on its own (no arms in the
+  way); magic is cast from open
   mitten paws with toe beans. Swords, axes, spears and staffs sit out at
   the side of the screen so you can see. **Melee** with any gun in hand: a
   floating knife slashes (wind-up, fast cut, a jolt on impact). Swords turn
