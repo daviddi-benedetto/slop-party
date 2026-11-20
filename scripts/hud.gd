@@ -510,7 +510,6 @@ func _draw_vehicle(w: float, h: float) -> void:
 			lines = [["RT" if pad else "LMB", "MACHINE GUN"], ["LT" if pad else "RMB", "ZOOM"]]
 	if not v.armed:
 		lines = [["A" if pad else "SPACE", "UP"], ["B" if pad else "C", "DOWN"]] if v.type == "heli" else []
-	lines.append(["R3" if pad else "F", "1ST PERSON" if not player.fp_drive else "3RD PERSON"])
 	lines.append(["Y" if pad else "E", "RESET CAR" if v.racing else "GET OUT"])
 	var y := h - 26 * s
 	var x := w - 16 * s

@@ -201,10 +201,11 @@ static func apply_post(look: Dictionary, env: Environment) -> void:
 		env.adjustment_contrast = p.contrast
 	if p.has("brightness"):
 		env.adjustment_brightness = p.brightness
+	# (Themes' bloom scaled down: it was overbearing.)
 	if p.has("glow_intensity"):
-		env.glow_intensity = p.glow_intensity
+		env.glow_intensity = p.glow_intensity * 0.6
 	if p.has("glow_bloom"):
-		env.glow_bloom = p.glow_bloom
+		env.glow_bloom = p.glow_bloom * 0.35
 	if p.has("shadows"):
 		var g := Gradient.new()
 		g.set_color(0, p.shadows)

@@ -678,12 +678,13 @@ func _vehicle_camera(v: Dictionary, p, delta: float) -> void:
 	var vyaw: float = veh.get_global_transform_interpolated().basis.get_euler().y
 	# Unarmed ground vehicles (rides, race cars): the view swings round behind
 	# the car on its own; with a gun the camera is also your aim, so it stays.
-	if not veh.armed and veh.type != "heli":
-		var follow := 6.0 if p.fp_drive else (2.2 if absf(veh._speed) > 3.0 else 0.4)
-		p.yaw = lerp_angle(p.yaw, vyaw, clampf(delta * follow, 0.0, 1.0))
-	if p.fp_drive:
+	# (A person's view steers the vehicle (vehicle._drive), so the view is
+	# never pulled round; bots' views still follow their ride.)
+	if p.is_bot and not veh.armed and veh.type != "heli":
+		p.yaw = lerp_angle(p.yaw, vyaw, clampf(delta * 6.0, 0.0, 1.0))
+	if true:
 		# First person from the seat; you can still look around.
-		var seat: Vector3 = veh.get_global_transform_interpolated() * veh.SEATS.get(veh.type, Vector3(0, 1.6, 0))
+		var seat: Vector3 = veh.get_global_transform_interpolated() * (veh.SEATS.get(veh.type, Vector3(0, 1.6, 0)) + Vector3(0, veh.visual_lift, 0))
 		var fp_pitch: float = p.pitch * 0.85
 		var sh2: float = p.shake * p.shake * 0.05 * Settings.v("shake")
 		cam.global_transform = Transform3D(Basis.from_euler(Vector3(fp_pitch + sin(time * 61.0) * sh2, p.yaw, 0.0)), seat)

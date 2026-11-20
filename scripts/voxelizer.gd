@@ -29,7 +29,7 @@ extends RefCounted
 
 const Voxel = preload("res://scripts/voxel.gd")
 const Looks = preload("res://scripts/looks.gd")
-const VERSION := 9
+const VERSION := 10
 const MAX_DIM := 96
 const FAR_STEPS := 2              # far version: voxels 2x bigger
 const FAR_FROM := 55.0            # metres: map.gd cross-fades to the far version here
@@ -376,7 +376,10 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 				uv_o = Vector2(bm.uv1_offset.x, bm.uv1_offset.y)
 				if bm.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
 					scissor = 0.5
-				emissive = bm.emission_enabled and bm.emission.get_luminance() > 0.05
+				# (Only if it really glows: the plush material has emission
+				# switched on at energy 0 for the hit flash, which made every
+				# voxel character glow.)
+				emissive = bm.emission_enabled and bm.emission.get_luminance() * bm.emission_energy_multiplier > 0.05
 				if bm.cull_mode == BaseMaterial3D.CULL_DISABLED:
 					double = true
 			var a := mesh.surface_get_arrays(si)

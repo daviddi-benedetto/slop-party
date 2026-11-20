@@ -51,9 +51,9 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float, look := {}) -> vo
 	env.tonemap_white = 4.0
 	env.ssao_enabled = true
 	env.glow_enabled = true
-	env.glow_intensity = 0.5
+	env.glow_intensity = 0.3
 	env.glow_bloom = 0.0
-	env.glow_hdr_threshold = st.get("glow", 1.4 if day else 1.0)
+	env.glow_hdr_threshold = st.get("glow", 1.4 if day else 1.0) + 0.25
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.15
@@ -105,6 +105,18 @@ func build(cam_pos: Vector3, look_at_pos: Vector3, fov: float, look := {}) -> vo
 	add_child(camera)
 	camera.look_at_from_position(cam_pos, look_at_pos)
 	camera.current = true
+	# Depth of field: only the stage (seats, deck, characters) is sharp; the
+	# yard in front and everything behind the fence goes soft.
+	var d := cam_pos.distance_to(look_at_pos)
+	var lens := CameraAttributesPractical.new()
+	lens.dof_blur_far_enabled = true
+	lens.dof_blur_far_distance = d + 4.0
+	lens.dof_blur_far_transition = 7.0
+	lens.dof_blur_near_enabled = true
+	lens.dof_blur_near_distance = maxf(1.0, d - 9.0)
+	lens.dof_blur_near_transition = 4.0
+	lens.dof_blur_amount = 0.16
+	camera.attributes = lens
 
 
 func _on_settings() -> void:
@@ -318,6 +330,8 @@ func _backyard(look: Dictionary, st: Dictionary, day: bool, light_a: Color, ligh
 	for c in flowers:
 		_multi(bush, _mat(_g(petal[c]), 0.7), flowers[c])
 
+	_dress_yard(rng, st, day)
+
 	# Trees: in the yard's corners and beyond the fence.
 	for spec in [[-17.0, -6.0, 4.6], [16.0, -7.0, 5.0], [-23.0, -15.0, 5.4], [22.0, -16.0, 5.8], [-9.0, -19.0, 4.8], [9.0, -21.0, 5.2], [0.0, -24.0, 5.6], [-30.0, -9.0, 5.0], [30.0, -8.0, 5.0]]:
 		var path := "survival/Tree_Large" if rng.randf() < 0.4 else ("survival/Tree_Autumn" if look.get("key", "") in ["warm", "spooky"] else "survival/Tree")
@@ -423,6 +437,82 @@ func _backyard(look: Dictionary, st: Dictionary, day: bool, light_a: Color, ligh
 		for spec in [[-11.0, 6.0], [-9.5, 6.8], [10.5, 6.2], [12.0, 5.2], [-14.0, -8.5], [14.0, -9.0]]:
 			pumps.append(Transform3D(Basis.from_scale(Vector3(0.55, 0.42, 0.55)), Vector3(spec[0], 0.38, spec[1])))
 		_multi(pump, _neon(Color(1.0, 0.45, 0.05), 0.6), pumps)
+
+
+## A model in the yard: voxels in the voxel style, else the toy look.
+func _yard_model(path: String, pos: Vector3, yaw: float, scl: float, sway := false) -> void:
+	var node: Node3D
+	var vx: Array = Voxelizer.model(path, Models.parts(path), scl, sway) if Voxel.on else []
+	if not vx.is_empty():
+		node = MeshInstance3D.new()
+		(node as MeshInstance3D).mesh = vx[0]
+		(node as MeshInstance3D).material_override = vx[1]
+	else:
+		node = Models.scene(path).instantiate()
+	node.position = pos
+	node.rotation.y = yaw
+	node.scale = Vector3.ONE * scl
+	add_child(node)
+	if vx.is_empty():
+		Models.toy_node(node)
+
+
+## Life in the backyard (it looked bare): trees beyond the fence, bushes,
+## plants and rocks along the sides, a few village props, flowers and voxel
+## grass across the lawn. Everything stays clear of the seats and the deck
+## (|x| < 9 and -10 < z < 7) and out of the camera's way.
+func _dress_yard(rng: RandomNumberGenerator, st: Dictionary, day: bool) -> void:
+	var clear := func(p: Vector3) -> bool: return absf(p.x) < 9.5 and p.z > -10.5 and p.z < 7.5
+	# Trees behind the fence, in two loose rows.
+	var trees := ["nature/Tree/Common_Tree_1", "nature/Tree/Common_Tree_3", "nature/Tree/Common_Tree_5", "nature/Tree/Pine_2", "nature/Tree/Pine_4", "nature/Tree/Twisted_Tree_2"]
+	for k in 22:
+		var x := rng.randf_range(-34.0, 34.0)
+		var z := rng.randf_range(-30.0, -14.0)
+		_yard_model(trees[rng.randi() % trees.size()], Vector3(x, 0, z), rng.randf() * TAU, rng.randf_range(1.6, 2.6), true)
+	# Bushes, plants and rocks along both sides of the yard.
+	var green := ["nature/Bush/Bush_Common", "nature/Bush/Bush_Common_Flowers", "nature/Plant/Plant_1_Big", "nature/Plant/Plant_7_Big", "nature/Plant/Fern_1", "nature/Rock/Rock_Medium_1", "nature/Rock/Rock_Medium_3", "nature/Rock/Pebble_Round_2"]
+	var placed := 0
+	var tries := 0
+	while placed < 46 and tries < 400:
+		tries += 1
+		var side := -1.0 if rng.randf() < 0.5 else 1.0
+		var p := Vector3(side * rng.randf_range(10.5, 26.0), 0, rng.randf_range(-10.0, 12.0))
+		if clear.call(p):
+			continue
+		var path: String = green[rng.randi() % green.size()]
+		var big := path.contains("Rock_Medium")
+		_yard_model(path, p, rng.randf() * TAU, rng.randf_range(0.9, 1.5) * (0.6 if big else 1.0), not path.contains("Rock"))
+		placed += 1
+	# Village props on the sides: a cart, hay, barrels, crates, a bench, a well.
+	var props := [["village/Cart", Vector3(-16.0, 0, -4.0), 0.6], ["village/Hay", Vector3(-13.5, 0, -7.5), 0.3], ["village/Hay", Vector3(-12.2, 0, -6.2), 1.2],
+		["village/Barrel", Vector3(13.0, 0, -6.8), 0.0], ["village/Barrel", Vector3(13.9, 0, -6.1), 0.7], ["village/Crate", Vector3(14.6, 0, -7.4), 0.4],
+		["village/Crate", Vector3(15.2, 0, -6.4), 1.1], ["village/Bench_1", Vector3(17.0, 0, 2.5), -1.4], ["village/Well", Vector3(19.0, 0, -5.0), 0.3],
+		["village/Bonfire", Vector3(-19.0, 0, 3.0), 0.0], ["survival/Signpost", Vector3(11.0, 0, 6.0), -0.6], ["village/Bags", Vector3(-12.0, 0, 1.5), 0.9]]
+	for pr in props:
+		if ResourceLoader.exists("res://assets/models/" + pr[0] + ".glb") or ResourceLoader.exists("res://assets/models/" + pr[0] + ".gltf"):
+			_yard_model(pr[0], pr[1], pr[2], 1.0)
+	# Flowers and small plants in the foreground (soft in the depth of field).
+	for k in 26:
+		var p2 := Vector3(rng.randf_range(-14.0, 14.0), 0, rng.randf_range(8.5, 15.0))
+		_yard_model(["nature/Bush/Bush_Common_Flowers", "nature/Plant/Plant_1", "nature/Plant/Fern_1", "nature/Rock/Pebble_Round_4"][rng.randi() % 4], p2, rng.randf() * TAU, rng.randf_range(0.7, 1.2), true)
+	# Voxel grass across the lawn (map.gd tufts), not on the deck.
+	if Voxel.on:
+		var Map = load("res://scripts/map.gd")
+		var sh := Shader.new()
+		sh.code = Map.VOX_GRASS_SHADER
+		var gm := ShaderMaterial.new()
+		gm.shader = sh
+		var lawn: Color = _g(st.get("lawn", Color(0.36, 0.62, 0.25)))
+		gm.set_shader_parameter("base", lawn.darkened(0.25))
+		gm.set_shader_parameter("tip", lawn.lightened(0.25))
+		gm.set_shader_parameter("sway", 0.06)
+		var spots: Array = []
+		while spots.size() < 1800:
+			var p3 := Vector3(rng.randf_range(-30.0, 30.0), 0, rng.randf_range(-10.5, 16.0))
+			if absf(p3.x) < 8.6 and p3.z > -10.0 and p3.z < 6.5:
+				continue
+			spots.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.6, 1.0)), p3))
+		_multi(Map._vox_tuft("grass"), gm, spots)
 
 
 ## A matte toy material (wrapped diffuse, soft rim).

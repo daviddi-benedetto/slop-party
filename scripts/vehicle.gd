@@ -104,6 +104,7 @@ var _muzzles: Array = []         # Node3D markers (main, alt)
 var _rotor: Node3D
 var _fork: Node3D                # bike: front fork + wheel (steers)
 var _wheels: Array = []
+var visual_lift := 0.0          # the model's height above our origin (= the ground)
 var _visual: Node3D
 var _mats: Array = []
 var _engine_t := 0.0
@@ -146,6 +147,11 @@ func _ready() -> void:
 	var cs := CollisionShape3D.new()
 	cs.shape = shape
 	cs.position.y = size.y * 0.5 + (0.35 if type != "tank" else 0.1)
+	# The body rests on that box, so the ground is this far above our
+	# origin: the model is lifted by it (it used to sit half sunk).
+	visual_lift = 0.35 if type != "tank" else 0.1
+	if type == "heli":
+		visual_lift = 0.35
 	add_child(cs)
 	global_transform = home
 	_visual = Node3D.new()
@@ -157,6 +163,7 @@ func _ready() -> void:
 		"racer": _build_racer()
 		_: _build_buggy()
 	_merge_tree(_visual)
+	_visual.position.y = visual_lift
 	# The voxel world style: the vehicle in voxels (moving parts stay
 	# separate, so wheels and rotors still turn).
 	if Settings.v("voxel"):
@@ -248,9 +255,8 @@ func eject(p) -> void:
 ## Called from the driver's player._physics_process (after its brain update).
 func control(p, _delta: float) -> void:
 	p.global_position = global_position + Vector3(0, 0.6, 0)
-	if p.brain.melee:
-		p.fp_drive = not p.fp_drive
-		Sfx.play("tick", -8.0, 1.2 if p.fp_drive else 0.9)
+	# Always first person from the seat (no third-person toggle).
+	p.fp_drive = true
 	if p.brain.interact and not racing:
 		eject(p)
 
@@ -307,7 +313,19 @@ func _drive(delta: float, b) -> void:
 	if absf(move.y) < 0.05:
 		_speed = move_toward(_speed, 0.0, _spec.accel * 0.6 * delta)
 	var steer: float = -move.x * _spec.turn * grip
-	if type == "buggy" or type == "bike" or type == "racer":
+	var wheeled: bool = type == "buggy" or type == "bike" or type == "racer"
+	if driver != null and not driver.is_bot:
+		# A person drives where they look: the nose turns towards the view
+		# (forward or reversing alike); A / D add to it. Wheels need some
+		# speed to turn; tank tracks turn on the spot.
+		var d: float = wrapf(driver.yaw - rotation.y, -PI, PI)
+		var rate: float = clampf(d * 3.0, -1.0, 1.0) * _spec.turn * grip - move.x * _spec.turn * grip * 0.5
+		if wheeled:
+			rate *= clampf(absf(_speed) / 5.0, 0.0, 1.0)
+			if type == "racer":
+				rate *= lerpf(1.0, 0.8, clampf(absf(_speed) / _spec.speed, 0.0, 1.0))
+		steer = rate
+	elif wheeled:
 		steer *= clampf(absf(_speed) / 6.0, 0.0, 1.0) * signf(_speed if absf(_speed) > 0.1 else 1.0)
 		if type == "racer":
 			steer *= lerpf(1.0, 0.7, clampf(absf(_speed) / _spec.speed, 0.0, 1.0))   # steadier flat out
@@ -1029,3 +1047,5 @@ func add_driver_hands(kind: int, band: Color) -> void:
 		# driver's shoulders (below eye level), angled in a little.
 		paw.rotation = Vector3(1.15 - 0.25, -side * 0.25, 0.0)
 		_steer_wheel.add_child(paw)
+		if Settings.v("voxel"):
+			Voxelizer.voxelize_node(paw, VOX_CELL * 0.3)     # the voxel style: voxel paws

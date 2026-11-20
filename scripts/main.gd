@@ -435,6 +435,14 @@ func _voxel_bake() -> void:
 			print("[voxel-bake] %s map %d: %d ms, %d voxelized, %d already done" % [theme_key, i, Time.get_ticks_msec() - t0, Vz.stats.live, Vz.stats.cached])
 			m.free()
 			await get_tree().process_frame
+	# The lobby and podium backyard (stage.gd) in every theme.
+	var StageScript = preload("res://scripts/stage.gd")
+	var Lk = preload("res://scripts/looks.gd")
+	for theme_key in Lk.LOOKS.keys():
+		var sg = StageScript.new()
+		add_child(sg)
+		sg.build(Vector3(0, 4.9, 18.5), Vector3(0, 3.0, 0), 34.0, Lk.get_look(theme_key))
+		sg.free()
 	# The lobby's trees (stage.gd).
 	var Mdl = preload("res://scripts/models.gd")
 	for path in ["survival/Tree_Large", "survival/Tree_Autumn", "survival/Tree"]:

@@ -323,6 +323,17 @@ The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
   floors at a low angle sharp. See-through kit parts (window glass) stay
   real glass beside the voxels (`map._glass_like`); map window panes are
   `no_voxel`.
+- **v0.34:** voxel characters no longer glow (voxelizer.gd counts a
+  material as glowing only if emission x energy > 0.05; the plush keeps
+  emission on at energy 0 for the hit flash). Bloom toned down (map 0.32,
+  stage 0.3, theme values x0.6, bloom x0.35, threshold +0.25). The lobby
+  has depth of field on the stage only (stage.gd camera attributes) and a
+  dressed yard (`_dress_yard`: trees, bushes, plants, rocks, village props,
+  foreground flowers, voxel grass; baked with --voxel-bake). Vehicles: the
+  model is lifted by `visual_lift` (the body rests on a box raised 0.35 m,
+  0.1 m for the tank; models sat half sunk), seats follow; driving is first
+  person only, and a person's view steers ground vehicles (the nose turns
+  towards the view, A / D add; wheels need speed) like the helicopter.
 - **Crumbling walls removed** (`map.REMOVE_WEAK_WALLS`): the grey brick
   walls and their physics bricks are gone; `_weak_wall()` places nothing.
 - **Voxel meshes** store colours in a 2D atlas: every exposed face cell is

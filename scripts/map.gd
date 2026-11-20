@@ -655,10 +655,11 @@ func _build_environment() -> void:
 	env.ssao_intensity = 1.1
 	env.ssao_power = 1.2
 	env.glow_enabled = true
-	env.glow_intensity = 0.55
+	# Bloom kept modest: only genuinely bright things glow.
+	env.glow_intensity = 0.32
 	env.glow_strength = 1.0
-	env.glow_bloom = 0.06
-	env.glow_hdr_threshold = p.glow
+	env.glow_bloom = 0.015
+	env.glow_hdr_threshold = p.glow + 0.25
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 	env.set_glow_level(2, 1.0)
 	env.set_glow_level(4, 0.7)
@@ -3210,7 +3211,7 @@ static var _tufts := {}
 
 ## A voxel tuft for a ground-cover kind (cached): a few blades made of voxel
 ## columns (lower part straight, top leaning one voxel), on a 0.09 grid.
-func _vox_tuft(kind: String) -> ArrayMesh:
+static func _vox_tuft(kind: String) -> ArrayMesh:
 	if _tufts.has(kind):
 		return _tufts[kind]
 	var rng := RandomNumberGenerator.new()
