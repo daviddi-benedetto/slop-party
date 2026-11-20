@@ -20,7 +20,11 @@ const Voxel = preload("res://scripts/voxel.gd")
 
 ## Depth in metres of the deepest groove for each texture kind (map._tex).
 const DEPTH := {"bricks": 0.07, "tiles": 0.04, "planks": 0.04, "plates": 0.035, "rock": 0.11, "corrugated": 0.05,
-	"shingles": 0.07, "siding": 0.045, "marble": 0.02, "ice": 0.03, "lava": 0.08, "concrete": 0.02, "asphalt": 0.006}
+	"shingles": 0.07, "siding": 0.045, "marble": 0.02, "ice": 0.03, "lava": 0.08, "concrete": 0.02, "asphalt": 0.006,
+	# Ground: with these the lawn, turf and soil get real relief too (in the
+	# voxel style the ground steps in and out in blocks instead of looking
+	# like a flat striped floor).
+	"lawn": 0.03, "turf": 0.02, "soil": 0.03}
 
 const CODE := """
 shader_type spatial;
@@ -151,7 +155,7 @@ void fragment() {
 ## sides shaded by their own normal. One colour per cube.
 const VOX_CODE := """
 shader_type spatial;
-render_mode diffuse_lambert_wrap, specular_schlick_ggx;
+render_mode diffuse_lambert_wrap, specular_disabled;
 uniform vec3 tint : source_color = vec3(1.0);
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D normal_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -169,7 +173,7 @@ uniform float fade_far = 30.0;
 uniform sampler2D macro_tex : filter_linear_mipmap, repeat_enable;
 uniform float weather = 1.0;
 uniform float wet = 0.0;
-uniform float relief_depth = 0.55; // deepest cube, in cube sizes
+uniform float relief_depth = 1.5; // how far the voxels step in and out, in voxel sizes
 varying vec3 w_pos;
 varying vec3 w_nrm;
 %s
@@ -190,7 +194,10 @@ float cell_h(vec2 c, float layer, vec3 cur_T, vec3 cur_B, vec3 cur_N) {
 	// fake relief shading uses), grooves in the texture (mortar, seams)
 	// deeper, and now and then a voxel simply missing.
 	vec3 c3 = cur_T * c.x + cur_B * c.y + cur_N * layer;
-	float s = (1.0 - vox_h2(c, cur_N, layer)) * 0.55 + ((1.0 - ht) > 0.45 ? 0.35 : 0.0);
+	// Three clear depths (flush, half, full voxel) instead of tiny random
+	// differences: big steps read as blocks; tiny ones only made thin
+	// shimmering edges.
+	float s = floor((1.0 - vox_h2(c, cur_N, layer)) * 2.99) * 0.5 + ((1.0 - ht) > 0.45 ? 0.5 : 0.0);
 	return vox_hash(vec3(c, dot(cur_N, vec3(1.0, 2.0, 3.0)))) > 0.988 ? 1.0 : min(s, 0.9);
 }
 void fragment() {
@@ -207,7 +214,7 @@ void fragment() {
 	// (vox_depth) carries the same heights, so there is no visible edge.
 	// Real parallax wherever a cube is still a few pixels wide (no
 	// distance cut-off: it fades with the cube's size on screen).
-	float k = relief_depth * smoothstep(2.0, 6.0, amt_px(f));
+	float k = relief_depth * smoothstep(3.5, 9.0, amt_px(f));
 	vec2 p = f;
 	vec2 cellp = floor(p);
 	float hd = cell_h(cellp, layer, T, B, N);
@@ -261,12 +268,12 @@ void fragment() {
 	float sh = 1.0;
 	if (side) {
 		wn = normalize(T * side_n.x + B * side_n.y + N * 0.7);
-		col *= 0.78;
+		col *= mix(1.0, 0.62, vox_strength);
 	} else {
 		vox_depth(p, T, B, N, layer, wn, sh);
 	}
 	// Sunk cubes sit in their own shadow.
-	float cavity = mix(1.0, 0.7, hd);
+	float cavity = mix(1.0, mix(1.0, 0.62, vox_strength), hd);
 	col *= sh * cavity;
 	vec2 wuv = f * vox_size;
 	float mac = texture(macro_tex, wuv * 0.035).r;
@@ -287,8 +294,7 @@ void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
 	ROUGHNESS = rough;
 	METALLIC = metallic;
-	RIM = rim_amount;
-	RIM_TINT = rim_tint_amount;
+	// (No rim light, no specular: they drew bright borders on voxel edges.)
 	EMISSION = textureGrad(emission_tex, uv, g1, g2).rgb * emission_energy;
 }
 """
@@ -314,8 +320,20 @@ static func macro() -> NoiseTexture2D:
 	return _macro
 
 
+## Voxel style per texture kind: [how far voxels step in and out (voxel
+## sizes), how strong the per-voxel light / dark variation is]. Ground and
+## rock are deep and rough; plaster, drywall-like siding, tiles, marble and
+## metal stay nearly flat and calm.
+const VOX_STYLE := {
+	"lawn": [1.6, 1.0], "soil": [1.6, 1.0], "turf": [1.2, 0.9], "rock": [1.6, 1.0], "snow": [1.0, 0.7],
+	"lava": [1.3, 0.9], "bricks": [0.9, 0.8], "shingles": [0.9, 0.8], "planks": [0.5, 0.6], "asphalt": [0.5, 0.6],
+	"corrugated": [0.4, 0.5], "siding": [0.3, 0.45], "concrete": [0.3, 0.45], "tiles": [0.25, 0.4],
+	"plates": [0.2, 0.35], "ice": [0.25, 0.4], "marble": [0.12, 0.3], "plaster": [0.15, 0.35],
+}
+
+
 static func make(tint: Color, albedo: Texture2D, normal: Texture2D, height: Texture2D, emission: Texture2D,
-		uv_scale: float, depth: float, rough: float, metal: float) -> ShaderMaterial:
+		uv_scale: float, depth: float, rough: float, metal: float, kind := "") -> ShaderMaterial:
 	if _shader == null:
 		_shader = Shader.new()
 		_shader.code = CODE
@@ -328,6 +346,9 @@ static func make(tint: Color, albedo: Texture2D, normal: Texture2D, height: Text
 		m.shader = _vox_shader
 		m.set_shader_parameter("vox_size", Voxel.SIZE)
 		m.set_shader_parameter("vox_detail", Voxel.detail())
+		var vs: Array = VOX_STYLE.get(kind, [clampf(depth * 12.0, 0.2, 1.2), 0.6])
+		m.set_shader_parameter("relief_depth", vs[0])
+		m.set_shader_parameter("vox_strength", vs[1])
 	m.set_shader_parameter("tint", tint)
 	m.set_shader_parameter("albedo_tex", albedo)
 	m.set_shader_parameter("normal_tex", normal)

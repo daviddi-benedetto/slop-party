@@ -46,7 +46,7 @@ const USER := "user://voxel_cache/"
 ## player colour, 120 both), hit flash.
 const PROP_CODE := """
 shader_type spatial;
-render_mode diffuse_lambert_wrap, specular_schlick_ggx%s;
+render_mode diffuse_lambert_wrap, specular_disabled%s;
 uniform sampler2D atlas : source_color, filter_nearest_mipmap, repeat_disable;
 uniform sampler2D vox_detail : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float rough = 0.85;
@@ -58,6 +58,13 @@ uniform vec3 tint : source_color = vec3(1.0);
 uniform float pastel = 0.0;
 uniform vec3 accent : source_color = vec3(1.0);   // the player colour (voxelize_node)
 uniform float flash = 0.0;                         // hit flash (character.gd)
+uniform float RELIEF = 1.5;                        // how far voxels step in and out (voxels; 0 = option "Surface depth" off)
+uniform float vox_strength = 1.0;                  // per-voxel tilt and light / dark variation
+// Depth of the voxel at face cell c (0 flush .. 1 deepest), from the tile.
+float cell_depth(vec2 c, vec2 doff) {
+	float a = textureLod(vox_detail, (c + doff + 0.5) / 64.0, 3.0).a;
+	return floor((1.0 - a) * 2.99) * 0.5;
+}
 float h2(vec2 p) {
 	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
 	p3 += dot(p3, p3.yzx + 33.33);
@@ -73,15 +80,66 @@ void vertex() {
 	}
 }
 void fragment() {
-	// Colour: nearest texel up close (crisp voxels), smaller copies of the
-	// atlas (mipmaps) far away, so distant voxels blend instead of shimmer.
-	vec4 v = texture(atlas, UV / vec2(textureSize(atlas, 0)));
 	// Relief from the shared tile (voxel.gd detail()), offset per quad.
 	vec2 qo = floor(UV - UV2 + 0.5);
 	vec2 doff = floor(fract(qo * vec2(0.0731, 0.0577)) * 64.0);
-	vec4 d = texture(vox_detail, (UV2 + doff) / 64.0);
-	vec2 tilt = (d.rg * 2.0 - 1.0) * 1.9;
-	float sh = d.b * 1.25;
+	// Real depth: march into a field of voxels at three depths (flush,
+	// half, full; RELIEF voxels at most), so voxels step in and out of every
+	// face. Faded by the voxel's size on screen, never by distance.
+	vec3 V = normalize(-VERTEX);
+	vec3 vt = vec3(dot(V, TANGENT), dot(V, BINORMAL), dot(V, NORMAL));
+	vec2 fw = fwidth(UV2);
+	float k = RELIEF * smoothstep(4.0, 10.0, 1.0 / max(sqrt(fw.x * fw.y), 1e-4));
+	vec2 p = UV2;
+	vec2 cellp = floor(p);
+	float hd = cell_depth(cellp, doff);
+	float cur = 0.0;
+	bool side = false;
+	vec2 sn = vec2(0.0);
+	if (k > 0.002 && vt.z > 0.06) {
+		vec2 duv = vt.xy / vt.z * k / 12.0;
+		for (int i = 0; i < 12; i++) {
+			if (cur >= hd) {
+				break;
+			}
+			vec2 np = p - duv;
+			cur += 1.0 / 12.0;
+			vec2 nc = floor(np);
+			if (nc != cellp) {
+				float nh = cell_depth(nc, doff);
+				if (cur >= nh) {
+					side = true;
+					sn = cellp - nc;
+					if (abs(sn.x) > 0.5 && abs(sn.y) > 0.5) {
+						sn.y = 0.0;
+					}
+					p = np;
+					cellp = nc;
+					hd = nh;
+					break;
+				}
+				cellp = nc;
+				hd = nh;
+			}
+			p = np;
+		}
+	} else {
+		hd = 0.0;
+	}
+	// Colour: nearest texel up close (crisp voxels), smaller copies of the
+	// atlas (mipmaps) far away, so distant voxels blend instead of shimmer.
+	vec2 asz = vec2(textureSize(atlas, 0));
+	vec4 v = texture(atlas, (UV + (p - UV2)) / asz);
+	if (v.a < 0.01 && max(v.r, max(v.g, v.b)) < 0.01) {
+		// Marched off the face into empty atlas: use the face's own colour.
+		v = texture(atlas, UV / asz);
+	}
+	vec4 d = texture(vox_detail, (p + doff) / 64.0);
+	vec2 tilt = (d.rg * 2.0 - 1.0) * 1.9 * vox_strength;
+	float sh = mix(1.0, d.b * 1.25, vox_strength) * mix(1.0, mix(1.0, 0.62, vox_strength), hd);
+	if (side) {
+		sh *= mix(1.0, 0.62, vox_strength);
+	}
 	// Alpha: 1 plain, 0.5 player colour, 0 glowing (blends sensibly).
 	float a = v.a;
 	float aw = a >= 0.5 ? (1.0 - a) * 2.0 : a * 2.0;
@@ -92,10 +150,8 @@ void fragment() {
 	col = clamp(mix(vec3(l), col, sat) * val, 0.0, 1.0) * tint;
 	col = mix(col, vec3(1.0), pastel);
 	ALBEDO = col;
-	NORMAL = normalize(NORMAL + TANGENT * tilt.x + BINORMAL * tilt.y);
-	ROUGHNESS = rough;
-	RIM = 0.18;
-	RIM_TINT = 0.6;
+	NORMAL = side ? normalize(NORMAL * 0.7 + TANGENT * sn.x + BINORMAL * sn.y) : normalize(NORMAL + TANGENT * tilt.x + BINORMAL * tilt.y);
+	ROUGHNESS = 1.0;
 	EMISSION = base * gw * emit * 0.7 + vec3(flash);
 }
 """
@@ -222,6 +278,10 @@ static func material_for(atlas: Texture2D, double: bool, sway: bool) -> ShaderMa
 	m.shader = _shaders[double]
 	m.set_shader_parameter("atlas", atlas)
 	m.set_shader_parameter("vox_detail", Voxel.detail())
+	# Foliage is rough and deep; buildings and props more restrained (their
+	# walls are mostly plaster, wood and stone).
+	m.set_shader_parameter("RELIEF", (1.3 if sway else 0.6) if Settings.v("parallax") else 0.0)
+	m.set_shader_parameter("vox_strength", 0.9 if sway else 0.6)
 	m.set_shader_parameter("sway", 1.0 if sway else 0.0)
 	var g: Dictionary = look.get("grade", {})
 	m.set_shader_parameter("sat", float(g.get("sat", 1.0)) * 1.1)
@@ -656,6 +716,9 @@ static func _voxel_mi(mi: MeshInstance3D, root: Node, cell: float, accent: Color
 	m2.set_shader_parameter("val", 1.0)
 	m2.set_shader_parameter("tint", Vector3.ONE)
 	m2.set_shader_parameter("pastel", 0.0)
+	# Characters, guns, vehicles: fine voxels, subtle depth and variation.
+	m2.set_shader_parameter("RELIEF", 0.5 if Settings.v("parallax") else 0.0)
+	m2.set_shader_parameter("vox_strength", 0.45)
 	if accent.r >= 0.0:
 		m2.set_shader_parameter("accent", accent)
 	mi.mesh = _mesh(key, d)

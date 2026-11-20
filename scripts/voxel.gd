@@ -62,6 +62,9 @@ float vox_amount(vec2 f) {
 // `vox_detail` (Voxel.detail(): 64 x 64 cubes, 8 px each, with mipmaps), so
 // far away the GPU blends it smoothly: no shimmer, nothing switches off.
 uniform sampler2D vox_detail : filter_linear_mipmap_anisotropic, repeat_enable;
+// How strong the per-voxel tilt and light / dark variation is (per
+// material: rough ground 1, smooth plaster or metal much less).
+uniform float vox_strength = 1.0;
 // Whole-cube offset into the tile per face direction, so walls and floors
 // do not share one pattern. (Not per layer: a face lying exactly on a cube
 // boundary got a different layer pixel by pixel, which sprinkled the
@@ -76,9 +79,9 @@ float vox_h2(vec2 c2, vec3 N, float layer) {
 // f = position on the face in cube units (not wrapped), layer = which plane.
 void vox_depth(vec2 f, vec3 T, vec3 B, vec3 N, float layer, inout vec3 nrm, out float shade) {
 	vec4 d = texture(vox_detail, (f + vox_off(N, layer)) / 64.0);
-	vec2 tilt = (d.rg * 2.0 - 1.0) * 1.9;
+	vec2 tilt = (d.rg * 2.0 - 1.0) * 1.9 * vox_strength;
 	nrm = normalize(nrm + T * tilt.x + B * tilt.y);
-	shade = d.b * 1.25;
+	shade = mix(1.0, d.b * 1.25, vox_strength);
 }
 """
 
@@ -86,7 +89,7 @@ void vox_depth(vec2 f, vec3 T, vec3 B, vec3 N, float layer, inout vec3 nrm, out 
 ## faces culled or not), built on first use.
 const CODE := """
 shader_type spatial;
-render_mode diffuse_lambert_wrap, specular_schlick_ggx%s;
+render_mode diffuse_lambert_wrap, specular_disabled%s;
 uniform vec4 albedo : source_color = vec4(1.0);
 uniform sampler2D tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool use_tex = false;
@@ -175,8 +178,8 @@ void fragment() {
 	NORMAL = normalize((VIEW_MATRIX * vec4(vn, 0.0)).xyz);
 	ROUGHNESS = rough;
 	METALLIC = metal;
-	RIM = rim_amount;
-	RIM_TINT = 0.6;
+	// No rim light and no specular (render_mode): both drew thin bright
+	// borders along every voxel edge.
 	vec3 e = emission;
 	if (use_emission_tex) {
 		e = texture(emission_tex, UV * uv_scale.xy + uv_offset.xy).rgb * emission_energy;
@@ -187,6 +190,14 @@ void fragment() {
 
 static var _shaders := {}
 static var _cache := {}
+
+
+## Voxel variation for a plain material from how rough it is: rough and
+## matte surfaces get the full effect, smooth / shiny ones (paint, metal,
+## glassy plastic) a gentle one.
+static func strength_for(rough: float, metal := 0.0) -> float:
+	var s := clampf((rough - 0.35) / 0.55, 0.0, 1.0)
+	return lerpf(0.3, 0.85, s) * (1.0 - 0.4 * clampf(metal, 0.0, 1.0))
 static var _detail: ImageTexture
 const DETAIL_FILE := "res://assets/voxel/detail.vox"
 ## tools (--voxel-bake): write the detail tile into the game.
@@ -221,14 +232,22 @@ static func detail() -> ImageTexture:
 	for i in N * N:
 		rnd[i] = Vector2(rng.randf() - 0.5, rng.randf() - 0.5)
 	var img := Image.create_empty(N * P, N * P, false, Image.FORMAT_RGBA8)
-	var w := 0.26
+	# Three clear height levels per voxel (not tiny random differences: those
+	# drew thin bright lips that shimmered). Lower voxels are darker, and a
+	# voxel next to a taller one is shaded in that corner. No bright edges:
+	# the normal only gets a faint random tilt per voxel.
+	var w := 0.3
+	var lv := PackedFloat32Array()
+	lv.resize(N * N)
+	for i in N * N:
+		lv[i] = floor(h[i] * 2.99) * 0.5
 	for cy in N:
 		for cx in N:
-			var h0 := h[cy * N + cx]
-			var dl := h0 - h[cy * N + posmod(cx - 1, N)]
-			var dr := h0 - h[cy * N + posmod(cx + 1, N)]
-			var dd := h0 - h[posmod(cy - 1, N) * N + cx]
-			var du := h0 - h[posmod(cy + 1, N) * N + cx]
+			var h0 := lv[cy * N + cx]
+			var ul := maxf(lv[cy * N + posmod(cx - 1, N)] - h0, 0.0)
+			var ur := maxf(lv[cy * N + posmod(cx + 1, N)] - h0, 0.0)
+			var ud := maxf(lv[posmod(cy - 1, N) * N + cx] - h0, 0.0)
+			var uu := maxf(lv[posmod(cy + 1, N) * N + cx] - h0, 0.0)
 			var rv := rnd[cy * N + cx]
 			for py in P:
 				var fy := (py + 0.5) / P
@@ -238,13 +257,9 @@ static func detail() -> ImageTexture:
 					var fx := (px + 0.5) / P
 					var el := 1.0 - smoothstep(0.0, w, fx)
 					var er := 1.0 - smoothstep(0.0, w, 1.0 - fx)
-					var tx := -maxf(dl, 0.0) * el + maxf(dr, 0.0) * er
-					var ty := -maxf(dd, 0.0) * ed + maxf(du, 0.0) * eu
-					var ao := maxf(-dl, 0.0) * el + maxf(-dr, 0.0) * er + maxf(-dd, 0.0) * ed + maxf(-du, 0.0) * eu
-					tx = tx * 0.8 + rv.x * 0.16
-					ty = ty * 0.8 + rv.y * 0.16
-					var shade := (0.8 + 0.32 * h0) * (1.0 - 0.5 * minf(ao, 1.0)) / 1.25
-					img.set_pixel(cx * P + px, cy * P + py, Color(clampf(tx * 0.5 + 0.5, 0.0, 1.0), clampf(ty * 0.5 + 0.5, 0.0, 1.0), clampf(shade, 0.0, 1.0), h0))
+					var ao := ul * el + ur * er + ud * ed + uu * eu
+					var shade := (0.7 + 0.3 * h0) * (1.0 - 0.45 * minf(ao, 1.0)) / 1.25
+					img.set_pixel(cx * P + px, cy * P + py, Color(0.5 + rv.x * 0.06, 0.5 + rv.y * 0.06, clampf(shade, 0.0, 1.0), h[cy * N + cx]))
 	if save_detail:
 		var fw := FileAccess.open_compressed(DETAIL_FILE, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
 		if fw != null:
@@ -270,6 +285,7 @@ static func plain(color: Color, tex: Texture2D, tri_scale: float, rough: float, 
 	m.shader = _shader(false)
 	m.set_shader_parameter("vox_size", SIZE)
 	m.set_shader_parameter("vox_detail", detail())
+	m.set_shader_parameter("vox_strength", strength_for(rough, metal))
 	m.set_shader_parameter("albedo", color)
 	if tex != null:
 		m.set_shader_parameter("tex", tex)
@@ -297,6 +313,7 @@ static func from_standard(src: BaseMaterial3D, sway := 0.0) -> Material:
 	m.shader = _shader(src.cull_mode == BaseMaterial3D.CULL_DISABLED or sway > 0.0)
 	m.set_shader_parameter("vox_size", SIZE)
 	m.set_shader_parameter("vox_detail", detail())
+	m.set_shader_parameter("vox_strength", 0.9 if sway > 0.0 else strength_for(src.roughness, src.metallic))
 	m.set_shader_parameter("albedo", src.albedo_color)
 	if src.albedo_texture != null:
 		m.set_shader_parameter("tex", src.albedo_texture)

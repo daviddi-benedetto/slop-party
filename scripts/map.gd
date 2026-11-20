@@ -1147,7 +1147,7 @@ func _mat(tint: Color, kind: String, uv_scale: float, rough: float, metal: float
 		# Parallax occlusion surfaces (surface.gd): grooves with real depth.
 		var tx: Array = _tex(kind)
 		var sm := Surface.make(toy.lerp(Color.WHITE, 0.06), _soft(kind, tx[0]) if tx[2] == null and kind != "lawn" else tx[0], tx[1], tx[3], tx[2],
-			uv_scale, Surface.DEPTH[kind], maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6)
+			uv_scale, Surface.DEPTH[kind], maxf(rough, 0.62) if metal < 0.5 else rough, metal * 0.6, kind)
 		sm.set_shader_parameter("weather", 0.6 if indoor else 1.0)
 		if not indoor:
 			sm.set_shader_parameter("wet", float(look.get("wet", 0.0)))
@@ -1647,6 +1647,11 @@ func _door(hinge: Vector3, yaw := 0.0, w := 1.7, h := 2.45, model := "doors/Door
 ## A wall that crumbles under fire (rubble.gd). `pos` = middle of its foot,
 ## `size` = length, height, thickness; the length runs along X turned by yaw.
 func _weak_wall(pos: Vector3, size: Vector3, yaw := 0.0, col := Color(0.6, 0.56, 0.5), hp := 150.0, mirror := true) -> void:
+	# Removed (v0.33.1): the grey crumbling-brick walls and their physics
+	# bricks did not fit the voxel world. The maps still call this; it
+	# places nothing.
+	if REMOVE_WEAK_WALLS:
+		return
 	for k in (2 if mirror else 1):
 		var r = Rubble.new()
 		r.size = size
@@ -2621,6 +2626,8 @@ func _crossing(centre: Vector3, road_w: float, along_x := true, mirror := true) 
 
 ## An underground passage along X at `z` from x0 to x1, with ramps down at
 ## both ends (open holes in the ground with guard rails).
+const REMOVE_WEAK_WALLS := true
+
 ## Below-ground walls sit this far inside a hole's edge (no z-fighting).
 const ZF := 0.015
 
@@ -3382,7 +3389,7 @@ func _grass() -> void:
 
 	var density := 5.0 if area < 3000.0 else (3.8 if area < 9000.0 else 2.4)
 	# (Voxel tufts are fuller than cards, so fewer of them.)
-	var count := mini(int(area * density * (0.55 if Voxel.on else 1.0)), 70000)
+	var count := mini(int(area * density * (0.8 if Voxel.on else 1.0)), 70000)
 	var chunks := {}
 	var placed := 0
 	var tries := 0

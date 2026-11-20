@@ -289,6 +289,19 @@ The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
   cut faces (flicker).
 - **Depth of field** starts at least 60 m away (beyond the map) and is
   weaker (0.035).
+- **v0.33.1 look tuning:** no rim light and no specular on any voxel
+  shader (they drew thin bright borders on every voxel edge); the detail
+  tile has three height levels (flush / half / full voxel) with dark
+  corners next to taller voxels and no bright lips; real ray-marched depth
+  on voxel meshes too (voxelizer.gd `PROP_CODE`, 12 steps, shown where a
+  voxel is at least ~4-10 px wide). Depth and light / dark variation are
+  per material: surface.gd `VOX_STYLE` per texture kind (lawn, soil, rock
+  deep; plaster, siding, tiles, marble, metal nearly flat),
+  `Voxel.strength_for(roughness, metallic)` for plain materials, voxel
+  meshes 0.6 depth (foliage 1.3), characters / guns / vehicles 0.5. The
+  "Surface depth" option turns the ray-marched depth off everywhere.
+- **Crumbling walls removed** (`map.REMOVE_WEAK_WALLS`): the grey brick
+  walls and their physics bricks are gone; `_weak_wall()` places nothing.
 - **Voxel meshes** store colours in a 2D atlas: every exposed face cell is
   one texel (UV = texel in pixels, UV2 = position in face cells, TANGENT /
   BINORMAL = the face axes), so meshes could be merged; map.gd still
