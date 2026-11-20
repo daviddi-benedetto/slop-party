@@ -300,6 +300,17 @@ The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
   `Voxel.strength_for(roughness, metallic)` for plain materials, voxel
   meshes 0.6 depth (foliage 1.3), characters / guns / vehicles 0.5. The
   "Surface depth" option turns the ray-marched depth off everywhere.
+- **Seamless joins (v0.33.2):** a voxelized model's grid now fits its
+  bounds exactly (cells stretched ~1 % per axis so a whole number spans
+  each side; samples clamped inside), so snap-together kit pieces tile
+  edge to edge with no overlap or gap. A voxel face takes its colour only
+  from triangles facing the same axis (falling back to the nearest cell on
+  that face), so hidden end caps never colour a wall's front; the
+  ray-march on voxel meshes is clamped to its own quad (quad size in
+  CUSTOM0), so it cannot pick up another quad's colours. In the voxel
+  style map boxes are crisp (`_rounded_box` returns a plain box; the 6 cm
+  rounding grooved every seam, e.g. between stair steps) and stair steps
+  no longer overlap.
 - **Crumbling walls removed** (`map.REMOVE_WEAK_WALLS`): the grey brick
   walls and their physics bricks are gone; `_weak_wall()` places nothing.
 - **Voxel meshes** store colours in a 2D atlas: every exposed face cell is

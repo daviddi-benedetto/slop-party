@@ -1961,6 +1961,18 @@ func _rod(a: Vector3, b: Vector3, radius: float, mat: String, mirror := true) ->
 ## radius is not distorted by scaling. Cached per size.
 func _rounded_box(size: Vector3) -> ArrayMesh:
 	var key := "%.3f,%.3f,%.3f" % [size.x, size.y, size.z]
+	if Voxel.on:
+		# The voxel style: crisp edges. The 6 cm rounding left a groove
+		# wherever two boxes met (a line between every step, every wall
+		# segment).
+		key = "s" + key
+		if not _box_cache.has(key):
+			var bm := BoxMesh.new()
+			bm.size = size
+			var sst := SurfaceTool.new()
+			sst.create_from(bm, 0)
+			_box_cache[key] = sst.commit()
+		return _box_cache[key]
 	if _box_cache.has(key):
 		return _box_cache[key]
 	const SEG := 2
@@ -2072,7 +2084,7 @@ func _wedge(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := tru
 
 ## Stairs: a hidden ramp to walk on, drawn as steps. Same frame as _wedge.
 func _stairs(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := true) -> void:
-	var key := "%.2f,%.2f,%.2f" % [size.x, size.y, size.z]
+	var key := "%.2f,%.2f,%.2f,%s" % [size.x, size.y, size.z, Voxel.on]
 	if not _stairs_cache.has(key):
 		var n := maxi(2, int(ceil(size.y / 0.25)))
 		var st := SurfaceTool.new()
@@ -2080,7 +2092,7 @@ func _stairs(base: Vector3, size: Vector3, yaw: float, mat: String, mirror := tr
 		var dx := size.x / n
 		for i in n:
 			var hh := size.y * (i + 1) / n
-			st.append_from(_rounded_box(Vector3(dx + 0.02, hh, size.z)), 0, Transform3D(Basis(), Vector3(-size.x * 0.5 + dx * (i + 0.5), hh * 0.5, 0)))
+			st.append_from(_rounded_box(Vector3(dx + (0.0 if Voxel.on else 0.02), hh, size.z)), 0, Transform3D(Basis(), Vector3(-size.x * 0.5 + dx * (i + 0.5), hh * 0.5, 0)))
 		_stairs_cache[key] = st.commit()
 	var copies := [Transform3D(Basis(Vector3.UP, yaw), base)]
 	if mirror:

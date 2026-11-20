@@ -29,7 +29,7 @@ extends RefCounted
 
 const Voxel = preload("res://scripts/voxel.gd")
 const Looks = preload("res://scripts/looks.gd")
-const VERSION := 5
+const VERSION := 9
 const MAX_DIM := 96
 const FAR_STEPS := 2              # far version: voxels 2x bigger
 const FAR_FROM := 55.0            # metres: map.gd cross-fades to the far version here
@@ -70,7 +70,9 @@ float h2(vec2 p) {
 	p3 += dot(p3, p3.yzx + 33.33);
 	return fract((p3.x + p3.y) * p3.z);
 }
+varying vec2 qsize;
 void vertex() {
+	qsize = CUSTOM0.xy;
 	if (sway > 0.0) {
 		vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 		float h = clamp(w.y - 0.4, 0.0, 7.0);
@@ -102,7 +104,9 @@ void fragment() {
 			if (cur >= hd) {
 				break;
 			}
-			vec2 np = p - duv;
+			// Never past the face's own edges (they would pick up another
+			// face's colours from the atlas: thin coloured lines at seams).
+			vec2 np = clamp(p - duv, vec2(0.001), qsize - vec2(0.001));
 			cur += 1.0 / 12.0;
 			vec2 nc = floor(np);
 			if (nc != cellp) {
@@ -246,10 +250,11 @@ static func _mesh(key: String, d: Dictionary) -> ArrayMesh:
 	arr[Mesh.ARRAY_TANGENT] = d.tans
 	arr[Mesh.ARRAY_TEX_UV] = d.uvs
 	arr[Mesh.ARRAY_TEX_UV2] = d.uv2s
+	arr[Mesh.ARRAY_CUSTOM0] = d.qs
 	arr[Mesh.ARRAY_INDEX] = d.idx
 	var m := ArrayMesh.new()
 	if (d.verts as PackedVector3Array).size() > 0:
-		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], {}, Mesh.ARRAY_CUSTOM_RG_FLOAT << Mesh.ARRAY_FORMAT_CUSTOM0_SHIFT)
 	_meshes[key] = m
 	return m
 
@@ -319,13 +324,28 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 	var biggest := maxf(box.size.x, maxf(box.size.y, box.size.z))
 	if biggest / vs > MAX_DIM - 2:
 		vs = biggest / float(MAX_DIM - 2)
-	var origin := box.position - Vector3.ONE * vs
-	var dims := Vector3i((box.size / vs).ceil()) + Vector3i(3, 3, 3)
+	# The grid fits the model's bounds exactly: the cells are stretched a
+	# hair (about 1 %) per axis so a whole number of them spans each side,
+	# and every sample is kept inside. Snap-together pieces (kit walls,
+	# floors, stairs) then tile edge to edge, with no overlap and no gap:
+	# before, each piece's voxels poked up to a cell past its edges and the
+	# neighbours' grids did not line up (jagged double edges at every seam).
+	var cells := Vector3i(maxi(1, roundi(box.size.x / vs)), maxi(1, roundi(box.size.y / vs)), maxi(1, roundi(box.size.z / vs)))
+	var vs3 := Vector3(box.size.x / cells.x if box.size.x > 0.0001 else vs, box.size.y / cells.y if box.size.y > 0.0001 else vs, box.size.z / cells.z if box.size.z > 0.0001 else vs)
+	var origin := box.position - vs3
+	var dims := cells + Vector3i(2, 2, 2)
 	var n := dims.x * dims.y * dims.z
 	var sums := PackedFloat32Array()
 	sums.resize(n * 4)
 	var counts := PackedInt32Array()
 	counts.resize(n)
+	# The same per facing axis: a voxel face takes its colour from triangles
+	# facing that way (a wall's front never picks up its hidden end cap,
+	# which drew a thin line at every seam between pieces).
+	var sums_ax := PackedFloat32Array()
+	sums_ax.resize(n * 9)
+	var counts_ax := PackedInt32Array()
+	counts_ax.resize(n * 3)
 	var glow := PackedByteArray()
 	glow.resize(n)
 	var double := false
@@ -379,6 +399,8 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 				var p0: Vector3 = xf * verts[i0]
 				var p1: Vector3 = xf * verts[i1]
 				var p2: Vector3 = xf * verts[i2]
+				var tn := (p1 - p0).cross(p2 - p0).abs()
+				var tax := 0 if tn.x >= tn.y and tn.x >= tn.z else (1 if tn.y >= tn.z else 2)
 				var e := maxf(p0.distance_to(p1), maxf(p1.distance_to(p2), p2.distance_to(p0)))
 				var steps := maxi(1, ceili(e / step))
 				var inv := 1.0 / steps
@@ -399,7 +421,7 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 							c = c * tc
 						if has_vc:
 							c = c * (vcols[i0] * w + vcols[i1] * u + vcols[i2] * v)
-						var g := Vector3i(((pos - origin) / vs).floor())
+						var g := Vector3i(((pos - origin) / vs3).floor()).clamp(Vector3i.ONE, cells)
 						if g.x < 0 or g.y < 0 or g.z < 0 or g.x >= dims.x or g.y >= dims.y or g.z >= dims.z:
 							continue
 						var ci := g.x + dims.x * (g.y + dims.y * g.z)
@@ -407,6 +429,11 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 						sums[ci * 4 + 1] += c.g
 						sums[ci * 4 + 2] += c.b
 						counts[ci] += 1
+						var ai3 := (ci * 3 + tax) * 3
+						sums_ax[ai3] += c.r
+						sums_ax[ai3 + 1] += c.g
+						sums_ax[ai3 + 2] += c.b
+						counts_ax[ci * 3 + tax] += 1
 						if emissive:
 							glow[ci] = 1
 						if accent_mat:
@@ -564,6 +591,7 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 	var mt := PackedFloat32Array()
 	var muv := PackedVector2Array()
 	var muv2 := PackedVector2Array()
+	var mqs := PackedFloat32Array()     # the quad's size in cells (CUSTOM0)
 	var mi := PackedInt32Array()
 	for qi in quads.size():
 		var q: Array = quads[qi]
@@ -585,9 +613,36 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 				g[v_ax] = int(q[9]) + k2
 				var ci := g.x + dims.x * (g.y + dims.y * g.z)
 				var ai := ((at.y + k2) * aw + at.x + k) * 4
-				atlas[ai] = cols[ci * 4]
-				atlas[ai + 1] = cols[ci * 4 + 1]
-				atlas[ai + 2] = cols[ci * 4 + 2]
+				var src := ci
+				var cax := counts_ax[ci * 3 + axis]
+				if cax == 0:
+					# No triangle faces this way in this cell (the face stops
+					# short of the piece's edge): borrow the nearest cell on
+					# the same face that has one, not the edge's own colour.
+					for r in [1, 2, 3]:
+						for off in [Vector2i(-r, 0), Vector2i(r, 0), Vector2i(0, -r), Vector2i(0, r)]:
+							var g2 := g
+							g2[u_ax] += (off as Vector2i).x
+							g2[v_ax] += (off as Vector2i).y
+							if g2[u_ax] < 0 or g2[v_ax] < 0 or g2[u_ax] >= dims[u_ax] or g2[v_ax] >= dims[v_ax]:
+								continue
+							var c2 := g2.x + dims.x * (g2.y + dims.y * g2.z)
+							if counts_ax[c2 * 3 + axis] > 0:
+								src = c2
+								cax = counts_ax[c2 * 3 + axis]
+								break
+						if cax > 0:
+							break
+				if cax > 0:
+					var s3 := (src * 3 + axis) * 3
+					var kk := 255.0 / cax
+					atlas[ai] = clampi(int(sums_ax[s3] * kk), 0, 255)
+					atlas[ai + 1] = clampi(int(sums_ax[s3 + 1] * kk), 0, 255)
+					atlas[ai + 2] = clampi(int(sums_ax[s3 + 2] * kk), 0, 255)
+				else:
+					atlas[ai] = cols[ci * 4]
+					atlas[ai + 1] = cols[ci * 4 + 1]
+					atlas[ai + 2] = cols[ci * 4 + 2]
 				atlas[ai + 3] = cols[ci * 4 + 3]
 		var tdir := eu.normalized()
 		var bdir := ev.normalized()
@@ -597,17 +652,19 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 		var uvs := [Vector2(at.x, at.y), Vector2(at.x + wlen, at.y), Vector2(at.x + wlen, at.y + hlen), Vector2(at.x, at.y + hlen)]
 		var uv2s := [Vector2.ZERO, Vector2(wlen, 0), Vector2(wlen, hlen), Vector2(0, hlen)]
 		for vi in 4:
-			mv.append(origin + (corners[vi] as Vector3) * vs)
+			mv.append(origin + (corners[vi] as Vector3) * vs3)
 			mn.append(nrm)
 			mt.append_array([tdir.x, tdir.y, tdir.z, tw])
 			muv.append(uvs[vi])
 			muv2.append(uv2s[vi])
+			mqs.append(float(wlen))
+			mqs.append(float(hlen))
 		# Winding so the face points along nrm (Godot: clockwise front).
 		if int(q[12]) > 0:
 			mi.append_array([base_i, base_i + 2, base_i + 1, base_i, base_i + 3, base_i + 2])
 		else:
 			mi.append_array([base_i, base_i + 1, base_i + 2, base_i, base_i + 2, base_i + 3])
-	return {"v": VERSION, "vs": vs, "verts": mv, "norms": mn, "tans": mt, "uvs": muv, "uv2s": muv2, "idx": mi,
+	return {"v": VERSION, "vs": vs, "verts": mv, "norms": mn, "tans": mt, "uvs": muv, "uv2s": muv2, "qs": mqs, "idx": mi,
 		"atlas": atlas, "aw": aw, "ah": ah, "double": double}
 
 
