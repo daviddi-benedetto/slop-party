@@ -1483,7 +1483,7 @@ var _vox_batches := {}
 ## lod 0 = full detail (drawn up to Voxelizer.FAR_FROM), 1 = the coarse
 ## far version (drawn beyond). Batches are per VOX_CHUNK square on every map,
 ## so the distance switch works per neighbourhood.
-const VOX_CHUNK := 20.0
+const VOX_CHUNK := 40.0
 
 
 ## vx: Voxelizer.model() result [mesh, material, key, data].
@@ -1525,19 +1525,10 @@ func _flush_vox() -> void:
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
 		mmi.material_override = vb[1]
-		var lod: int = vb[3]
-		if not vb[2] or lod == 1:
-			# (The coarse far versions cast no shadows: past 55 m the
-			# shadow cascades are too coarse to show them anyway.)
+		if not vb[2]:
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		# Near and far versions cross-fade (dithered) over FAR_FADE metres.
-		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
-		if lod == 0:
-			mmi.visibility_range_end = Voxelizer.FAR_FROM
-			mmi.visibility_range_end_margin = Voxelizer.FAR_FADE
-		else:
-			mmi.visibility_range_begin = Voxelizer.FAR_FROM
-			mmi.visibility_range_begin_margin = Voxelizer.FAR_FADE
+		elif vb[3] == 1:
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 		add_child(mmi)
 	_vox_batches.clear()
 
@@ -1569,10 +1560,14 @@ func _model(path: String, pos: Vector3, yaw := 0.0, scl: Variant = 1.0, mirror :
 			var sc := (s3.x + s3.y + s3.z) / 3.0
 			var vx := Voxelizer.model(path, Models.parts(path), sc, leafy)
 			if not vx.is_empty():
-				_add_vox(vx, xf, shadow, 0, leafy)
-				var vf := Voxelizer.model(path, Models.parts(path), sc, leafy, true)
-				if not vf.is_empty():
-					_add_vox(vf, xf, shadow, 1, leafy)
+				# What you see is always full detail (no swapping by distance:
+				# that read as pop-in). Shadows come from the 2x coarser
+				# version, which looks the same in a soft shadow and costs a
+				# fraction of the triangles.
+				_add_vox(vx, xf, false, 0, leafy)
+				if shadow:
+					var vf := Voxelizer.model(path, Models.parts(path), sc, leafy, true)
+					_add_vox(vf if not vf.is_empty() else vx, xf, true, 1, leafy)
 				if collide == "box":
 					_collider(p + rot * (b.get_center() * s3), b.size * s3, y)
 				continue
@@ -2626,6 +2621,10 @@ func _crossing(centre: Vector3, road_w: float, along_x := true, mirror := true) 
 
 ## An underground passage along X at `z` from x0 to x1, with ramps down at
 ## both ends (open holes in the ground with guard rails).
+## Below-ground walls sit this far inside a hole's edge (no z-fighting).
+const ZF := 0.015
+
+
 func _tunnel(z: float, x0: float, x1: float, mirror := true, w := 3.2) -> void:
 	var L := 6.5
 	var mid := (x0 + x1) * 0.5
@@ -2635,12 +2634,14 @@ func _tunnel(z: float, x0: float, x1: float, mirror := true, w := 3.2) -> void:
 	_wedge(Vector3(x1 - L * 0.5, -DEPTH, z), Vector3(L, DEPTH, w), 0.0, "deck", mirror)
 	_box(Vector3(mid, -DEPTH - 0.5, z), Vector3(x1 - x0 + 0.6, 1.0, w + 0.6), "path" if theme.paths else "block_a", mirror)
 	var wh := DEPTH - 0.02
+	# Walls stand ZF inside the hole's edge: exactly flush, the ground's cut
+	# face and the wall fought over the same pixels (flicker).
 	for sgn in [1.0, -1.0]:
-		_box(Vector3(mid, -DEPTH + wh * 0.5, z + sgn * (w * 0.5 + 0.15)), Vector3(x1 - x0 + 0.6, wh, 0.3), "wall", mirror)
+		_box(Vector3(mid, -DEPTH + wh * 0.5, z + sgn * (w * 0.5 + 0.15 - ZF)), Vector3(x1 - x0 + 0.6, wh, 0.3), "wall", mirror)
 		_box(Vector3(x0 + L * 0.5, 0.5, z + sgn * (w * 0.5 + 0.08)), Vector3(L, 1.0, 0.1), "rail", mirror)
 		_box(Vector3(x1 - L * 0.5, 0.5, z + sgn * (w * 0.5 + 0.08)), Vector3(L, 1.0, 0.1), "rail", mirror)
-	_box(Vector3(x0 - 0.15, -DEPTH + wh * 0.5, z), Vector3(0.3, wh, w), "wall", mirror)
-	_box(Vector3(x1 + 0.15, -DEPTH + wh * 0.5, z), Vector3(0.3, wh, w), "wall", mirror)
+	_box(Vector3(x0 - 0.15 + ZF, -DEPTH + wh * 0.5, z), Vector3(0.3, wh, w), "wall", mirror)
+	_box(Vector3(x1 + 0.15 - ZF, -DEPTH + wh * 0.5, z), Vector3(0.3, wh, w), "wall", mirror)
 	_box(Vector3(x0 + L + 0.05, 0.5, z), Vector3(0.1, 1.0, w), "rail", mirror)
 	_box(Vector3(x1 - L - 0.05, 0.5, z), Vector3(0.1, 1.0, w), "rail", mirror)
 	_box(Vector3(mid, -1.05, z), Vector3(maxf(1.0, x1 - x0 - 2.0 * L), 0.06, 0.18), "accent_b", mirror, 0.0, false)
@@ -2658,10 +2659,10 @@ func _basement(r: Rect2, mirror := true) -> void:
 	var c := r.get_center()
 	_box(Vector3(c.x, -DEPTH - 0.5, c.y), Vector3(r.size.x + 0.6, 1.0, r.size.y + 0.6), "block_a", mirror)
 	var wh := DEPTH - 0.02
-	_box(Vector3(c.x, -DEPTH + wh * 0.5, r.position.y - 0.15), Vector3(r.size.x + 0.6, wh, 0.3), "wall", mirror)
-	_box(Vector3(c.x, -DEPTH + wh * 0.5, r.end.y + 0.15), Vector3(r.size.x + 0.6, wh, 0.3), "wall", mirror)
-	_box(Vector3(r.position.x - 0.15, -DEPTH + wh * 0.5, c.y), Vector3(0.3, wh, r.size.y), "wall", mirror)
-	_box(Vector3(r.end.x + 0.15, -DEPTH + wh * 0.5, c.y), Vector3(0.3, wh, r.size.y), "wall", mirror)
+	_box(Vector3(c.x, -DEPTH + wh * 0.5, r.position.y - 0.15 + ZF), Vector3(r.size.x + 0.6, wh, 0.3), "wall", mirror)
+	_box(Vector3(c.x, -DEPTH + wh * 0.5, r.end.y + 0.15 - ZF), Vector3(r.size.x + 0.6, wh, 0.3), "wall", mirror)
+	_box(Vector3(r.position.x - 0.15 + ZF, -DEPTH + wh * 0.5, c.y), Vector3(0.3, wh, r.size.y), "wall", mirror)
+	_box(Vector3(r.end.x + 0.15 - ZF, -DEPTH + wh * 0.5, c.y), Vector3(0.3, wh, r.size.y), "wall", mirror)
 	_box(Vector3(r.position.x + L * 0.5, 0.5, r.position.y + rw + 0.05), Vector3(L, 1.0, 0.1), "rail", mirror)
 	_box(Vector3(r.position.x + L + 0.05, 0.5, r.position.y + rw * 0.5), Vector3(0.1, 1.0, rw), "rail", mirror)
 	_box(Vector3(c.x + r.size.x * 0.2, -DEPTH + 0.6, c.y + r.size.y * 0.15), Vector3(1.2, 1.2, 1.2), "crate", mirror, 0.3)
@@ -3117,6 +3118,96 @@ void fragment() {
 
 static var _foliage_cache := {}
 
+## Voxel grass (Voxel.on): blades are columns of voxels; colour steps from
+## base to tip one voxel at a time (local height), flower heads come from the
+## vertex colour (alpha 0), per-voxel light/dark from a hash, wind sway.
+const VOX_GRASS_SHADER := """
+shader_type spatial;
+render_mode diffuse_lambert_wrap, specular_disabled;
+uniform vec3 base : source_color = vec3(0.3, 0.5, 0.2);
+uniform vec3 tip : source_color = vec3(0.6, 0.8, 0.3);
+uniform float sway = 0.06;
+uniform float vs = 0.09;
+varying vec3 lp;
+float gh(vec3 p) {
+	p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+	p += dot(p, p.yxz + 33.33);
+	return fract((p.x + p.y) * p.z);
+}
+void vertex() {
+	lp = VERTEX;
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float lift = clamp(VERTEX.y / 0.7, 0.0, 1.0);
+	float wave = sin(TIME * 1.5 + wp.x * 0.45 + wp.z * 0.6) + 0.5 * sin(TIME * 2.6 + wp.x * 1.2 + wp.z * 0.3);
+	VERTEX.x += wave * sway * lift * lift;
+	VERTEX.z += wave * sway * 0.7 * lift * lift;
+}
+void fragment() {
+	vec3 cellp = floor(lp / vs + vec3(0.001));
+	float t = clamp(cellp.y * vs / 0.6, 0.0, 1.0);
+	vec3 c = COLOR.a < 0.5 ? COLOR.rgb : mix(base, tip, t) * COLOR.rgb;
+	c *= 0.86 + 0.26 * gh(cellp + vec3(7.1, 3.3, 1.7));
+	ALBEDO = c;
+	ROUGHNESS = 1.0;
+	BACKLIGHT = c * 0.3;
+}
+"""
+static var _tufts := {}
+
+
+## A voxel tuft for a ground-cover kind (cached): a few blades made of voxel
+## columns (lower part straight, top leaning one voxel), on a 0.09 grid.
+func _vox_tuft(kind: String) -> ArrayMesh:
+	if _tufts.has(kind):
+		return _tufts[kind]
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(kind) + 11
+	var v := 0.09
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var flower := kind.begins_with("flower")
+	var petal: Color = [Color(1.0, 0.32, 0.36), Color(1.0, 0.85, 0.3), Color(0.95, 0.95, 1.0), Color(0.72, 0.45, 1.0)][int(kind.substr(6)) % 4] if flower else Color.WHITE
+	var blades: int = {"grass": 9, "leafy": 6, "fern": 7}.get(kind, 6)
+	var wide := 2 if kind == "leafy" else 1
+	for b in blades:
+		var gx := rng.randi_range(-4, 4)
+		var gz := rng.randi_range(-4, 4)
+		var hgt := rng.randi_range(3, 7) if kind != "leafy" else rng.randi_range(2, 4)
+		var lower := maxi(1, hgt - rng.randi_range(1, 3))
+		var lean := Vector2i(rng.randi_range(-1, 1), rng.randi_range(-1, 1)) * (2 if kind == "fern" else 1)
+		if rng.randf() < 0.5 and kind != "fern":
+			lean = Vector2i.ZERO
+		var p0 := Vector3(gx * v, 0.0, gz * v)
+		var p1 := p0 + Vector3(lean.x * v, lower * v, lean.y * v)
+		if lean == Vector2i.ZERO:
+			# A straight blade is one box (half the triangles).
+			_vox_box(st, p0, Vector3(v * wide, hgt * v, v), Color.WHITE)
+		else:
+			_vox_box(st, p0, Vector3(v * wide, lower * v, v), Color.WHITE)
+			_vox_box(st, p1, Vector3(v * wide, (hgt - lower) * v, v), Color.WHITE)
+		if flower and b < 2:
+			var top := p1 + Vector3(-v * 0.5, (hgt - lower) * v, -v * 0.5)
+			_vox_box(st, top, Vector3(v * 2.0, v, v * 2.0), Color(petal, 0.0))
+	st.generate_normals()
+	var m := st.commit()
+	_tufts[kind] = m
+	return m
+
+
+## An axis-aligned box from `p` (min x/z corner at its base) of size `s`,
+## without a bottom face; colour per vertex.
+static func _vox_box(st: SurfaceTool, p: Vector3, s: Vector3, col: Color) -> void:
+	var c := [p, p + Vector3(s.x, 0, 0), p + Vector3(s.x, 0, s.z), p + Vector3(0, 0, s.z)]
+	var u: Array = []
+	for q in c:
+		u.append((q as Vector3) + Vector3(0, s.y, 0))
+	var quads := [[u[0], u[3], u[2], u[1]], [c[0], u[0], u[1], c[1]], [c[1], u[1], u[2], c[2]], [c[2], u[2], u[3], c[3]], [c[3], u[3], u[0], c[0]]]
+	for q in quads:
+		st.set_color(col)
+		for idx in [0, 1, 2, 0, 2, 3]:
+			st.set_color(col)
+			st.add_vertex(q[idx])
+
 
 ## Painted foliage textures (made once, in code): alpha-cut cards in the
 ## Skyrim / Minecraft tradition, where a few flat pictures of many blades or
@@ -3274,11 +3365,24 @@ func _grass() -> void:
 		mat.set_shader_parameter("sway", k[4])
 		mats.append(mat)
 	var card := _card_mesh(3)
+	# The voxel style: tufts of blocky voxel blades instead of painted cards.
+	var vmats: Array = []
+	if Voxel.on:
+		var vsh := Shader.new()
+		vsh.code = VOX_GRASS_SHADER
+		for k in kinds:
+			var vm := ShaderMaterial.new()
+			vm.shader = vsh
+			vm.set_shader_parameter("base", base if not k[0].begins_with("f") or k[0] == "fern" else base.lerp(tip, 0.3))
+			vm.set_shader_parameter("tip", tip if k[0] != "fern" else tip.lerp(base, 0.35))
+			vm.set_shader_parameter("sway", k[4])
+			vmats.append(vm)
 	# Sports turf (theme "mown") is kept short and free of weeds.
 	var mown: bool = theme.get("mown", false)
 
 	var density := 5.0 if area < 3000.0 else (3.8 if area < 9000.0 else 2.4)
-	var count := mini(int(area * density), 70000)
+	# (Voxel tufts are fuller than cards, so fewer of them.)
+	var count := mini(int(area * density * (0.55 if Voxel.on else 1.0)), 70000)
 	var chunks := {}
 	var placed := 0
 	var tries := 0
@@ -3321,7 +3425,7 @@ func _grass() -> void:
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.use_colors = true
-		mm.mesh = card
+		mm.mesh = _vox_tuft(k[0]) if Voxel.on else card
 		mm.instance_count = spots.size()
 		for i in spots.size():
 			var w := _rng.randf_range(k[2], k[3]) * (0.32 if mown else 1.0)
@@ -3332,11 +3436,11 @@ func _grass() -> void:
 			mm.set_instance_color(i, Color(tone, tone * _rng.randf_range(0.96, 1.06), tone * _rng.randf_range(0.85, 1.0)))
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
-		mmi.material_override = mats[key.z]
+		mmi.material_override = vmats[key.z] if Voxel.on else mats[key.z]
 		mmi.position = centre
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		mmi.visibility_range_end = 52.0
-		mmi.visibility_range_end_margin = 6.0
+		mmi.visibility_range_end = 62.0 if Voxel.on else 52.0
+		mmi.visibility_range_end_margin = 16.0 if Voxel.on else 6.0
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		add_child(mmi)
 	if not whole:

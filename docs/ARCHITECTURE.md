@@ -261,20 +261,42 @@ The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
   props (prop.gd) and the lobby trees (stage.gd) use the same voxels.
   Doors, pickups and other `toy_node()` models with `env` = true get the
   voxel shader; characters, guns, pets and zombies pass `env` = false.
-- **Random depth on every voxel face** (`vox_depth` in voxel.gd, the same
-  logic in voxelizer.gd `PROP_CODE`): a hash gives each face a height;
-  comparing with the 4 neighbours gives a lit lip where it steps down and
-  a shadowed corner where it steps up, plus a small random tilt. Works at
-  any distance; level surfaces also get real parallax up to 28 m with the
-  same heights. Detail fades only below ~1-2.6 px per voxel (average
-  footprint, `vox_amount`).
+- **Random depth on every voxel face**: `Voxel.detail()` bakes a 64 x 64
+  voxel tile (8 px per voxel, mipmapped; saved as assets/voxel/detail.vox
+  by the bake): RG = normal tilt (lit lip where a face steps down to its
+  neighbour, shadowed corner where it steps up, small random tilt),
+  B = shade, A = the voxel's height. Every voxel shader samples it
+  (`vox_depth` in voxel.gd FN, voxelizer.gd `PROP_CODE`), so far away the
+  mipmaps blend it smoothly: no shimmer and nothing switches off. Level
+  surfaces also ray-march real relief from A (surface.gd `VOX_CODE`, 24
+  steps, faded by the voxel's size on screen, not by distance).
+- **Colours** blend the same way: level surfaces sample at the voxel centre
+  with the mip of the voxel or the pixel, whichever is bigger; voxel meshes
+  read a mipmapped atlas (nearest up close). Alpha codes: 1 plain, 0.5
+  player colour, 0 glowing (they blend sensibly in the mipmaps).
+- **Lesson:** never derive a texture offset or hash from a coordinate that
+  is exactly on a voxel boundary for a whole face (the old per-layer offset
+  flipped pixel by pixel on such faces: flickering dots).
+- **Grass** (Voxel.on): `map._vox_tuft()` builds tufts of voxel blades
+  (boxes on a 9 cm grid, straight or leaning one voxel, flower heads from
+  vertex colours), `VOX_GRASS_SHADER` steps the colour base to tip per
+  voxel and sways; 0.55x the card density.
+- **Debris** (debris.gd): whole-voxel chunk sizes, voxelized, mass from
+  volume, friction / bounce, gentle tumble, their own collision layer
+  (4096) so they pile up, twice as long a life.
+- **Below ground**: tunnel, basement and pool walls stand `map.ZF`
+  (1.5 cm) inside the hole's edge; flush, they z-fought with the ground's
+  cut faces (flicker).
+- **Depth of field** starts at least 60 m away (beyond the map) and is
+  weaker (0.035).
 - **Voxel meshes** store colours in a 2D atlas: every exposed face cell is
   one texel (UV = texel in pixels, UV2 = position in face cells, TANGENT /
   BINORMAL = the face axes), so meshes could be merged; map.gd still
   instances them (MultiMesh per model per 20 m chunk: merging was no faster
   to draw and much slower to load).
-- **Far versions**: 2x coarser voxels, dithered cross-fade at 55 m over
-  14 m (`FAR_FROM`, `FAR_FADE`), no shadows from the far versions.
+- **No distance swaps**: what you see is always full detail; the 2x
+  coarser version only casts the shadows (SHADOWS_ONLY MultiMesh), which
+  halves the triangles at no visible cost.
 - **Node trees** (`Voxelizer.voxelize_node(root, cell, accent)`): every
   opaque MeshInstance3D under root becomes voxels in place, so rigid parts
   keep animating: characters (character.gd `VOX_CELL` 2.5 cm, hit flash via
@@ -291,7 +313,8 @@ The whole environment shares one voxel size (`Voxel.SIZE`, 10 cm):
   stagger their first path search (bot_brain `_start_delay`). `--hitches`
   prints frames over 100 ms with pipeline compile counts.
 - **Performance** (RTX 2070, uncapped, no auto resolution): Hightown
-  4 views 12.4 ms, Suburb 6 views 13.9 ms, 1 view ~6.4 ms.
+  4 views ~16.5 ms (smooth style 13.4 ms; voxel grass ~1.2 ms of the
+  difference), Suburb 6 views ~15 ms.
 
 **Making a prop in the voxel style:** use any model (glTF / glb in
 `assets/models/`, CC0) through `map._model()` or `prop.gd`; it is voxelized

@@ -56,43 +56,29 @@ float vox_amount(vec2 f) {
 	float ppc = 1.0 / max(sqrt(fw.x * fw.y), 1e-4);
 	return smoothstep(0.9, 2.6, ppc);
 }
-// Height of a cube face, 0..1: every face of every cube stands at its own
-// random depth (surface.gd's parallax uses the same numbers).
-float vox_h(vec3 c, vec3 N) {
-	return vox_hash(c + N * 0.37 + vec3(13.1, 7.3, 2.9));
+// Every face of every cube stands at its own random depth. The relief
+// (lit lip where a face steps DOWN to its neighbour, shadowed corner where
+// it steps UP, a small random tilt, lighter when higher) is baked into
+// `vox_detail` (Voxel.detail(): 64 x 64 cubes, 8 px each, with mipmaps), so
+// far away the GPU blends it smoothly: no shimmer, nothing switches off.
+uniform sampler2D vox_detail : filter_linear_mipmap_anisotropic, repeat_enable;
+// Whole-cube offset into the tile per face direction, so walls and floors
+// do not share one pattern. (Not per layer: a face lying exactly on a cube
+// boundary got a different layer pixel by pixel, which sprinkled the
+// surface with flickering dots.)
+vec2 vox_off(vec3 N, float layer) {
+	return floor(fract(vec2(dot(N, vec3(0.37, 0.11, 0.73)), dot(N, vec3(0.19, 0.53, 0.29)))) * 64.0);
 }
-// Fake relief, at any distance: the face is lit by its own small random
-// tilt; where it steps DOWN to a neighbour the edge rounds over (catches
-// light), where it steps UP the corner sits in shadow; higher faces are a
-// little lighter. c = cube index, fr = position on the face (0..1), T/B/N =
-// the face frame (axis-aligned, so c +- T is the next cube).
-void vox_depth(vec3 c, vec2 fr, vec3 T, vec3 B, vec3 N, float amt, inout vec3 nrm, out float shade) {
-	float h0 = vox_h(c, N);
-	float dl = h0 - vox_h(c - T, N);
-	float dr = h0 - vox_h(c + T, N);
-	float dd = h0 - vox_h(c - B, N);
-	float du = h0 - vox_h(c + B, N);
-	float w = 0.24;
-	float el = 1.0 - smoothstep(0.0, w, fr.x);
-	float er = 1.0 - smoothstep(0.0, w, 1.0 - fr.x);
-	float ed = 1.0 - smoothstep(0.0, w, fr.y);
-	float eu = 1.0 - smoothstep(0.0, w, 1.0 - fr.y);
-	vec2 tilt = vec2(-max(dl, 0.0) * el + max(dr, 0.0) * er, -max(dd, 0.0) * ed + max(du, 0.0) * eu);
-	float ao = max(-dl, 0.0) * el + max(-dr, 0.0) * er + max(-dd, 0.0) * ed + max(-du, 0.0) * eu;
-	vec2 rnd = vec2(vox_hash(c * 1.7 + 3.1), vox_hash(c * 2.3 + 7.7)) - 0.5;
-	nrm = normalize(nrm + (T * (tilt.x * 1.5 + rnd.x * 0.3) + B * (tilt.y * 1.5 + rnd.y * 0.3)) * amt);
-	shade = mix(1.0, (0.8 + 0.32 * h0) * (1.0 - 0.5 * min(ao, 1.0)), amt);
+// Height of the cube face at cube `c2` (face coordinates), 0..1.
+float vox_h2(vec2 c2, vec3 N, float layer) {
+	return textureLod(vox_detail, (c2 + 0.5 + vox_off(N, layer)) / 64.0, 3.0).a;
 }
-// Bevelled cube face: a normal tilted towards the nearest edges and a
-// darker seam. fr = position inside the face (0..1).
-vec3 vox_bevel(vec2 fr, vec3 base_n, vec3 T, vec3 B, float amt, out float seam) {
-	float bw = 0.09;
-	vec2 tl = vec2(
-		fr.x < bw ? -(1.0 - fr.x / bw) : (fr.x > 1.0 - bw ? 1.0 - (1.0 - fr.x) / bw : 0.0),
-		fr.y < bw ? -(1.0 - fr.y / bw) : (fr.y > 1.0 - bw ? 1.0 - (1.0 - fr.y) / bw : 0.0));
-	float edge = min(min(fr.x, 1.0 - fr.x), min(fr.y, 1.0 - fr.y));
-	seam = mix(1.0, mix(0.94, 1.0, smoothstep(0.0, bw, edge)), amt);
-	return normalize(base_n + (T * tl.x + B * tl.y) * 0.3 * amt);
+// f = position on the face in cube units (not wrapped), layer = which plane.
+void vox_depth(vec2 f, vec3 T, vec3 B, vec3 N, float layer, inout vec3 nrm, out float shade) {
+	vec4 d = texture(vox_detail, (f + vox_off(N, layer)) / 64.0);
+	vec2 tilt = (d.rg * 2.0 - 1.0) * 1.9;
+	nrm = normalize(nrm + T * tilt.x + B * tilt.y);
+	shade = d.b * 1.25;
 }
 """
 
@@ -141,19 +127,16 @@ void fragment() {
 	vec3 cell = floor(q - N * 0.5);
 	vec3 cc = (cell + 0.5) * vox_size;
 	vec2 f = vec2(dot(q, T), dot(q, B));
-	float amt = vox_amount(f);
 	vec3 c = albedo.rgb;
 	if (use_tex) {
 		if (triplanar) {
+			// One colour per cube (its centre), at the mip of the cube or of the
+			// pixel, whichever is bigger: smooth with distance, never a switch.
 			vec2 uvp = vec2(dot(w_pos, T), dot(w_pos, B)) * tri_scale;
-			vec2 g1 = dFdx(uvp);
-			vec2 g2 = dFdy(uvp);
-			if (amt > 0.01) {
-				uvp = vec2(dot(cc, T), dot(cc, B)) * tri_scale;
-				g1 = vec2(vox_size * tri_scale, 0.0);
-				g2 = vec2(0.0, vox_size * tri_scale);
-			}
-			c *= textureGrad(tex, uvp, g1, g2).rgb;
+			float pix = max(length(dFdx(uvp)), length(dFdy(uvp)));
+			float s = max(vox_size * tri_scale, pix);
+			uvp = vec2(dot(cc, T), dot(cc, B)) * tri_scale;
+			c *= textureGrad(tex, uvp, vec2(s, 0.0), vec2(0.0, s)).rgb;
 		} else {
 			vec2 uv0 = UV * uv_scale.xy + uv_offset.xy;
 			vec2 u1 = dFdx(uv0);
@@ -166,15 +149,17 @@ void fragment() {
 			vec2 a1 = vec2(dot(dpx, T), dot(dpx, B));
 			vec2 a2 = vec2(dot(dpy, T), dot(dpy, B));
 			float det = a1.x * a2.y - a2.x * a1.y;
-			if (amt > 0.01 && abs(det) > 1e-14) {
+			if (abs(det) > 1e-14) {
 				// UV per metre on the face, from the screen-space derivatives;
 				// then the UV at the cube's centre and a cube-sized footprint.
 				mat2 ainv = mat2(vec2(a2.y, -a1.y), vec2(-a2.x, a1.x)) / det;
 				mat2 J = mat2(u1, u2) * ainv;
 				vec3 d = cc - w_pos;
 				uvc = uv0 + J * vec2(dot(d, T), dot(d, B));
-				g1 = J * vec2(vox_size, 0.0);
-				g2 = J * vec2(0.0, vox_size);
+				vec2 j1 = J * vec2(vox_size, 0.0);
+				vec2 j2 = J * vec2(0.0, vox_size);
+				g1 = length(j1) > length(u1) ? j1 : u1;
+				g2 = length(j2) > length(u2) ? j2 : u2;
 			}
 			c *= textureGrad(tex, uvc, g1, g2).rgb;
 		}
@@ -184,7 +169,7 @@ void fragment() {
 	}
 	float sh;
 	vec3 vn = wn;
-	vox_depth(cell, fract(f), T, B, N, amt, vn, sh);
+	vox_depth(f, T, B, N, dot(cell, N), vn, sh);
 	c *= sh;
 	ALBEDO = c;
 	NORMAL = normalize((VIEW_MATRIX * vec4(vn, 0.0)).xyz);
@@ -196,12 +181,77 @@ void fragment() {
 	if (use_emission_tex) {
 		e = texture(emission_tex, UV * uv_scale.xy + uv_offset.xy).rgb * emission_energy;
 	}
-	EMISSION = e;
+	EMISSION = e * sh;
 }
 """
 
 static var _shaders := {}
 static var _cache := {}
+static var _detail: ImageTexture
+const DETAIL_FILE := "res://assets/voxel/detail.vox"
+## tools (--voxel-bake): write the detail tile into the game.
+static var save_detail := false
+
+
+## The relief tile (see FN): 64 x 64 cubes of 8 x 8 px. RG = normal tilt,
+## B = shade, A = the cube's height (one value per cube, for parallax).
+static func detail() -> ImageTexture:
+	if _detail != null:
+		return _detail
+	const N := 64
+	const P := 8
+	# Baked with the voxel models (main.gd --voxel-bake): making it here
+	# takes about a second.
+	if FileAccess.file_exists(DETAIL_FILE):
+		var f := FileAccess.open_compressed(DETAIL_FILE, FileAccess.READ, FileAccess.COMPRESSION_ZSTD)
+		var bytes = f.get_var() if f != null else null
+		if bytes is PackedByteArray and (bytes as PackedByteArray).size() == N * P * N * P * 4:
+			var im := Image.create_from_data(N * P, N * P, false, Image.FORMAT_RGBA8, bytes)
+			im.generate_mipmaps()
+			_detail = ImageTexture.create_from_image(im)
+			return _detail
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var h := PackedFloat32Array()
+	h.resize(N * N)
+	for i in N * N:
+		h[i] = rng.randf()
+	var rnd := PackedVector2Array()
+	rnd.resize(N * N)
+	for i in N * N:
+		rnd[i] = Vector2(rng.randf() - 0.5, rng.randf() - 0.5)
+	var img := Image.create_empty(N * P, N * P, false, Image.FORMAT_RGBA8)
+	var w := 0.26
+	for cy in N:
+		for cx in N:
+			var h0 := h[cy * N + cx]
+			var dl := h0 - h[cy * N + posmod(cx - 1, N)]
+			var dr := h0 - h[cy * N + posmod(cx + 1, N)]
+			var dd := h0 - h[posmod(cy - 1, N) * N + cx]
+			var du := h0 - h[posmod(cy + 1, N) * N + cx]
+			var rv := rnd[cy * N + cx]
+			for py in P:
+				var fy := (py + 0.5) / P
+				var ed := 1.0 - smoothstep(0.0, w, fy)
+				var eu := 1.0 - smoothstep(0.0, w, 1.0 - fy)
+				for px in P:
+					var fx := (px + 0.5) / P
+					var el := 1.0 - smoothstep(0.0, w, fx)
+					var er := 1.0 - smoothstep(0.0, w, 1.0 - fx)
+					var tx := -maxf(dl, 0.0) * el + maxf(dr, 0.0) * er
+					var ty := -maxf(dd, 0.0) * ed + maxf(du, 0.0) * eu
+					var ao := maxf(-dl, 0.0) * el + maxf(-dr, 0.0) * er + maxf(-dd, 0.0) * ed + maxf(-du, 0.0) * eu
+					tx = tx * 0.8 + rv.x * 0.16
+					ty = ty * 0.8 + rv.y * 0.16
+					var shade := (0.8 + 0.32 * h0) * (1.0 - 0.5 * minf(ao, 1.0)) / 1.25
+					img.set_pixel(cx * P + px, cy * P + py, Color(clampf(tx * 0.5 + 0.5, 0.0, 1.0), clampf(ty * 0.5 + 0.5, 0.0, 1.0), clampf(shade, 0.0, 1.0), h0))
+	if save_detail:
+		var fw := FileAccess.open_compressed(DETAIL_FILE, FileAccess.WRITE, FileAccess.COMPRESSION_ZSTD)
+		if fw != null:
+			fw.store_var(img.get_data())
+	img.generate_mipmaps()
+	_detail = ImageTexture.create_from_image(img)
+	return _detail
 
 
 static func _shader(double_sided: bool) -> Shader:
@@ -219,6 +269,7 @@ static func plain(color: Color, tex: Texture2D, tri_scale: float, rough: float, 
 	var m := ShaderMaterial.new()
 	m.shader = _shader(false)
 	m.set_shader_parameter("vox_size", SIZE)
+	m.set_shader_parameter("vox_detail", detail())
 	m.set_shader_parameter("albedo", color)
 	if tex != null:
 		m.set_shader_parameter("tex", tex)
@@ -245,6 +296,7 @@ static func from_standard(src: BaseMaterial3D, sway := 0.0) -> Material:
 	var m := ShaderMaterial.new()
 	m.shader = _shader(src.cull_mode == BaseMaterial3D.CULL_DISABLED or sway > 0.0)
 	m.set_shader_parameter("vox_size", SIZE)
+	m.set_shader_parameter("vox_detail", detail())
 	m.set_shader_parameter("albedo", src.albedo_color)
 	if src.albedo_texture != null:
 		m.set_shader_parameter("tex", src.albedo_texture)

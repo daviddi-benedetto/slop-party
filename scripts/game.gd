@@ -465,7 +465,7 @@ func _add_view(player) -> void:
 	lens.dof_blur_far_enabled = Settings.v("dof")
 	lens.dof_blur_far_distance = 40.0
 	lens.dof_blur_far_transition = 30.0
-	lens.dof_blur_amount = 0.085
+	lens.dof_blur_amount = 0.035
 	cam.attributes = lens
 	var all_bodies := 0
 	for p in players:
@@ -912,7 +912,9 @@ func _focus(cam: Camera3D, delta: float) -> void:
 	if absf(fwd.z) > 0.001:
 		reach = minf(reach, ((map.half_z + 1.5) * signf(fwd.z) - pos.z) / fwd.z)
 	# Indoors there is nothing beyond the walls worth blurring.
-	var want := 400.0 if map.indoor else clampf(reach + 3.0, 16.0, 220.0)
+	# Only the scenery beyond the map softens: never closer than 60 m, so a
+	# tunnel, a street or a room in play is always sharp.
+	var want := 400.0 if map.indoor else clampf(reach + 10.0, 60.0, 260.0)
 	var k := clampf(delta * 3.5, 0.0, 1.0)
 	lens.dof_blur_far_distance = lerpf(lens.dof_blur_far_distance, want, k)
 	lens.dof_blur_far_transition = lerpf(lens.dof_blur_far_transition, 10.0 + want * 0.3, k)

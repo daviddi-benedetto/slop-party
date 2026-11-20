@@ -29,7 +29,7 @@ extends RefCounted
 
 const Voxel = preload("res://scripts/voxel.gd")
 const Looks = preload("res://scripts/looks.gd")
-const VERSION := 4
+const VERSION := 5
 const MAX_DIM := 96
 const FAR_STEPS := 2              # far version: voxels 2x bigger
 const FAR_FROM := 55.0            # metres: map.gd cross-fades to the far version here
@@ -47,7 +47,8 @@ const USER := "user://voxel_cache/"
 const PROP_CODE := """
 shader_type spatial;
 render_mode diffuse_lambert_wrap, specular_schlick_ggx%s;
-uniform sampler2D atlas : source_color, filter_nearest, repeat_disable;
+uniform sampler2D atlas : source_color, filter_nearest_mipmap, repeat_disable;
+uniform sampler2D vox_detail : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float rough = 0.85;
 uniform float sway = 0.0;
 uniform float emit = 2.4;
@@ -72,30 +73,20 @@ void vertex() {
 	}
 }
 void fragment() {
-	vec2 tx = floor(UV);
-	vec4 v = texelFetch(atlas, ivec2(tx), 0);
-	vec2 fr = fract(UV2);
-	vec2 fw = fwidth(UV2);
-	float amt = smoothstep(0.9, 2.6, 1.0 / max(sqrt(fw.x * fw.y), 1e-4));
-	// Random depth per face cell, compared with its four neighbours.
-	float h0 = h2(tx);
-	float dl = h0 - h2(tx - vec2(1.0, 0.0));
-	float dr = h0 - h2(tx + vec2(1.0, 0.0));
-	float dd = h0 - h2(tx - vec2(0.0, 1.0));
-	float du = h0 - h2(tx + vec2(0.0, 1.0));
-	float w = 0.24;
-	float el = 1.0 - smoothstep(0.0, w, fr.x);
-	float er = 1.0 - smoothstep(0.0, w, 1.0 - fr.x);
-	float ed = 1.0 - smoothstep(0.0, w, fr.y);
-	float eu = 1.0 - smoothstep(0.0, w, 1.0 - fr.y);
-	vec2 tilt = vec2(-max(dl, 0.0) * el + max(dr, 0.0) * er, -max(dd, 0.0) * ed + max(du, 0.0) * eu);
-	float ao = max(-dl, 0.0) * el + max(-dr, 0.0) * er + max(-dd, 0.0) * ed + max(-du, 0.0) * eu;
-	vec2 rnd = vec2(h2(tx * 1.7 + 3.1), h2(tx * 2.3 + 7.7)) - 0.5;
-	tilt = (tilt * 1.5 + rnd * 0.3) * amt;
-	float sh = mix(1.0, (0.8 + 0.32 * h0) * (1.0 - 0.5 * min(ao, 1.0)), amt);
-	float code = v.a * 255.0;
-	bool acc = abs(code - 200.0) < 4.0 || abs(code - 120.0) < 4.0;
-	vec3 base = acc ? accent : v.rgb;
+	// Colour: nearest texel up close (crisp voxels), smaller copies of the
+	// atlas (mipmaps) far away, so distant voxels blend instead of shimmer.
+	vec4 v = texture(atlas, UV / vec2(textureSize(atlas, 0)));
+	// Relief from the shared tile (voxel.gd detail()), offset per quad.
+	vec2 qo = floor(UV - UV2 + 0.5);
+	vec2 doff = floor(fract(qo * vec2(0.0731, 0.0577)) * 64.0);
+	vec4 d = texture(vox_detail, (UV2 + doff) / 64.0);
+	vec2 tilt = (d.rg * 2.0 - 1.0) * 1.9;
+	float sh = d.b * 1.25;
+	// Alpha: 1 plain, 0.5 player colour, 0 glowing (blends sensibly).
+	float a = v.a;
+	float aw = a >= 0.5 ? (1.0 - a) * 2.0 : a * 2.0;
+	float gw = max(0.0, 1.0 - a * 2.0);
+	vec3 base = mix(v.rgb, accent, aw) * COLOR.rgb;
 	vec3 col = base * sh;
 	float l = dot(col, vec3(0.299, 0.587, 0.114));
 	col = clamp(mix(vec3(l), col, sat) * val, 0.0, 1.0) * tint;
@@ -105,7 +96,7 @@ void fragment() {
 	ROUGHNESS = rough;
 	RIM = 0.18;
 	RIM_TINT = 0.6;
-	EMISSION = (code < 160.0 ? base * emit * (code < 90.0 ? 0.76 : 0.5) : vec3(0.0)) + vec3(flash);
+	EMISSION = base * gw * emit * 0.7 + vec3(flash);
 }
 """
 
@@ -230,6 +221,7 @@ static func material_for(atlas: Texture2D, double: bool, sway: bool) -> ShaderMa
 	var m := ShaderMaterial.new()
 	m.shader = _shaders[double]
 	m.set_shader_parameter("atlas", atlas)
+	m.set_shader_parameter("vox_detail", Voxel.detail())
 	m.set_shader_parameter("sway", 1.0 if sway else 0.0)
 	var g: Dictionary = look.get("grade", {})
 	m.set_shader_parameter("sat", float(g.get("sat", 1.0)) * 1.1)
@@ -241,7 +233,9 @@ static func material_for(atlas: Texture2D, double: bool, sway: bool) -> ShaderMa
 
 
 static func atlas_image(d: Dictionary) -> Image:
-	return Image.create_from_data(d.aw, d.ah, false, Image.FORMAT_RGBA8, d.atlas)
+	var img := Image.create_from_data(d.aw, d.ah, false, Image.FORMAT_RGBA8, d.atlas)
+	img.generate_mipmaps()
+	return img
 
 
 # --------------------------------------------------------------------------
@@ -402,7 +396,7 @@ static func voxelize(parts: Array, vs: float) -> Dictionary:
 			cols[ci * 4] = clampi(int(sums[ci * 4] * k * 255.0), 0, 255)
 			cols[ci * 4 + 1] = clampi(int(sums[ci * 4 + 1] * k * 255.0), 0, 255)
 			cols[ci * 4 + 2] = clampi(int(sums[ci * 4 + 2] * k * 255.0), 0, 255)
-			cols[ci * 4 + 3] = [255, 60, 200, 120][glow[ci]]
+			cols[ci * 4 + 3] = [255, 0, 128, 128][glow[ci]]
 		else:
 			cols[ci * 4] = 128
 			cols[ci * 4 + 1] = 128

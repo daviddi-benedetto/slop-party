@@ -418,6 +418,11 @@ func _process(_delta: float) -> void:
 func _voxel_bake() -> void:
 	var Vz = preload("res://scripts/voxelizer.gd")
 	Vz.bake = true
+	var Vx = preload("res://scripts/voxel.gd")
+	Vx.save_detail = true
+	if FileAccess.file_exists(Vx.DETAIL_FILE):
+		DirAccess.remove_absolute(Vx.DETAIL_FILE)
+	Vx.detail()
 	Settings.idx["voxel"] = 0
 	var MapScript = preload("res://scripts/map.gd")
 	# Every map in every theme (themes place different scenery).

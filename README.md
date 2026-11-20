@@ -137,9 +137,10 @@ voxels, each with its own flat colour taken from the original textures
 voxel sits at its own random depth (lit edges where it steps down, shaded
 corners where it steps up), so surfaces have texture at any distance; up
 close the floors and walls really step in and out. The plush animals, their
-guns (first and third person), vehicles, doors and mystery boxes are voxels
-too; only the HUD, the sky and effects are not. Far away, models swap to a
-coarser voxel version with a smooth cross-fade (no pop-in). Options →
+guns (first and third person), vehicles, doors, mystery boxes, debris and
+the grass (tufts of voxel blades) are voxels too; only the HUD, the sky and
+effects are not. Nothing swaps detail by distance (no pop-in): the voxel
+textures blend smoothly into the distance instead of shimmering. Options →
 Graphics → **World style** switches back to the smooth look (from the next
 match).
 

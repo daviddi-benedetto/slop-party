@@ -50,6 +50,10 @@ void vertex() {
 	w_nrm = normalize(mat3(MODEL_MATRIX) * NORMAL);
 }
 
+float amt_px(vec2 f) {
+	vec2 fw = fwidth(f);
+	return 1.0 / max(sqrt(fw.x * fw.y), 1e-4);
+}
 void fragment() {
 	vec3 n = normalize(w_nrm);
 	vec3 an = abs(n);
@@ -165,13 +169,17 @@ uniform float fade_far = 30.0;
 uniform sampler2D macro_tex : filter_linear_mipmap, repeat_enable;
 uniform float weather = 1.0;
 uniform float wet = 0.0;
-uniform float relief_depth = 1.0; // deepest cube, in cube sizes
+uniform float relief_depth = 0.55; // deepest cube, in cube sizes
 varying vec3 w_pos;
 varying vec3 w_nrm;
 %s
 void vertex() {
 	w_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	w_nrm = normalize(mat3(MODEL_MATRIX) * NORMAL);
+}
+float amt_px(vec2 f) {
+	vec2 fw = fwidth(f);
+	return 1.0 / max(sqrt(fw.x * fw.y), 1e-4);
 }
 // How far a cube is sunk: 0 = flush with the surface, 1 = deepest.
 float cell_h(vec2 c, float layer, vec3 cur_T, vec3 cur_B, vec3 cur_N) {
@@ -182,8 +190,8 @@ float cell_h(vec2 c, float layer, vec3 cur_T, vec3 cur_B, vec3 cur_N) {
 	// fake relief shading uses), grooves in the texture (mortar, seams)
 	// deeper, and now and then a voxel simply missing.
 	vec3 c3 = cur_T * c.x + cur_B * c.y + cur_N * layer;
-	float s = (1.0 - vox_h(c3, cur_N)) * 0.55 + ((1.0 - ht) > 0.45 ? 0.35 : 0.0);
-	return vox_hash(c3) > 0.988 ? 1.0 : min(s, 0.9);
+	float s = (1.0 - vox_h2(c, cur_N, layer)) * 0.55 + ((1.0 - ht) > 0.45 ? 0.35 : 0.0);
+	return vox_hash(vec3(c, dot(cur_N, vec3(1.0, 2.0, 3.0)))) > 0.988 ? 1.0 : min(s, 0.9);
 }
 void fragment() {
 	vec3 n = normalize(w_nrm);
@@ -191,14 +199,15 @@ void fragment() {
 	vox_frame(n, T, B, N);
 	float layer = floor(dot(w_pos, N) / vox_size + 0.5);
 	vec2 f = vec2(dot(w_pos, T), dot(w_pos, B)) / vox_size;
-	float amt = vox_amount(f);
 	vec3 to_cam = CAMERA_POSITION_WORLD - w_pos;
 	float dist = length(to_cam);
 	vec3 v = to_cam / max(dist, 0.0001);
 	vec3 vt = vec3(dot(v, T), dot(v, B), dot(v, N));
 	// Real parallax relief within ~28 m; beyond, the fake relief shading
 	// (vox_depth) carries the same heights, so there is no visible edge.
-	float k = relief_depth * amt * (1.0 - smoothstep(18.0, 28.0, dist));
+	// Real parallax wherever a cube is still a few pixels wide (no
+	// distance cut-off: it fades with the cube's size on screen).
+	float k = relief_depth * smoothstep(2.0, 6.0, amt_px(f));
 	vec2 p = f;
 	vec2 cellp = floor(p);
 	float hd = cell_h(cellp, layer, T, B, N);
@@ -207,10 +216,10 @@ void fragment() {
 	vec2 side_n = vec2(0.0);
 	if (k > 0.002 && vt.z > 0.06) {
 		// March down into the cube field (in cube units).
-		const float STEPS = 10.0;
+		const float STEPS = 24.0;
 		vec2 duv = vt.xy / vt.z * k / STEPS;
 		float ls = 1.0 / STEPS;
-		for (int i = 0; i < 10; i++) {
+		for (int i = 0; i < 24; i++) {
 			if (cur * k >= hd * k) {
 				break;
 			}
@@ -239,32 +248,25 @@ void fragment() {
 	} else {
 		hd = 0.0;
 	}
-	// One colour per cube (at the matching mip), fading back to the plain
-	// texture far away.
-	vec2 uv;
-	vec2 g1;
-	vec2 g2;
-	if (amt > 0.01) {
-		uv = (cellp + 0.5) * vox_size * uv_scale;
-		g1 = vec2(vox_size * uv_scale, 0.0);
-		g2 = vec2(0.0, vox_size * uv_scale);
-	} else {
-		uv = f * vox_size * uv_scale;
-		g1 = dFdx(uv);
-		g2 = dFdy(uv);
-	}
+	// One colour per cube (its centre), at the mip of the cube or of the
+	// pixel, whichever is bigger: smooth with distance, never a switch.
+	vec2 uvf = f * vox_size * uv_scale;
+	float s = max(vox_size * uv_scale, max(length(dFdx(uvf)), length(dFdy(uvf))));
+	vec2 uv = (cellp + 0.5) * vox_size * uv_scale;
+	vec2 g1 = vec2(s, 0.0);
+	vec2 g2 = vec2(0.0, s);
 	vec3 col = tint * textureGrad(albedo_tex, uv, g1, g2).rgb;
 	vec3 c3 = T * cellp.x + B * cellp.y + N * layer;
 	vec3 wn = N;
 	float sh = 1.0;
 	if (side) {
-		wn = normalize(T * side_n.x + B * side_n.y + N * 0.15);
-		col *= mix(1.0, 0.78, amt);
+		wn = normalize(T * side_n.x + B * side_n.y + N * 0.7);
+		col *= 0.78;
 	} else {
-		vox_depth(c3, fract(p), T, B, N, amt, wn, sh);
+		vox_depth(p, T, B, N, layer, wn, sh);
 	}
 	// Sunk cubes sit in their own shadow.
-	float cavity = mix(1.0, mix(1.0, 0.7, hd), amt);
+	float cavity = mix(1.0, 0.7, hd);
 	col *= sh * cavity;
 	vec2 wuv = f * vox_size;
 	float mac = texture(macro_tex, wuv * 0.035).r;
@@ -325,6 +327,7 @@ static func make(tint: Color, albedo: Texture2D, normal: Texture2D, height: Text
 			_vox_shader.code = VOX_CODE % Voxel.FN
 		m.shader = _vox_shader
 		m.set_shader_parameter("vox_size", Voxel.SIZE)
+		m.set_shader_parameter("vox_detail", Voxel.detail())
 	m.set_shader_parameter("tint", tint)
 	m.set_shader_parameter("albedo_tex", albedo)
 	m.set_shader_parameter("normal_tex", normal)

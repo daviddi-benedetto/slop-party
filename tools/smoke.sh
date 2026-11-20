@@ -42,6 +42,8 @@ for r in "${RUNS[@]}"; do
 	t=12
 	[ "$name" = "lobby" ] && t=4
 	[ "$name" = "results" ] && t=30
+	# Hightown (Frontline) takes longest to load.
+	[ "$name" = "frontline" ] && t=18
 	log="$OUT/$name.log"
 	# shellcheck disable=SC2086
 	"$GODOT" --path . -w --resolution 1280x720 -- $args --shot="$OUT/$name.png" --shot-time=$t >"$log" 2>&1
