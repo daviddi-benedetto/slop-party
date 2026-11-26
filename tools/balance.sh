@@ -11,6 +11,8 @@
 set -u
 cd "$(dirname "$0")/.."
 GODOT=./engine/Godot_v4.7.2-stable_win64_console.exe
+# Linux / Steam Deck: the Linux editor (tools/setup_engine.sh).
+[ "$(uname -s)" = "Linux" ] && GODOT=./engine/Godot_v4.7.2-stable_linux.x86_64
 OUT="${TMPDIR:-/tmp}/slop_balance"
 LEN="${1:-150}"
 mkdir -p "$OUT"

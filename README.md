@@ -280,6 +280,35 @@ Anyway**). After that it opens normally. Settings are saved in
 with 4+ players, lower **Surface depth**, **Volumetric fog** or **Reflections**
 in Options if it stutters.
 
+**On Linux** (x86_64): download `SlopParty-Linux.tar.gz` from the GitHub
+release, unpack it anywhere (`tar xzf SlopParty-Linux.tar.gz`) and run
+`SlopParty/SlopParty.x86_64`. From a clone of the repo, run **`./play.sh`**
+instead (it runs `build/SlopParty.x86_64` if it exists, otherwise the project
+from source with the bundled engine; see *Restoring from GitHub*). It needs a
+Vulkan driver (Mesa's RADV / ANV or NVIDIA's own), which every current
+distribution ships.
+
+**On a Steam Deck:**
+
+1. In **Desktop Mode**, download `SlopParty-Linux.tar.gz` and unpack it, for
+   example into `~/Games/SlopParty` (right-click it in Dolphin > *Extract >
+   Extract archive here*).
+2. Open Steam and choose **Games > Add a Non-Steam Game to My Library...** >
+   **Browse...** > pick `SlopParty.x86_64` (set the file type filter to
+   *All Files* if it isn't listed) > **Add Selected Programs**.
+3. Go back to **Gaming Mode**: Slop Party is in your library under
+   *Non-Steam*.
+
+The Deck's own controls are player 1's gamepad, and any extra controllers
+you pair (Bluetooth or USB) are players 2–6, so a Deck plugged into a TV
+with a few pads is a full party. If the sticks move a mouse cursor instead
+of playing, open the game's **Controller settings** in Steam and pick the
+**Gamepad** layout. The first start on a Deck uses lighter graphics settings
+(the Medium preset without ambient occlusion, bounce light, reflections,
+surface depth or sun rays) and auto resolution, aimed at 60 FPS on its
+1280 × 800 screen. Change them in Options like anywhere else. Settings are
+saved beside `SlopParty.x86_64`.
+
 In the lobby (a backyard party stage with a red carpet, velvet skirt and banners) each player presses **A** on their own gamepad to take a seat
 (Space joins a keyboard + mouse player). Up/down picks what to customise
 (animal, colour, hat, back) and left/right changes it.
@@ -379,7 +408,9 @@ Q / E to turn them):
 - **How to play:** every button, on foot, in a vehicle and in the lobby.
 - **Modes:** what each game mode is about.
 
-Options are saved in `slop_party_settings.cfg` beside the game executable.
+Options are saved in `slop_party_settings.cfg` beside the game executable
+(on a Mac, or when that folder is read-only, in Godot's user data folder:
+`~/.local/share/godot/app_userdata/Slop Party/` on Linux).
 
 Up to six gamepads are supported; one of the six seats can be keyboard + mouse
 instead. Screen layout: 1 player full screen, 2 stacked, 3–4 in a 2×2 grid,
@@ -391,7 +422,8 @@ The whole game is this one folder. Copy it to a USB stick or another PC and it
 runs; nothing is installed and nothing is written outside it.
 
 ```
-Play.bat / Edit.bat   launchers (game / Godot editor)
+Play.bat / Edit.bat   launchers (game / Godot editor), Windows
+play.sh / edit.sh     the same for Linux / Steam Deck
 project.godot         Godot project file
 main.tscn             the only scene; everything else is built in code
 scripts/              all game code (see docs/ARCHITECTURE.md)
@@ -399,14 +431,16 @@ assets/               3D models, plush animal meshes, audio (see ASSETS.md);
                       assets/voxel/ = the models baked into voxels
 fonts/                Fredoka and Lilita One UI fonts + their licences
 docs/                 architecture notes
-tools/                build.bat, setup_engine.ps1, smoke.sh, balance.sh
+tools/                build.bat / build.sh, setup_engine.ps1 / setup_engine.sh,
+                      smoke.sh, balance.sh
 engine/               bundled Godot editor + export templates  (not in git)
 build/SlopParty.exe    standalone single-file game              (not in git)
 build/SlopParty-macOS.zip  Mac app (Slop Party.app)             (not in git)
+build/SlopParty.x86_64     Linux / Steam Deck single-file game  (not in git)
 ```
 
-`build\SlopParty.exe` on its own is also fully portable: it is a single file
-with the game data embedded.
+`build\SlopParty.exe` and `build/SlopParty.x86_64` on their own are also
+fully portable: each is a single file with the game data embedded.
 
 ### Restoring from GitHub
 
@@ -419,8 +453,24 @@ tools\build.bat
 ```
 
 The first command re-downloads Godot 4.7.2 into `engine/`; the second
-re-exports `build\SlopParty.exe` and `build\SlopParty-macOS.zip`. A ready-made build is also attached to the
-repository's GitHub Releases.
+re-exports `build\SlopParty.exe`, `build\SlopParty.x86_64` (Linux / Steam
+Deck) and `build\SlopParty-macOS.zip`. For the Linux release archive, run
+`python tools\pack_linux.py build\SlopParty-Linux.tar.gz` afterwards (it
+keeps the executable flag, which a Windows zip would lose).
+
+On Linux (Steam Deck Desktop Mode included; needs `curl`, `unzip` and
+`python3`):
+
+```
+tools/setup_engine.sh --templates
+tools/build.sh
+```
+
+This downloads the Linux editor into `engine/` and exports all three builds
+plus `build/SlopParty-Linux.tar.gz`. Without `--templates`, `./play.sh` and
+`./edit.sh` still run the game and the editor from source.
+
+A ready-made build is also attached to the repository's GitHub Releases.
 
 ## Developing
 
@@ -428,7 +478,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how everything works and
 how to add cards, change the map, or test without controllers.
 
 Before every release, and after pulling anyone else's changes, run the smoke
-test from Git Bash. It plays a short bot match on every arena and in every
+test from Git Bash (or any shell on Linux). It plays a short bot match on every arena and in every
 mode, each in a different theme, and fails on any script error or a run
 below 50 FPS:
 
@@ -443,6 +493,7 @@ and cache them per player):
 
 ```
 ./engine/Godot_v4.7.2-stable_win64_console.exe --headless --path . -- --voxel-bake
+./engine/Godot_v4.7.2-stable_linux.x86_64 --headless --path . -- --voxel-bake   # on Linux
 ```
 
 `tools/balance.sh` plays a dozen bot-only matches and prints kills per minute

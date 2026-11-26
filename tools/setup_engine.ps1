@@ -35,7 +35,7 @@ if ($Templates) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($tpz)
     foreach ($entry in $archive.Entries) {
-        if ($entry.Name -match '^(version\.txt|windows_(debug|release)_x86_64(_console)?\.exe|macos\.zip)$') {
+        if ($entry.Name -match '^(version\.txt|windows_(debug|release)_x86_64(_console)?\.exe|linux_(debug|release)\.x86_64|macos\.zip)$') {
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $dest $entry.Name), $true)
         }
     }

@@ -131,6 +131,12 @@ const PRESETS := {
 	4: {"aa": 3, "scale": 4, "shadows": 2, "ssao": 1, "glow": 1, "scenery": 1, "dof": 1, "gi": 1, "volfog": 1, "decals": 1},
 }
 
+## Steam Deck first-start defaults (choice indices): the Medium preset,
+## minus the screen-space extras that cost most on its APU. The screen is
+## only 1280 x 800, so the 3D stays at 100 % and FSR 1 sharpens it.
+const DECK := {"preset": 2, "aa": 1, "scale": 4, "shadows": 1, "ssao": 0, "glow": 1, "scenery": 1, "dof": 0,
+	"gi": 0, "volfog": 0, "decals": 1, "parallax": 0, "ssr": 0, "rays": 0, "upscaler": 1, "auto_res": 1}
+
 var idx := {}
 var res_factor := 1.0      # auto resolution: extra 3D scale factor set by game.gd (0.5-1)
 var view_count := 1        # splitscreen views in play (game.gd); heavy effects need few views
@@ -174,13 +180,21 @@ func _ready() -> void:
 			idx[item.key] = item.def
 	var dir := OS.get_executable_path().get_base_dir()
 	# On a Mac the executable lives inside the signed, read-only .app bundle,
-	# so settings go to the user data folder instead.
-	if OS.get_name() == "macOS":
+	# so settings go to the user data folder instead. Same for any folder we
+	# can't write to (Linux: an AppImage / Flatpak mount, a read-only
+	# install, a game folder owned by another user).
+	if OS.get_name() == "macOS" or not _writable(dir):
 		dir = OS.get_user_data_dir()
 	_path = dir.path_join("slop_party_settings.cfg")
 	# Settings from before the rename (Fragdeck / Slop Game) carry over.
 	if not FileAccess.file_exists(_path) and FileAccess.file_exists(dir.path_join("fragdeck_settings.cfg")):
 		DirAccess.copy_absolute(dir.path_join("fragdeck_settings.cfg"), _path)
+	# First start on a Steam Deck: begin from settings its APU holds at
+	# 60 FPS. Only when there is no settings file yet, so a player's own
+	# choices always win.
+	if not FileAccess.file_exists(_path) and is_steam_deck():
+		for k in DECK:
+			idx[k] = DECK[k]
 	_load()
 	# Dev: --set-<key>=<choice index> overrides a setting for this run only.
 	for a in OS.get_cmdline_user_args():
@@ -359,6 +373,30 @@ func save() -> void:
 	for key in lobby:
 		cfg.set_value("lobby", key, lobby[key])
 	cfg.save(_path)
+
+
+## True on a Steam Deck (LCD "Jupiter" or OLED "Galileo"), in Game Mode
+## or Desktop Mode.
+static func is_steam_deck() -> bool:
+	if OS.get_name() != "Linux":
+		return false
+	if OS.get_environment("SteamDeck") == "1":
+		return true
+	var f := FileAccess.open("/sys/devices/virtual/dmi/id/product_name", FileAccess.READ)
+	if f == null:
+		return false
+	return f.get_as_text().strip_edges() in ["Jupiter", "Galileo"]
+
+
+## Can we create files in this folder?
+static func _writable(dir: String) -> bool:
+	var probe := dir.path_join(".slop_party_write_test")
+	var f := FileAccess.open(probe, FileAccess.WRITE)
+	if f == null:
+		return false
+	f.close()
+	DirAccess.remove_absolute(probe)
+	return true
 
 
 func _load() -> void:

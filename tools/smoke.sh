@@ -2,7 +2,7 @@
 # Smoke test: runs a short bot match on every arena and in every mode, each
 # in a different visual theme, plus the lobby, and fails if Godot printed any
 # script error or a run fell below 50 FPS. Run it from the repo root (Git
-# Bash on Windows) after pulling anyone's changes and before every release:
+# Bash on Windows, or any Linux shell) after pulling anyone's changes and before every release:
 #
 #   tools/smoke.sh            all 13 runs (about 4 minutes)
 #   tools/smoke.sh quick      lobby + 3 matches (about 1 minute)
@@ -13,6 +13,8 @@
 set -u
 cd "$(dirname "$0")/.."
 GODOT=./engine/Godot_v4.7.2-stable_win64.exe
+# Linux / Steam Deck: the Linux editor (tools/setup_engine.sh).
+[ "$(uname -s)" = "Linux" ] && GODOT=./engine/Godot_v4.7.2-stable_linux.x86_64
 OUT="${TMPDIR:-/tmp}/slop_smoke"
 mkdir -p "$OUT"
 

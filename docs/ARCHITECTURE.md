@@ -48,16 +48,26 @@ has not been verified.
 
 | Task | Command (from the project root) |
 |---|---|
-| Play | `Play.bat` |
-| Open editor | `Edit.bat` |
-| Export standalone exe | `tools\build.bat` → `build\SlopParty.exe` (+ `build\SlopParty-macOS.zip` when the macOS template is installed) |
+| Play | `Play.bat` (Linux / Steam Deck: `./play.sh`) |
+| Open editor | `Edit.bat` (Linux: `./edit.sh`) |
+| Export standalone exe | `tools\build.bat` → `build\SlopParty.exe` (+ `build\SlopParty.x86_64` and `build\SlopParty-macOS.zip` when their templates are installed); on Linux `tools/build.sh` exports all three plus `build/SlopParty-Linux.tar.gz` |
 | Mac release zip (adds ASSETS / licences, keeps Unix permissions) | `python tools/pack_mac.py <out.zip>` |
-| Re-download engine after a git clone | `tools\setup_engine.ps1 [-Templates]` |
+| Linux release archive (same, keeps the executable flag) | `python tools/pack_linux.py <out.tar.gz>` |
+| Re-download engine after a git clone | `tools\setup_engine.ps1 [-Templates]` (Linux: `tools/setup_engine.sh [--templates]`) |
 
 The engine binary is `engine\Godot_v4.7.2-stable_win64.exe` (use the
 `_console.exe` variant to see `print()` output in a terminal). `engine\_sc_`
 enables Godot's self-contained mode, so editor settings and export templates
 live in `engine\editor_data\` rather than `%APPDATA%`.
+
+On Linux the engine is `engine/Godot_v4.7.2-stable_linux.x86_64` (it prints
+to the terminal; there is no console variant), so in the commands below use
+it in place of the `.exe` and `/` in paths. `tools/smoke.sh` and
+`tools/balance.sh` pick it automatically. `Settings.is_steam_deck()`
+(settings.gd) detects a Deck (the `SteamDeck=1` variable Steam sets, or the
+board name); on the first start there (no settings file yet) it applies
+`Settings.DECK`, lighter graphics for its APU. Settings fall back to the user
+data folder whenever the executable's folder can't be written.
 
 ### Testing without controllers (important)
 
@@ -1446,6 +1456,15 @@ Verified by automated runs on an RTX 2070 at 1920×1080:
   → Open the first time). Needs `import_etc2_astc` on in project.godot.
   Settings live in the user data folder there (the .app bundle is read-only).
   Not tested on a Mac from this PC.
+- Linux (export preset "Linux", x86_64, for the Steam Deck too): the project
+  imports with the Linux editor, every map and mode loads and plays with
+  bots headless without script errors, the exported `SlopParty.x86_64`
+  starts, draws the lobby's 3D scene (Mesa's software Vulkan), runs a bot
+  match, saves its
+  settings beside itself or, in a read-only folder, in
+  `~/.local/share/godot/app_userdata/Slop Party/`, and applies the Deck
+  defaults when `SteamDeck=1`. Not yet tested on real Deck hardware
+  (performance, Steam Input, the 16:10 screen) from here.
 
 **Not verified:**
 - v0.12 (melee, taunts, magic and medieval weapons, Gun Game, Medieval,

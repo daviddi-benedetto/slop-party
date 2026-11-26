@@ -575,7 +575,14 @@ func _draw() -> void:
 	# show a smooth game, whatever we render: say so.
 	var hz := DisplayServer.screen_get_refresh_rate()
 	if hz > 1.0 and hz < 50.0:
-		var warn := "YOUR SCREEN IS SET TO %d Hz - THE GAME CAN ONLY SHOW %d FPS.  WINDOWS: SETTINGS > DISPLAY > ADVANCED DISPLAY > REFRESH RATE 60 Hz" % [int(round(hz)), int(round(hz))]
+		var fix := "WINDOWS: SETTINGS > DISPLAY > ADVANCED DISPLAY > REFRESH RATE 60 Hz"
+		if Settings.is_steam_deck():
+			fix = "STEAM DECK: QUICK ACCESS (...) > PERFORMANCE > REFRESH RATE 60 Hz"
+		elif OS.get_name() == "Linux":
+			fix = "SET 60 Hz IN YOUR DESKTOP'S DISPLAY SETTINGS"
+		elif OS.get_name() == "macOS":
+			fix = "SYSTEM SETTINGS > DISPLAYS > REFRESH RATE 60 Hz"
+		var warn := "YOUR SCREEN IS SET TO %d Hz - THE GAME CAN ONLY SHOW %d FPS.  %s" % [int(round(hz)), int(round(hz)), fix]
 		var ww := UiKit.text_width(warn, 19 * s) + 50 * s
 		UiKit.card(self, Rect2((w - ww) * 0.5, 242 * s, ww, 36 * s), Color(0.75, 0.16, 0.14), 18 * s, s)
 		UiKit.text(self, Vector2(0, 267 * s), warn, 19 * s, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, w, 700, 0.0)
